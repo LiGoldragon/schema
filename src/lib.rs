@@ -10,6 +10,8 @@ mod header;
 mod import;
 mod layout;
 mod name;
+mod parser;
+mod reader;
 mod section;
 mod upgrade;
 
@@ -25,6 +27,7 @@ pub use import::{
 };
 pub use layout::{FieldLayout, FieldLocation, Layout};
 pub use name::Name;
+pub use reader::LoadedSchema;
 pub use section::Namespace;
 pub use upgrade::{
     Projection, StandardProjection, Upgrade, UpgradeAnnotation, UpgradePlan, Version,

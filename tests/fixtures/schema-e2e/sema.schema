@@ -1,0 +1,9 @@
+{}
+[]
+[]
+[]
+{
+  SemaOperation [Assert Match Subscribe]
+  SemaObservation (SemaOperation)
+}
+[]

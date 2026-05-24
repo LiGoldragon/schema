@@ -9,6 +9,22 @@ pub enum Error {
     InvalidName {
         name: String,
     },
+    InvalidSchemaText {
+        context: &'static str,
+        message: String,
+    },
+    SchemaReadFailed {
+        path: String,
+        message: String,
+    },
+    SchemaImportCycle {
+        path: String,
+    },
+    MissingImportedName {
+        binding: Name,
+        name: Name,
+        path: String,
+    },
     DuplicateDeclaration {
         name: Name,
     },
@@ -86,6 +102,28 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidName { name } => write!(formatter, "invalid schema name `{name}`"),
+            Self::InvalidSchemaText { context, message } => {
+                write!(
+                    formatter,
+                    "invalid schema text while parsing {context}: {message}"
+                )
+            }
+            Self::SchemaReadFailed { path, message } => {
+                write!(formatter, "failed to read schema file `{path}`: {message}")
+            }
+            Self::SchemaImportCycle { path } => {
+                write!(formatter, "schema import cycle at `{path}`")
+            }
+            Self::MissingImportedName {
+                binding,
+                name,
+                path,
+            } => {
+                write!(
+                    formatter,
+                    "import binding `{binding}` selected `{name}`, but `{path}` does not export it"
+                )
+            }
             Self::DuplicateDeclaration { name } => {
                 write!(formatter, "duplicate declaration `{name}`")
             }

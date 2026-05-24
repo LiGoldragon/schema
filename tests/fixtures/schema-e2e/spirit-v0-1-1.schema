@@ -1,0 +1,44 @@
+{
+  Magnitude (ImportAll ./magnitude.schema)
+  SemaSet (Import ./sema.schema [SemaOperation SemaObservation])
+  Shared (Import ./shared.schema [Source Stamp])
+}
+[
+  (State [Statement Declaration])
+  (Record [Entry])
+  (Observe [Records])
+]
+[]
+[]
+{
+  State [(Statement Statement) (Declaration Declaration)]
+  Record [(Entry Entry)]
+  Observe [(Records RecordQuery)]
+
+  Kind [Decision Principle Correction]
+  Topic (String)
+  StatementText (String)
+  Summary (String)
+  Context (String)
+  Quote (String)
+  RecordIdentifier (u64)
+
+  Statement (Topic StatementText)
+  Declaration (Topic Kind Magnitude StatementText)
+  Entry (Topic Kind Summary Context Magnitude Quote Source Stamp)
+  RecordQuery ((Option Topic) Kind)
+  RecordSummary (RecordIdentifier Topic Kind Summary Magnitude)
+  RecordAccepted (RecordIdentifier)
+  RecordsObserved ((Vec RecordSummary))
+  OperationReceived (SemaOperation)
+  EffectEmitted (SemaObservation)
+}
+[
+  (Reply RecordAccepted RecordsObserved)
+  (Observable
+    (filter default)
+    (operation_event OperationReceived)
+    (effect_event EffectEmitted))
+  (Upgrade (FromVersion v0.1)
+    (Migrate Entry))
+]

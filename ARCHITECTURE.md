@@ -4,9 +4,9 @@
 
 `schema` hosts the typed model for Persona's NOTA schema language. The
 crate represents the fixed six-position authored `.schema` file, validates
-imports and local namespace declarations, lowers route headers into
-`AssembledSchema`, and derives metadata used by macro code for layout and
-version projection.
+imports and local namespace declarations, reads `.schema` files with local
+relative imports, lowers route headers into `AssembledSchema`, and derives
+metadata used by macro code for layout and version projection.
 
 The crate is the schema-language substrate, not the eventual schema daemon.
 It is consumed by macros and later by the runtime registry.
@@ -54,6 +54,17 @@ the same namespace.
 The route table is the object future short-header generation consumes. The
 parser does not emit dispatch tables directly from raw authored text.
 
+## File Reader
+
+`Schema::parse_str` parses one authored `.schema` document through
+`nota-codec::Decoder`. `LoadedSchema::read_path` reads a file, recursively
+loads local relative imports, validates selected imports against exported
+names, resolves `ImportAll`, and assembles the result.
+
+The reader treats imports as schema dependencies, not as comments or include
+text. Imported names enter the local namespace through the existing import
+validation path, then appear as imported entries in `AssembledSchema`.
+
 ## Upgrade Model
 
 Upgrade knowledge belongs to the next schema. The current library models an
@@ -87,7 +98,6 @@ upgrade component and signal contracts.
 
 **Does not own:**
 
-- NOTA text parsing. A reader will lower NOTA source into this model.
 - `signal_channel!` code emission. That stays in the macro crate.
 - Short-header frame bytes. Those stay in `signal-frame`.
 - Version projection execution. That stays in `version-projection` and the
@@ -110,11 +120,15 @@ src/
 ├── import.rs       # import directives and resolved bindings
 ├── layout.rs       # fixed-root versus ordered-box planning
 ├── name.rs         # schema identifier validation
+├── parser.rs       # .schema text parser over nota-codec
+├── reader.rs       # file reader + recursive local imports
 ├── section.rs      # namespace map
 └── upgrade.rs      # upgrade annotations and plans
 
 tests/
-└── document.rs     # validation, lowering, layout, upgrade behavior
+├── document.rs     # validation, lowering, layout, upgrade behavior
+├── reader.rs       # .schema files, local imports, file-based upgrade
+└── fixtures/       # real .schema fixtures
 ```
 
 ## Invariants
@@ -143,8 +157,8 @@ resolved schema proves otherwise.
 
 ## Status
 
-The crate is now an MVP typed model for the v13 schema-language shape. It is
-ready for parser and macro work to depend on the six-position structure,
-uniform header routes, `AssembledSchema`, import collision checks, and basic
-upgrade planning. It is not yet a parser, code generator, runtime schema
-registry, or database upgrade tool.
+The crate is now an MVP parser and typed model for the v13 schema-language
+shape. It is ready for macro work to depend on the six-position structure,
+uniform header routes, local import loading, `AssembledSchema`, import
+collision checks, and basic upgrade planning. It is not yet a code
+generator, runtime schema registry, or database upgrade tool.

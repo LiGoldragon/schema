@@ -7,6 +7,10 @@ pub struct Declaration {
 }
 
 impl Declaration {
+    pub fn new(name: Name, body: DeclarationBody) -> Self {
+        Self { name, body }
+    }
+
     pub fn enumeration(name: Name, variants: Vec<Variant>) -> Self {
         Self {
             name,

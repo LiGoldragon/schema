@@ -25,7 +25,14 @@
         craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
-          filter = craneLib.filterCargoSources;
+          filter = path: type:
+            let
+              pathString = toString path;
+              fixtureRoot = "${toString ./.}/tests/fixtures";
+            in
+            craneLib.filterCargoSources path type
+            || pathString == fixtureRoot
+            || pkgs.lib.hasPrefix "${fixtureRoot}/" pathString;
           name = "source";
         };
         cargoArtifacts = craneLib.buildDepsOnly { inherit src; strictDeps = true; };

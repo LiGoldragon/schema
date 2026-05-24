@@ -19,7 +19,9 @@ Current intent, in priority order:
 6. Lower authored schemas into `AssembledSchema`, the explicit machine
    object consumed by short-header generation, code emission, storage
    descriptors, and version projection.
-7. Stay library-shaped until the runtime schema registry/triad authority is
+7. Test the schema language end-to-end from actual `.schema` files using
+   local relative imports before treating the Rust-only model as sufficient.
+8. Stay library-shaped until the runtime schema registry/triad authority is
    explicitly settled.
 
 Open intent needing later settlement:

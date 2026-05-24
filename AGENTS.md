@@ -23,8 +23,8 @@ ordered-box layout metadata for macro consumers.
   name collisions.
 - Header roots use the uniform v13 shape `(Root [SubVariant ...])`; do not
   reintroduce a scalar `(Root Payload)` form.
-- The crate does not parse NOTA text yet. Parser work belongs behind the
-  same typed model after the document shape is stable.
+- The crate parses `.schema` text through `nota-codec::Decoder`; do not add
+  string-splitting parsers beside it.
 - The crate does not own signal-frame dispatch, version projection, or
   daemon upgrade orchestration. It supplies schema metadata those systems
   consume.
