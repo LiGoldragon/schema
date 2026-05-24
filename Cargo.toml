@@ -1,0 +1,19 @@
+[package]
+name         = "schema"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.85"
+repository   = "https://github.com/LiGoldragon/schema"
+description  = "Typed schema-language substrate for Persona signal contracts."
+publish      = false
+
+[lib]
+name = "schema"
+path = "src/lib.rs"
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+unused      = { level = "warn", priority = -1 }
+dead_code   = "warn"
