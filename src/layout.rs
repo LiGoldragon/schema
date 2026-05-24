@@ -8,23 +8,20 @@ pub struct Layout {
 }
 
 impl Layout {
+    pub fn for_declaration(document: &Document, declaration: &Name) -> Result<Self> {
+        let body = document.declaration_body(declaration).ok_or_else(|| {
+            crate::Error::MissingDeclaration {
+                name: declaration.clone(),
+            }
+        })?;
+        Ok(Self {
+            fields: fields_for_body(document, body),
+        })
+    }
+
     pub fn for_variant(document: &Document, declaration: &Name, variant: &Name) -> Result<Self> {
         let variant = document.variant(declaration, variant)?;
-        let fields = match variant.payload() {
-            Payload::Unit => Vec::new(),
-            Payload::Type(expression) => vec![FieldLayout::new(
-                0,
-                expression.clone(),
-                location(document, expression),
-            )],
-            Payload::Fields(expressions) => expressions
-                .iter()
-                .enumerate()
-                .map(|(position, expression)| {
-                    FieldLayout::new(position, expression.clone(), location(document, expression))
-                })
-                .collect(),
-        };
+        let fields = fields_for_payload(document, variant.payload());
         Ok(Self { fields })
     }
 
@@ -47,6 +44,42 @@ impl Layout {
             .map(|field| field.position)
             .collect()
     }
+}
+
+fn fields_for_body(document: &Document, body: &DeclarationBody) -> Vec<FieldLayout> {
+    match body {
+        DeclarationBody::Enum { .. } => Vec::new(),
+        DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
+            vec![FieldLayout::new(
+                0,
+                expression.clone(),
+                location(document, expression),
+            )]
+        }
+        DeclarationBody::Record(expressions) => fields_for_expressions(document, expressions),
+    }
+}
+
+fn fields_for_payload(document: &Document, payload: &Payload) -> Vec<FieldLayout> {
+    match payload {
+        Payload::Unit => Vec::new(),
+        Payload::Type(expression) => vec![FieldLayout::new(
+            0,
+            expression.clone(),
+            location(document, expression),
+        )],
+        Payload::Fields(expressions) => fields_for_expressions(document, expressions),
+    }
+}
+
+fn fields_for_expressions(document: &Document, expressions: &[TypeExpression]) -> Vec<FieldLayout> {
+    expressions
+        .iter()
+        .enumerate()
+        .map(|(position, expression)| {
+            FieldLayout::new(position, expression.clone(), location(document, expression))
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,7 +132,9 @@ fn is_fixed_width(
 ) -> bool {
     match expression {
         TypeExpression::Primitive(primitive) => primitive.is_fixed_width(),
-        TypeExpression::Container(Container::Vector(_) | Container::Optional(_)) => false,
+        TypeExpression::Container(
+            Container::Vector(_) | Container::Optional(_) | Container::Map { .. },
+        ) => false,
         TypeExpression::Named(name) => is_fixed_width_declaration(document, name, visited),
     }
 }
@@ -118,8 +153,7 @@ fn is_fixed_width_declaration(
     };
 
     match body {
-        DeclarationBody::Reference(_) => false,
-        DeclarationBody::Local { variants } => {
+        DeclarationBody::Enum { variants } => {
             variants.iter().all(|variant| match variant.payload() {
                 Payload::Unit => true,
                 Payload::Type(expression) => is_fixed_width(document, expression, visited),
@@ -128,5 +162,11 @@ fn is_fixed_width_declaration(
                     .all(|expression| is_fixed_width(document, expression, visited)),
             })
         }
+        DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
+            is_fixed_width(document, expression, visited)
+        }
+        DeclarationBody::Record(expressions) => expressions
+            .iter()
+            .all(|expression| is_fixed_width(document, expression, visited)),
     }
 }

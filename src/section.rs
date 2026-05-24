@@ -1,12 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{Declaration, DeclarationBody, Error, Name, Reference, Result, Variant};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Section {
-    Messaging(Vec<Declaration>),
-    Namespace(Namespace),
-}
+use crate::{Declaration, DeclarationBody, Error, Name, Result};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Namespace {
@@ -24,26 +18,21 @@ impl Namespace {
         Ok(Self { entries: map })
     }
 
-    pub fn local(entries: Vec<(Name, Vec<Variant>)>) -> Result<Self> {
+    pub fn declarations(declarations: Vec<Declaration>) -> Result<Self> {
         Self::new(
-            entries
+            declarations
                 .into_iter()
-                .map(|(name, variants)| (name, DeclarationBody::Local { variants }))
-                .collect(),
-        )
-    }
-
-    pub fn references(entries: Vec<(Name, Reference)>) -> Result<Self> {
-        Self::new(
-            entries
-                .into_iter()
-                .map(|(name, reference)| (name, DeclarationBody::Reference(reference)))
+                .map(|declaration| (declaration.name().clone(), declaration.body().clone()))
                 .collect(),
         )
     }
 
     pub fn entries(&self) -> impl Iterator<Item = (&Name, &DeclarationBody)> {
         self.entries.iter()
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &Name> {
+        self.entries.keys()
     }
 
     pub fn body(&self, name: &Name) -> Option<&DeclarationBody> {

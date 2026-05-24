@@ -1,42 +1,70 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::{DeclarationBody, Error, Name, Payload, Result, Section, TypeExpression};
+use crate::{
+    AssembledSchema, AssembledType, Container, DeclarationBody, Endpoint, Error, Feature, Header,
+    ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, Leg, Name, Namespace,
+    Payload, Result, Route, RouteBody, TypeExpression, UpgradeAnnotation,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Document {
-    sections: Vec<Section>,
+pub struct Schema {
+    imports: Imports,
+    ordinary_header: Header,
+    owner_header: Header,
+    sema_header: Header,
+    namespace: Namespace,
+    features: Vec<Feature>,
 }
 
-impl Document {
-    pub fn new(sections: Vec<Section>) -> Result<Self> {
-        let document = Self { sections };
-        document.validate()?;
-        Ok(document)
+pub type Document = Schema;
+
+impl Schema {
+    pub fn new(
+        imports: Imports,
+        ordinary_header: Header,
+        owner_header: Header,
+        sema_header: Header,
+        namespace: Namespace,
+        features: Vec<Feature>,
+    ) -> Result<Self> {
+        let schema = Self {
+            imports,
+            ordinary_header,
+            owner_header,
+            sema_header,
+            namespace,
+            features,
+        };
+        schema.validate_authored()?;
+        Ok(schema)
     }
 
-    pub fn sections(&self) -> &[Section] {
-        &self.sections
+    pub fn imports(&self) -> &Imports {
+        &self.imports
+    }
+
+    pub fn ordinary_header(&self) -> &Header {
+        &self.ordinary_header
+    }
+
+    pub fn owner_header(&self) -> &Header {
+        &self.owner_header
+    }
+
+    pub fn sema_header(&self) -> &Header {
+        &self.sema_header
+    }
+
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+
+    pub fn features(&self) -> &[Feature] {
+        &self.features
     }
 
     pub fn declaration_body(&self, name: &Name) -> Option<&DeclarationBody> {
-        for section in &self.sections {
-            match section {
-                Section::Messaging(declarations) => {
-                    if let Some(declaration) = declarations
-                        .iter()
-                        .find(|declaration| declaration.name() == name)
-                    {
-                        return Some(declaration.body());
-                    }
-                }
-                Section::Namespace(namespace) => {
-                    if let Some(body) = namespace.body(name) {
-                        return Some(body);
-                    }
-                }
-            }
-        }
-        None
+        self.namespace.body(name)
     }
 
     pub fn variant(&self, declaration: &Name, variant: &Name) -> Result<&crate::Variant> {
@@ -45,7 +73,7 @@ impl Document {
             .ok_or_else(|| Error::MissingDeclaration {
                 name: declaration.clone(),
             })?;
-        let DeclarationBody::Local { variants } = body else {
+        let DeclarationBody::Enum { variants } = body else {
             return Err(Error::MissingVariant {
                 declaration: declaration.clone(),
                 variant: variant.clone(),
@@ -60,16 +88,40 @@ impl Document {
             })
     }
 
-    fn validate(&self) -> Result<()> {
-        let mut declaration_names = HashSet::new();
-        for (name, _) in self.declaration_entries() {
-            if !declaration_names.insert(name) {
-                return Err(Error::DuplicateDeclaration { name: name.clone() });
-            }
+    pub fn assemble(&self, resolutions: &[ImportResolution]) -> Result<AssembledSchema> {
+        let import_index = self.resolve_imports(resolutions)?;
+        self.validate_with_imports(&import_index)?;
+
+        let mut routes = Vec::new();
+        routes.extend(self.lower_header(Leg::Ordinary, &self.ordinary_header, &import_index)?);
+        routes.extend(self.lower_header(Leg::Owner, &self.owner_header, &import_index)?);
+        routes.extend(self.lower_header(Leg::Sema, &self.sema_header, &import_index)?);
+
+        let mut types = Vec::new();
+        for (name, body) in self.namespace.entries() {
+            types.push(AssembledType::local(name.clone(), body.clone()));
+        }
+        for (name, binding) in &import_index.names {
+            types.push(AssembledType::imported(name.clone(), binding.clone()));
         }
 
-        for (name, body) in self.declaration_entries() {
-            let DeclarationBody::Local { variants } = body else {
+        Ok(AssembledSchema::new(
+            import_index.bindings,
+            routes,
+            types,
+            self.features.clone(),
+        ))
+    }
+
+    fn validate_authored(&self) -> Result<()> {
+        self.validate_variants()?;
+        let import_index = self.resolve_selected_imports()?;
+        self.validate_with_imports(&import_index)
+    }
+
+    fn validate_variants(&self) -> Result<()> {
+        for (name, body) in self.namespace.entries() {
+            let DeclarationBody::Enum { variants } = body else {
                 continue;
             };
             let mut variant_names = HashSet::new();
@@ -80,56 +132,318 @@ impl Document {
                         variant: variant.name().clone(),
                     });
                 }
-                self.validate_payload(variant.payload())?;
             }
         }
-
         Ok(())
     }
 
-    fn declaration_entries(&self) -> Vec<(&Name, &DeclarationBody)> {
-        let mut entries = Vec::new();
-        for section in &self.sections {
-            match section {
-                Section::Messaging(declarations) => {
-                    for declaration in declarations {
-                        entries.push((declaration.name(), declaration.body()));
+    fn validate_with_imports(&self, imports: &ResolvedImports) -> Result<()> {
+        for (name, body) in self.namespace.entries() {
+            match body {
+                DeclarationBody::Enum { variants } => {
+                    for variant in variants {
+                        self.validate_payload(variant.payload(), imports)?;
                     }
                 }
-                Section::Namespace(namespace) => entries.extend(namespace.entries()),
+                DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
+                    self.validate_expression(expression, imports)?
+                }
+                DeclarationBody::Record(expressions) => {
+                    for expression in expressions {
+                        self.validate_expression(expression, imports)?;
+                    }
+                }
+            }
+
+            if let Some(binding) = imports.names.get(name) {
+                return Err(Error::ImportCollisionWithLocal {
+                    name: name.clone(),
+                    binding: binding.clone(),
+                });
             }
         }
-        entries
+        self.validate_features(imports)
     }
 
-    fn validate_payload(&self, payload: &Payload) -> Result<()> {
+    fn validate_payload(&self, payload: &Payload, imports: &ResolvedImports) -> Result<()> {
         match payload {
             Payload::Unit => Ok(()),
-            Payload::Type(expression) => self.validate_expression(expression),
+            Payload::Type(expression) => self.validate_expression(expression, imports),
             Payload::Fields(expressions) => {
                 for expression in expressions {
-                    self.validate_expression(expression)?;
+                    self.validate_expression(expression, imports)?;
                 }
                 Ok(())
             }
         }
     }
 
-    fn validate_expression(&self, expression: &TypeExpression) -> Result<()> {
+    fn validate_expression(
+        &self,
+        expression: &TypeExpression,
+        imports: &ResolvedImports,
+    ) -> Result<()> {
         match expression {
             TypeExpression::Primitive(_) => Ok(()),
             TypeExpression::Named(name) => {
-                if self.declaration_body(name).is_some() {
+                if self.namespace.body(name).is_some()
+                    || imports.names.contains_key(name)
+                    || imports.has_unresolved_import_all
+                {
                     Ok(())
                 } else {
                     Err(Error::UnknownType { name: name.clone() })
                 }
             }
             TypeExpression::Container(container) => match container {
-                crate::Container::Vector(inner) | crate::Container::Optional(inner) => {
-                    self.validate_expression(inner)
+                Container::Vector(inner) | Container::Optional(inner) => {
+                    self.validate_expression(inner, imports)
+                }
+                Container::Map { key, value } => {
+                    self.validate_expression(key, imports)?;
+                    self.validate_expression(value, imports)
                 }
             },
         }
     }
+
+    fn validate_features(&self, imports: &ResolvedImports) -> Result<()> {
+        for feature in &self.features {
+            match feature {
+                Feature::Reply(names) => {
+                    for name in names {
+                        self.validate_named_body(name, imports)?;
+                    }
+                }
+                Feature::Event(event) => {
+                    for name in event.events() {
+                        self.validate_named_body(name, imports)?;
+                    }
+                }
+                Feature::Observable(observable) => {
+                    if let Some(name) = observable.operation_event() {
+                        self.validate_named_body(name, imports)?;
+                    }
+                    if let Some(name) = observable.effect_event() {
+                        self.validate_named_body(name, imports)?;
+                    }
+                }
+                Feature::Upgrade(upgrade) => {
+                    for annotation in upgrade.annotations() {
+                        match annotation {
+                            UpgradeAnnotation::Migrate(name)
+                            | UpgradeAnnotation::RenamedFrom { current: name, .. }
+                            | UpgradeAnnotation::Custom { name, .. } => {
+                                self.validate_named_body(name, imports)?;
+                            }
+                            UpgradeAnnotation::Drop(_) | UpgradeAnnotation::Untranslatable(_) => {}
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_header(
+        &self,
+        leg: Leg,
+        header: &Header,
+        imports: &ResolvedImports,
+    ) -> Result<Vec<Route>> {
+        let mut routes = Vec::new();
+        for (root_slot, root) in header.roots().iter().enumerate() {
+            self.validate_route_body_variants(root.name(), root.endpoints())?;
+            for (endpoint_slot, endpoint) in root.endpoints().iter().enumerate() {
+                routes.push(Route::new(
+                    leg,
+                    root_slot,
+                    root.name().clone(),
+                    Endpoint::new(endpoint_slot, endpoint.clone()),
+                    self.endpoint_body(root.name(), endpoint, imports)?,
+                ));
+            }
+        }
+        Ok(routes)
+    }
+
+    fn validate_route_body_variants(&self, root: &Name, endpoints: &[Name]) -> Result<()> {
+        let Some(DeclarationBody::Enum { variants }) = self.declaration_body(root) else {
+            return Ok(());
+        };
+        let endpoint_names = endpoints.iter().collect::<BTreeSet<_>>();
+        for variant in variants {
+            if !endpoint_names.contains(variant.name()) {
+                return Err(Error::UnmatchedRouteBodyVariant {
+                    root: root.clone(),
+                    variant: variant.name().clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn endpoint_body(
+        &self,
+        root: &Name,
+        endpoint: &Name,
+        imports: &ResolvedImports,
+    ) -> Result<RouteBody> {
+        let declaration = self
+            .declaration_body(root)
+            .ok_or_else(|| Error::MissingRouteBody {
+                root: root.clone(),
+                endpoint: endpoint.clone(),
+            })?;
+        let DeclarationBody::Enum { variants } = declaration else {
+            return Err(Error::MissingRouteBody {
+                root: root.clone(),
+                endpoint: endpoint.clone(),
+            });
+        };
+        let variant = variants
+            .iter()
+            .find(|variant| variant.name() == endpoint)
+            .ok_or_else(|| Error::MissingRouteBody {
+                root: root.clone(),
+                endpoint: endpoint.clone(),
+            })?;
+
+        match variant.payload() {
+            Payload::Unit => Ok(RouteBody::Unit),
+            Payload::Type(TypeExpression::Named(name)) => {
+                self.validate_named_body(name, imports)?;
+                Ok(RouteBody::Type(name.clone()))
+            }
+            Payload::Type(_) | Payload::Fields(_) => Err(Error::InvalidRouteBody {
+                root: root.clone(),
+                endpoint: endpoint.clone(),
+                reason: "endpoint routes must resolve to a named body type or unit".into(),
+            }),
+        }
+    }
+
+    fn validate_named_body(&self, name: &Name, imports: &ResolvedImports) -> Result<()> {
+        if self.namespace.body(name).is_some() || imports.names.contains_key(name) {
+            Ok(())
+        } else {
+            Err(Error::UnknownType { name: name.clone() })
+        }
+    }
+
+    fn resolve_selected_imports(&self) -> Result<ResolvedImports> {
+        let mut names = BTreeMap::new();
+        let mut bindings = Vec::new();
+        let mut has_unresolved_import_all = false;
+
+        for (binding, directive) in self.imports.entries() {
+            match directive {
+                ImportDirective::Import {
+                    path,
+                    names: selected,
+                } => {
+                    record_import_names(&mut names, binding, selected)?;
+                    bindings.push(ImportBinding::new(
+                        binding.clone(),
+                        path.clone(),
+                        ImportedNames::Selected(selected.clone()),
+                    ));
+                }
+                ImportDirective::ImportAll { path } => {
+                    has_unresolved_import_all = true;
+                    bindings.push(ImportBinding::new(
+                        binding.clone(),
+                        path.clone(),
+                        ImportedNames::All(Vec::new()),
+                    ));
+                }
+            }
+        }
+
+        Ok(ResolvedImports {
+            bindings,
+            names,
+            has_unresolved_import_all,
+        })
+    }
+
+    fn resolve_imports(&self, resolutions: &[ImportResolution]) -> Result<ResolvedImports> {
+        let mut resolution_map = BTreeMap::new();
+        for resolution in resolutions {
+            if self.imports.directive(resolution.binding()).is_none() {
+                return Err(Error::UnknownImportResolution {
+                    binding: resolution.binding().clone(),
+                });
+            }
+            resolution_map.insert(resolution.binding().clone(), resolution.names().to_vec());
+        }
+
+        let mut names = BTreeMap::new();
+        let mut bindings = Vec::new();
+
+        for (binding, directive) in self.imports.entries() {
+            match directive {
+                ImportDirective::Import {
+                    path,
+                    names: selected,
+                } => {
+                    record_import_names(&mut names, binding, selected)?;
+                    bindings.push(ImportBinding::new(
+                        binding.clone(),
+                        path.clone(),
+                        ImportedNames::Selected(selected.clone()),
+                    ));
+                }
+                ImportDirective::ImportAll { path } => {
+                    let resolved = resolution_map.get(binding).ok_or_else(|| {
+                        Error::MissingImportResolution {
+                            binding: binding.clone(),
+                        }
+                    })?;
+                    record_import_names(&mut names, binding, resolved)?;
+                    bindings.push(ImportBinding::new(
+                        binding.clone(),
+                        path.clone(),
+                        ImportedNames::All(resolved.clone()),
+                    ));
+                }
+            }
+        }
+
+        Ok(ResolvedImports {
+            bindings,
+            names,
+            has_unresolved_import_all: false,
+        })
+    }
+}
+
+struct ResolvedImports {
+    bindings: Vec<ImportBinding>,
+    names: BTreeMap<Name, Name>,
+    has_unresolved_import_all: bool,
+}
+
+fn record_import_names(
+    imports: &mut BTreeMap<Name, Name>,
+    binding: &Name,
+    names: &[Name],
+) -> Result<()> {
+    let mut local_names = BTreeSet::new();
+    for name in names {
+        if !local_names.insert(name) {
+            return Err(Error::DuplicateResolvedImportName {
+                binding: binding.clone(),
+                name: name.clone(),
+            });
+        }
+        if let Some(first_binding) = imports.insert(name.clone(), binding.clone()) {
+            return Err(Error::DuplicateImportedName {
+                name: name.clone(),
+                first_binding,
+                second_binding: binding.clone(),
+            });
+        }
+    }
+    Ok(())
 }

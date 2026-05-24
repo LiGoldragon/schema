@@ -19,6 +19,13 @@ impl TypeExpression {
     pub fn optional(inner: TypeExpression) -> Self {
         Self::Container(Container::Optional(Box::new(inner)))
     }
+
+    pub fn map(key: TypeExpression, value: TypeExpression) -> Self {
+        Self::Container(Container::Map {
+            key: Box::new(key),
+            value: Box::new(value),
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -44,4 +51,8 @@ impl Primitive {
 pub enum Container {
     Vector(Box<TypeExpression>),
     Optional(Box<TypeExpression>),
+    Map {
+        key: Box<TypeExpression>,
+        value: Box<TypeExpression>,
+    },
 }

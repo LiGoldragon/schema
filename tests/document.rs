@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
-    Declaration, DeclarationBody, Engine, Error, FieldLocation, Layout, Name, Namespace, Payload,
-    Primitive, Reference, Section, TypeExpression, Variant,
+    Declaration, Engine, Error, Feature, Header, HeaderRoot, ImportDirective, ImportResolution,
+    Imports, Layout, Leg, Name, Namespace, Payload, Primitive, Projection, RouteBody, Schema,
+    SchemaPath, StandardProjection, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
 };
 
 fn name(value: &str) -> Name {
@@ -14,36 +15,72 @@ fn named(value: &str) -> TypeExpression {
     TypeExpression::named(name(value))
 }
 
+fn string() -> TypeExpression {
+    TypeExpression::Primitive(Primitive::String)
+}
+
 #[test]
-fn validates_spirit_style_subset() {
-    let document = DocumentBuilder::spirit_subset().build().unwrap();
-    let record = document
-        .variant(&name("Operation"), &name("Record"))
+fn validates_spirit_mvp_uniform_header_and_lowers_routes() {
+    let schema = Builder::spirit_mvp(Vec::new()).build().unwrap();
+    let assembled = schema
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
         .unwrap();
 
+    assert_eq!(assembled.routes().len(), 2);
+
+    let state = &assembled.routes()[0];
+    assert_eq!(state.leg(), Leg::Ordinary);
+    assert_eq!(state.root_slot(), 0);
+    assert_eq!(state.root().as_str(), "State");
+    assert_eq!(state.endpoint().slot(), 0);
+    assert_eq!(state.endpoint().name().as_str(), "Statement");
+    assert_eq!(state.body(), &RouteBody::Type(name("Statement")));
+
+    let record = schema.variant(&name("Record"), &name("Entry")).unwrap();
     assert_eq!(record.engine(), Some(Engine::Assert));
     assert_eq!(record.payload(), &Payload::Type(named("Entry")));
 }
 
 #[test]
 fn rejects_duplicate_declaration_names() {
-    let result = schema::Document::new(vec![
-        Section::Messaging(vec![Declaration::local(
-            name("Kind"),
-            vec![Variant::unit(name("Decision"))],
-        )]),
-        Section::Namespace(
-            Namespace::local(vec![(name("Kind"), vec![Variant::unit(name("Principle"))])]).unwrap(),
-        ),
+    let result = Namespace::declarations(vec![
+        Declaration::enumeration(name("Kind"), vec![Variant::unit(name("Decision"))]),
+        Declaration::newtype(name("Kind"), string()),
     ]);
 
     assert!(matches!(result, Err(Error::DuplicateDeclaration { name }) if name.as_str() == "Kind"));
 }
 
 #[test]
+fn route_root_body_declaration_reserves_namespace_key() {
+    let result = Namespace::declarations(vec![
+        Declaration::record(name("State"), vec![named("Presence")]),
+        Declaration::enumeration(
+            name("State"),
+            vec![Variant::with_type(name("Statement"), named("Statement"))],
+        ),
+    ]);
+
+    assert!(
+        matches!(result, Err(Error::DuplicateDeclaration { name }) if name.as_str() == "State")
+    );
+}
+
+#[test]
+fn rejects_empty_header_root() {
+    let result = HeaderRoot::new(name("State"), Vec::new());
+
+    assert!(matches!(result, Err(Error::EmptyHeaderRoot { name }) if name.as_str() == "State"));
+}
+
+#[test]
 fn rejects_duplicate_variant_names() {
-    let result = schema::Document::new(vec![Section::Namespace(
-        Namespace::local(vec![(
+    let result = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::enumeration(
             name("Kind"),
             vec![
                 Variant::unit(name("Decision")),
@@ -51,7 +88,8 @@ fn rejects_duplicate_variant_names() {
             ],
         )])
         .unwrap(),
-    )]);
+        Vec::new(),
+    );
 
     assert!(
         matches!(result, Err(Error::DuplicateVariant { declaration, variant })
@@ -60,161 +98,332 @@ fn rejects_duplicate_variant_names() {
 }
 
 #[test]
+fn rejects_unmatched_route_body_variant() {
+    let schema = Schema::new(
+        Imports::empty(),
+        Header::new(vec![
+            HeaderRoot::new(name("Watch"), vec![name("Records")]).unwrap(),
+        ])
+        .unwrap(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![
+            Declaration::enumeration(
+                name("Watch"),
+                vec![
+                    Variant::with_type(name("Records"), named("RecordSubscription")),
+                    Variant::with_type(name("Questions"), named("QuestionSubscription")),
+                ],
+            ),
+            Declaration::newtype(name("RecordSubscription"), string()),
+            Declaration::newtype(name("QuestionSubscription"), string()),
+        ])
+        .unwrap(),
+        Vec::new(),
+    )
+    .unwrap();
+
+    let result = schema.assemble(&[]);
+
+    assert!(
+        matches!(result, Err(Error::UnmatchedRouteBodyVariant { root, variant })
+            if root.as_str() == "Watch" && variant.as_str() == "Questions")
+    );
+}
+
+#[test]
 fn rejects_unknown_named_type() {
-    let result = schema::Document::new(vec![Section::Namespace(
-        Namespace::local(vec![(
+    let result = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::record(
             name("Entry"),
-            vec![Variant::with_fields(name("Entry"), vec![named("Topic")])],
+            vec![named("Topic")],
         )])
         .unwrap(),
-    )]);
+        Vec::new(),
+    );
 
     assert!(matches!(result, Err(Error::UnknownType { name }) if name.as_str() == "Topic"));
 }
 
 #[test]
-fn layout_places_fixed_fields_in_root_and_growing_fields_in_boxes() {
-    let document = DocumentBuilder::spirit_subset().build().unwrap();
-    let layout = Layout::for_variant(&document, &name("Entry"), &name("Entry")).unwrap();
+fn rejects_unknown_reply_feature_type() {
+    let result = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(Vec::new()).unwrap(),
+        vec![Feature::Reply(vec![name("RecordAccepted")])],
+    );
 
-    assert_eq!(layout.root_positions(), vec![1, 4]);
-    assert_eq!(layout.box_positions(), vec![0, 2, 3, 5]);
-    assert_eq!(layout.fields()[0].location(), FieldLocation::Box);
-    assert_eq!(layout.fields()[1].location(), FieldLocation::Root);
+    assert!(
+        matches!(result, Err(Error::UnknownType { name }) if name.as_str() == "RecordAccepted")
+    );
 }
 
 #[test]
-fn cross_schema_references_validate_but_layout_is_conservative() {
-    let document = schema::Document::new(vec![Section::Namespace(
-        Namespace::new(vec![
-            (
-                name("Magnitude"),
-                DeclarationBody::Reference(Reference::Path(
-                    "signal-sema/magnitude.schema.nota".into(),
-                )),
+fn layout_places_fixed_fields_in_root_and_growing_fields_in_boxes() {
+    let schema = Builder::spirit_mvp(Vec::new()).build().unwrap();
+    let layout = Layout::for_declaration(&schema, &name("Entry")).unwrap();
+
+    assert_eq!(layout.root_positions(), vec![1]);
+    assert_eq!(layout.box_positions(), vec![0, 2, 3, 4, 5]);
+}
+
+#[test]
+fn import_all_requires_resolution_before_assembly() {
+    let schema = Builder::spirit_mvp(Vec::new()).build().unwrap();
+
+    let result = schema.assemble(&[]);
+    assert!(
+        matches!(result, Err(Error::MissingImportResolution { binding }) if binding.as_str() == "Magnitude")
+    );
+}
+
+#[test]
+fn selected_import_collisions_are_loud() {
+    let imports = Imports::new(vec![
+        (
+            name("SemaA"),
+            ImportDirective::import(
+                SchemaPath::new("../signal-sema/operation.schema"),
+                vec![name("SemaOperation")],
             ),
-            (
-                name("Entry"),
-                DeclarationBody::Local {
-                    variants: vec![Variant::with_fields(
-                        name("Entry"),
-                        vec![named("Magnitude")],
-                    )],
-                },
+        ),
+        (
+            name("SemaB"),
+            ImportDirective::import(
+                SchemaPath::new("../other/operation.schema"),
+                vec![name("SemaOperation")],
             ),
-        ])
-        .unwrap(),
+        ),
+    ])
+    .unwrap();
+
+    let result = Schema::new(
+        imports,
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(Vec::new()).unwrap(),
+        Vec::new(),
+    );
+
+    assert!(
+        matches!(result, Err(Error::DuplicateImportedName { name, first_binding, second_binding })
+            if name.as_str() == "SemaOperation"
+                && first_binding.as_str() == "SemaA"
+                && second_binding.as_str() == "SemaB")
+    );
+}
+
+#[test]
+fn import_local_collisions_are_loud() {
+    let imports = Imports::new(vec![(
+        name("SemaSet"),
+        ImportDirective::import(
+            SchemaPath::new("../signal-sema/operation.schema"),
+            vec![name("SemaOperation")],
+        ),
     )])
     .unwrap();
 
-    let layout = Layout::for_variant(&document, &name("Entry"), &name("Entry")).unwrap();
-    assert_eq!(layout.box_positions(), vec![0]);
+    let result = Schema::new(
+        imports,
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::enumeration(
+            name("SemaOperation"),
+            Vec::new(),
+        )])
+        .unwrap(),
+        Vec::new(),
+    );
+
+    assert!(
+        matches!(result, Err(Error::ImportCollisionWithLocal { name, binding })
+            if name.as_str() == "SemaOperation" && binding.as_str() == "SemaSet")
+    );
+}
+
+#[test]
+fn additive_enum_variant_gets_standard_upgrade_projection() {
+    let previous = Builder::spirit_mvp(Vec::new())
+        .with_kind_variants(vec!["Decision", "Principle"])
+        .build()
+        .unwrap()
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+        .unwrap();
+    let current = Builder::spirit_mvp(Vec::new())
+        .with_kind_variants(vec!["Decision", "Principle", "Correction"])
+        .build()
+        .unwrap()
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+        .unwrap();
+
+    let plan = current.plan_upgrade_from(&previous).unwrap();
+
+    assert!(plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Standard {
+            name,
+            kind: StandardProjection::AdditiveEnumVariant
+        } if name.as_str() == "Kind"
+    )));
+}
+
+#[test]
+fn changed_record_requires_upgrade_annotation() {
+    let previous = Builder::spirit_mvp(Vec::new())
+        .build()
+        .unwrap()
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+        .unwrap();
+    let current = Builder::spirit_mvp(Vec::new())
+        .with_entry_extra_field(named("Source"))
+        .build()
+        .unwrap()
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+        .unwrap();
+
+    let result = current.plan_upgrade_from(&previous);
+
+    assert!(
+        matches!(result, Err(Error::MissingUpgradeAnnotation { name }) if name.as_str() == "Entry")
+    );
+}
+
+#[test]
+fn migrate_annotation_allows_changed_record_projection() {
+    let previous = Builder::spirit_mvp(Vec::new())
+        .build()
+        .unwrap()
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+        .unwrap();
+    let current = Builder::spirit_mvp(vec![Feature::Upgrade(Upgrade::new(
+        Version::new("v0.1.1"),
+        vec![UpgradeAnnotation::Migrate(name("Entry"))],
+    ))])
+    .with_entry_extra_field(named("Source"))
+    .build()
+    .unwrap()
+    .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+    .unwrap();
+
+    let plan = current.plan_upgrade_from(&previous).unwrap();
+
+    assert!(plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Annotated { name, annotation: UpgradeAnnotation::Migrate(migrated) }
+            if name.as_str() == "Entry" && migrated.as_str() == "Entry"
+    )));
 }
 
 #[test]
 fn nota_curly_map_is_usable_for_schema_namespace_names() {
-    let mut decoder = Decoder::new("{Entry 1 Operation 2}");
+    let mut decoder = Decoder::new("{Entry 1 Record 2}");
     let decoded = BTreeMap::<Name, u64>::decode(&mut decoder).unwrap();
 
     assert_eq!(decoded.get(&name("Entry")), Some(&1));
-    assert_eq!(decoded.get(&name("Operation")), Some(&2));
+    assert_eq!(decoded.get(&name("Record")), Some(&2));
 
     let mut encoder = Encoder::new();
     decoded.encode(&mut encoder).unwrap();
-    assert_eq!(encoder.into_string(), "{Entry 1 Operation 2}");
+    assert_eq!(encoder.into_string(), "{Entry 1 Record 2}");
 }
 
-struct DocumentBuilder {
-    messaging: Vec<Declaration>,
-    namespace: Namespace,
+struct Builder {
+    features: Vec<Feature>,
+    kind_variants: Vec<&'static str>,
+    entry_extra_field: Option<TypeExpression>,
 }
 
-impl DocumentBuilder {
-    fn spirit_subset() -> Self {
+impl Builder {
+    fn spirit_mvp(features: Vec<Feature>) -> Self {
         Self {
-            messaging: vec![Declaration::local(
-                name("Operation"),
-                vec![
-                    Variant::with_type(name("State"), named("Statement"))
-                        .with_engine(Engine::Assert),
-                    Variant::with_type(name("Record"), named("Entry")).with_engine(Engine::Assert),
-                ],
-            )],
-            namespace: Namespace::local(vec![
-                (
-                    name("Kind"),
-                    vec![
-                        Variant::unit(name("Decision")),
-                        Variant::unit(name("Principle")),
-                        Variant::unit(name("Correction")),
-                    ],
-                ),
-                (
-                    name("Magnitude"),
-                    vec![
-                        Variant::unit(name("Minimum")),
-                        Variant::unit(name("Medium")),
-                        Variant::unit(name("Maximum")),
-                    ],
-                ),
-                (
-                    name("Topic"),
-                    vec![Variant::with_type(
-                        name("Topic"),
-                        TypeExpression::Primitive(Primitive::String),
-                    )],
-                ),
-                (
-                    name("Summary"),
-                    vec![Variant::with_type(
-                        name("Summary"),
-                        TypeExpression::Primitive(Primitive::String),
-                    )],
-                ),
-                (
-                    name("Context"),
-                    vec![Variant::with_type(
-                        name("Context"),
-                        TypeExpression::Primitive(Primitive::String),
-                    )],
-                ),
-                (
-                    name("Quote"),
-                    vec![Variant::with_type(
-                        name("Quote"),
-                        TypeExpression::Primitive(Primitive::String),
-                    )],
-                ),
-                (
-                    name("Entry"),
-                    vec![Variant::with_fields(
-                        name("Entry"),
-                        vec![
-                            named("Topic"),
-                            named("Kind"),
-                            named("Summary"),
-                            named("Context"),
-                            named("Magnitude"),
-                            named("Quote"),
-                        ],
-                    )],
-                ),
-                (
-                    name("Statement"),
-                    vec![Variant::with_type(
-                        name("Statement"),
-                        TypeExpression::Primitive(Primitive::String),
-                    )],
-                ),
-            ])
-            .unwrap(),
+            features,
+            kind_variants: vec!["Decision", "Principle", "Correction"],
+            entry_extra_field: None,
         }
     }
 
-    fn build(self) -> schema::Result<schema::Document> {
-        schema::Document::new(vec![
-            Section::Messaging(self.messaging),
-            Section::Namespace(self.namespace),
-        ])
+    fn with_kind_variants(mut self, variants: Vec<&'static str>) -> Self {
+        self.kind_variants = variants;
+        self
+    }
+
+    fn with_entry_extra_field(mut self, field: TypeExpression) -> Self {
+        self.entry_extra_field = Some(field);
+        self
+    }
+
+    fn build(self) -> schema::Result<Schema> {
+        Schema::new(
+            Imports::new(vec![(
+                name("Magnitude"),
+                ImportDirective::import_all(SchemaPath::new("../signal-sema/magnitude.schema")),
+            )])?,
+            Header::new(vec![
+                HeaderRoot::new(name("State"), vec![name("Statement")])?,
+                HeaderRoot::new(name("Record"), vec![name("Entry")])?,
+            ])?,
+            Header::empty(),
+            Header::empty(),
+            Namespace::declarations(self.declarations())?,
+            self.features,
+        )
+    }
+
+    fn declarations(&self) -> Vec<Declaration> {
+        let mut entry_fields = vec![
+            named("Topic"),
+            named("Kind"),
+            named("Summary"),
+            named("Context"),
+            named("Magnitude"),
+            named("Quote"),
+        ];
+        if let Some(field) = &self.entry_extra_field {
+            entry_fields.push(field.clone());
+        }
+
+        let mut declarations = vec![
+            Declaration::enumeration(
+                name("State"),
+                vec![
+                    Variant::with_type(name("Statement"), named("Statement"))
+                        .with_engine(Engine::Assert),
+                ],
+            ),
+            Declaration::enumeration(
+                name("Record"),
+                vec![Variant::with_type(name("Entry"), named("Entry")).with_engine(Engine::Assert)],
+            ),
+            Declaration::enumeration(
+                name("Kind"),
+                self.kind_variants
+                    .iter()
+                    .map(|variant| Variant::unit(name(variant)))
+                    .collect(),
+            ),
+            Declaration::newtype(name("Topic"), string()),
+            Declaration::newtype(name("Summary"), string()),
+            Declaration::newtype(name("Context"), string()),
+            Declaration::newtype(name("Quote"), string()),
+            Declaration::newtype(name("StatementText"), string()),
+            Declaration::record(name("Entry"), entry_fields),
+            Declaration::newtype(name("Statement"), named("StatementText")),
+        ];
+
+        if self.entry_extra_field.is_some() {
+            declarations.push(Declaration::newtype(name("Source"), string()));
+        }
+
+        declarations
     }
 }

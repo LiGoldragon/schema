@@ -7,17 +7,31 @@ pub struct Declaration {
 }
 
 impl Declaration {
-    pub fn local(name: Name, variants: Vec<Variant>) -> Self {
+    pub fn enumeration(name: Name, variants: Vec<Variant>) -> Self {
         Self {
             name,
-            body: DeclarationBody::Local { variants },
+            body: DeclarationBody::Enum { variants },
         }
     }
 
-    pub fn reference(name: Name, reference: Reference) -> Self {
+    pub fn newtype(name: Name, expression: TypeExpression) -> Self {
         Self {
             name,
-            body: DeclarationBody::Reference(reference),
+            body: DeclarationBody::Newtype(expression),
+        }
+    }
+
+    pub fn record(name: Name, fields: Vec<TypeExpression>) -> Self {
+        Self {
+            name,
+            body: DeclarationBody::Record(fields),
+        }
+    }
+
+    pub fn alias(name: Name, expression: TypeExpression) -> Self {
+        Self {
+            name,
+            body: DeclarationBody::Alias(expression),
         }
     }
 
@@ -32,8 +46,10 @@ impl Declaration {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeclarationBody {
-    Local { variants: Vec<Variant> },
-    Reference(Reference),
+    Enum { variants: Vec<Variant> },
+    Newtype(TypeExpression),
+    Record(Vec<TypeExpression>),
+    Alias(TypeExpression),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,10 +117,4 @@ pub enum Engine {
     Match,
     Subscribe,
     Validate,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Reference {
-    Path(String),
-    Symbolic { crate_name: String, name: Name },
 }
