@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
-    AssembledSchema, AssembledType, Container, DeclarationBody, Endpoint, Error, Feature, Header,
-    ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, Leg, Name, Namespace,
-    Payload, Result, Route, RouteBody, TypeExpression, UpgradeAnnotation,
+    AssembledSchema, BuiltinMacroVariant, Container, DeclarationBody, Error, Feature, FeatureInput,
+    Header, HeaderEndpointInput, HeaderInput, ImportBinding, ImportDirective, ImportInput,
+    ImportResolution, ImportedNames, Imports, Leg, LoweringContext, Name, Namespace, Payload,
+    Result, RouteBody, TypeExpression, TypeInput, UpgradeAnnotation,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,25 +93,51 @@ impl Schema {
         let import_index = self.resolve_imports(resolutions)?;
         self.validate_with_imports(&import_index)?;
 
-        let mut routes = Vec::new();
-        routes.extend(self.lower_header(Leg::Ordinary, &self.ordinary_header, &import_index)?);
-        routes.extend(self.lower_header(Leg::Owner, &self.owner_header, &import_index)?);
-        routes.extend(self.lower_header(Leg::Sema, &self.sema_header, &import_index)?);
+        let mut context = LoweringContext::new();
 
-        let mut types = Vec::new();
+        for binding in import_index.bindings {
+            context.apply(BuiltinMacroVariant::Import(ImportInput::new(binding)))?;
+        }
+
+        self.lower_header(
+            &mut context,
+            Leg::Ordinary,
+            &self.ordinary_header,
+            &import_index.names,
+        )?;
+        self.lower_header(
+            &mut context,
+            Leg::Owner,
+            &self.owner_header,
+            &import_index.names,
+        )?;
+        self.lower_header(
+            &mut context,
+            Leg::Sema,
+            &self.sema_header,
+            &import_index.names,
+        )?;
+
         for (name, body) in self.namespace.entries() {
-            types.push(AssembledType::local(name.clone(), body.clone()));
+            context.apply(BuiltinMacroVariant::Type(TypeInput::local(
+                name.clone(),
+                body.clone(),
+            )))?;
         }
         for (name, binding) in &import_index.names {
-            types.push(AssembledType::imported(name.clone(), binding.clone()));
+            context.apply(BuiltinMacroVariant::Type(TypeInput::imported(
+                name.clone(),
+                binding.clone(),
+            )))?;
         }
 
-        Ok(AssembledSchema::new(
-            import_index.bindings,
-            routes,
-            types,
-            self.features.clone(),
-        ))
+        for feature in &self.features {
+            context.apply(BuiltinMacroVariant::Feature(FeatureInput::new(
+                feature.clone(),
+            )))?;
+        }
+
+        Ok(context.finish())
     }
 
     fn validate_authored(&self) -> Result<()> {
@@ -247,24 +274,31 @@ impl Schema {
 
     fn lower_header(
         &self,
+        context: &mut LoweringContext,
         leg: Leg,
         header: &Header,
-        imports: &ResolvedImports,
-    ) -> Result<Vec<Route>> {
-        let mut routes = Vec::new();
+        imports: &BTreeMap<Name, Name>,
+    ) -> Result<()> {
         for (root_slot, root) in header.roots().iter().enumerate() {
             self.validate_route_body_variants(root.name(), root.endpoints())?;
+            let mut endpoints = Vec::new();
             for (endpoint_slot, endpoint) in root.endpoints().iter().enumerate() {
-                routes.push(Route::new(
-                    leg,
-                    root_slot,
-                    root.name().clone(),
-                    Endpoint::new(endpoint_slot, endpoint.clone()),
-                    self.endpoint_body(root.name(), endpoint, imports)?,
+                let (body, engine) = self.endpoint_body(root.name(), endpoint, imports)?;
+                endpoints.push(HeaderEndpointInput::new(
+                    endpoint_slot,
+                    endpoint.clone(),
+                    body,
+                    engine,
                 ));
             }
+            context.apply(BuiltinMacroVariant::Header(HeaderInput::new(
+                leg,
+                root_slot,
+                root.name().clone(),
+                endpoints,
+            )))?;
         }
-        Ok(routes)
+        Ok(())
     }
 
     fn validate_route_body_variants(&self, root: &Name, endpoints: &[Name]) -> Result<()> {
@@ -287,8 +321,8 @@ impl Schema {
         &self,
         root: &Name,
         endpoint: &Name,
-        imports: &ResolvedImports,
-    ) -> Result<RouteBody> {
+        imports: &BTreeMap<Name, Name>,
+    ) -> Result<(RouteBody, Option<crate::Engine>)> {
         let declaration = self
             .declaration_body(root)
             .ok_or_else(|| Error::MissingRouteBody {
@@ -310,10 +344,10 @@ impl Schema {
             })?;
 
         match variant.payload() {
-            Payload::Unit => Ok(RouteBody::Unit),
+            Payload::Unit => Ok((RouteBody::Unit, variant.engine())),
             Payload::Type(TypeExpression::Named(name)) => {
-                self.validate_named_body(name, imports)?;
-                Ok(RouteBody::Type(name.clone()))
+                self.validate_named_body_in_names(name, imports)?;
+                Ok((RouteBody::Type(name.clone()), variant.engine()))
             }
             Payload::Type(_) | Payload::Fields(_) => Err(Error::InvalidRouteBody {
                 root: root.clone(),
@@ -325,6 +359,18 @@ impl Schema {
 
     fn validate_named_body(&self, name: &Name, imports: &ResolvedImports) -> Result<()> {
         if self.namespace.body(name).is_some() || imports.names.contains_key(name) {
+            Ok(())
+        } else {
+            Err(Error::UnknownType { name: name.clone() })
+        }
+    }
+
+    fn validate_named_body_in_names(
+        &self,
+        name: &Name,
+        imports: &BTreeMap<Name, Name>,
+    ) -> Result<()> {
+        if self.namespace.body(name).is_some() || imports.contains_key(name) {
             Ok(())
         } else {
             Err(Error::UnknownType { name: name.clone() })

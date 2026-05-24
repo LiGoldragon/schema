@@ -51,9 +51,16 @@ fn reads_schema_file_with_local_imports_and_lowers_routes() {
     assert_eq!(declaration.leg(), Leg::Ordinary);
     assert_eq!(declaration.root_slot(), 0);
     assert_eq!(declaration.endpoint().slot(), 1);
+    assert_eq!(declaration.short_header().unwrap(), 256);
     assert_eq!(
         declaration.body(),
         &RouteBody::Type(schema_name("Declaration"))
+    );
+    assert_eq!(
+        assembled
+            .route_for_short_header(Leg::Ordinary, declaration.short_header().unwrap())
+            .unwrap(),
+        declaration
     );
 
     let observe_records = assembled

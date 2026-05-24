@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    DeclarationBody, Error, Feature, ImportBinding, Name, Projection, Result, StandardProjection,
-    UpgradeAnnotation, UpgradePlan,
+    DeclarationBody, Engine, Error, Feature, ImportBinding, Name, Projection, Result,
+    StandardProjection, UpgradeAnnotation, UpgradePlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +37,15 @@ impl AssembledSchema {
 
     pub fn routes(&self) -> &[Route] {
         &self.routes
+    }
+
+    pub fn route_for_short_header(&self, leg: Leg, short_header: u64) -> Option<&Route> {
+        let bytes = short_header.to_le_bytes();
+        let root_slot = usize::from(bytes[0]);
+        let endpoint_slot = usize::from(bytes[1]);
+        self.routes.iter().find(|route| {
+            route.leg == leg && route.root_slot == root_slot && route.endpoint.slot == endpoint_slot
+        })
     }
 
     pub fn types(&self) -> impl Iterator<Item = &AssembledType> {
@@ -171,6 +180,7 @@ pub struct Route {
     root: Name,
     endpoint: Endpoint,
     body: RouteBody,
+    engine: Option<Engine>,
 }
 
 impl Route {
@@ -181,12 +191,24 @@ impl Route {
         endpoint: Endpoint,
         body: RouteBody,
     ) -> Self {
+        Self::with_engine(leg, root_slot, root, endpoint, body, None)
+    }
+
+    pub fn with_engine(
+        leg: Leg,
+        root_slot: usize,
+        root: Name,
+        endpoint: Endpoint,
+        body: RouteBody,
+        engine: Option<Engine>,
+    ) -> Self {
         Self {
             leg,
             root_slot,
             root,
             endpoint,
             body,
+            engine,
         }
     }
 
@@ -208,6 +230,25 @@ impl Route {
 
     pub fn body(&self) -> &RouteBody {
         &self.body
+    }
+
+    pub fn engine(&self) -> Option<Engine> {
+        self.engine
+    }
+
+    pub fn short_header(&self) -> Result<u64> {
+        let root = u8::try_from(self.root_slot).map_err(|_| Error::ShortHeaderSlotOverflow {
+            root: self.root.clone(),
+            endpoint: None,
+            slot: self.root_slot,
+        })?;
+        let endpoint =
+            u8::try_from(self.endpoint.slot).map_err(|_| Error::ShortHeaderSlotOverflow {
+                root: self.root.clone(),
+                endpoint: Some(self.endpoint.name.clone()),
+                slot: self.endpoint.slot,
+            })?;
+        Ok(u64::from_le_bytes([root, endpoint, 0, 0, 0, 0, 0, 0]))
     }
 }
 

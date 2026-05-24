@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
-    Declaration, Engine, Error, Feature, Header, HeaderRoot, ImportDirective, ImportResolution,
-    Imports, Layout, Leg, Name, Namespace, Payload, Primitive, Projection, RouteBody, Schema,
-    SchemaPath, StandardProjection, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    BuiltinMacroVariant, Declaration, DeclarationBody, Engine, Error, Feature, Header,
+    HeaderEndpointInput, HeaderInput, HeaderRoot, ImportDirective, ImportResolution, Imports,
+    Layout, Leg, LoweringContext, Name, Namespace, Payload, Primitive, Projection, RouteBody,
+    Schema, SchemaPath, StandardProjection, TypeExpression, TypeInput, Upgrade, UpgradeAnnotation,
+    Variant, Version,
 };
 
 fn name(value: &str) -> Name {
@@ -35,10 +37,57 @@ fn validates_spirit_mvp_uniform_header_and_lowers_routes() {
     assert_eq!(state.endpoint().slot(), 0);
     assert_eq!(state.endpoint().name().as_str(), "Statement");
     assert_eq!(state.body(), &RouteBody::Type(name("Statement")));
+    assert_eq!(state.engine(), Some(Engine::Assert));
+    assert_eq!(state.short_header().unwrap(), 0);
 
     let record = schema.variant(&name("Record"), &name("Entry")).unwrap();
     assert_eq!(record.engine(), Some(Engine::Assert));
     assert_eq!(record.payload(), &Payload::Type(named("Entry")));
+
+    let record_route = &assembled.routes()[1];
+    assert_eq!(record_route.engine(), Some(Engine::Assert));
+    assert_eq!(record_route.short_header().unwrap(), 1);
+    assert_eq!(
+        assembled.route_for_short_header(Leg::Ordinary, 1).unwrap(),
+        record_route
+    );
+}
+
+#[test]
+fn builtin_macro_variants_lower_into_assembled_schema_fragments() {
+    let mut context = LoweringContext::new();
+
+    context
+        .apply(BuiltinMacroVariant::Type(TypeInput::local(
+            name("Entry"),
+            DeclarationBody::Record(vec![named("Topic"), named("Kind")]),
+        )))
+        .unwrap();
+    context
+        .apply(BuiltinMacroVariant::Header(HeaderInput::new(
+            Leg::Ordinary,
+            0,
+            name("Record"),
+            vec![HeaderEndpointInput::new(
+                2,
+                name("Entry"),
+                RouteBody::Type(name("Entry")),
+                Some(Engine::Assert),
+            )],
+        )))
+        .unwrap();
+
+    let assembled = context.finish();
+    let route = assembled.routes().first().unwrap();
+
+    assert_eq!(route.root().as_str(), "Record");
+    assert_eq!(route.endpoint().name().as_str(), "Entry");
+    assert_eq!(route.engine(), Some(Engine::Assert));
+    assert_eq!(route.short_header().unwrap(), 512);
+    assert_eq!(
+        assembled.route_for_short_header(Leg::Ordinary, 512),
+        Some(route)
+    );
 }
 
 #[test]

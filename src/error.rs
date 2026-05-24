@@ -87,6 +87,11 @@ pub enum Error {
         endpoint: Name,
         reason: String,
     },
+    ShortHeaderSlotOverflow {
+        root: Name,
+        endpoint: Option<Name>,
+        slot: usize,
+    },
     MissingUpgradeAnnotation {
         name: Name,
     },
@@ -218,6 +223,24 @@ impl fmt::Display for Error {
                     "invalid route body for `{root}.{endpoint}`: {reason}"
                 )
             }
+            Self::ShortHeaderSlotOverflow {
+                root,
+                endpoint,
+                slot,
+            } => match endpoint {
+                Some(endpoint) => {
+                    write!(
+                        formatter,
+                        "route `{root}.{endpoint}` slot {slot} does not fit in one short-header byte"
+                    )
+                }
+                None => {
+                    write!(
+                        formatter,
+                        "route root `{root}` slot {slot} does not fit in one short-header byte"
+                    )
+                }
+            },
             Self::MissingUpgradeAnnotation { name } => {
                 write!(
                     formatter,

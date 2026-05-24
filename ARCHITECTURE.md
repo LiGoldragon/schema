@@ -43,16 +43,26 @@ the same namespace.
 `Schema::assemble` resolves imports and lowers the authored schema into
 `AssembledSchema`.
 
+Lowering runs through the builtin schema engine. Each authored node is
+translated into a data-carrying `BuiltinMacroVariant` at a
+`NodeDefinitionPoint`: import map values become `ImportInput`, header roots
+become `HeaderInput`, namespace values become `TypeInput`, and feature vector
+items become `FeatureInput`. The input struct is the macro variant's payload;
+the lowerer emits assembled fragments into a `LoweringContext`.
+
 `AssembledSchema` currently contains:
 
 - import bindings with resolved imported names;
 - explicit routes with leg, root slot, root name, endpoint slot, endpoint
-  name, and body;
+  name, body, and optional Sema engine class;
 - local and imported type entries;
 - feature metadata copied from the authored schema.
 
-The route table is the object future short-header generation consumes. The
-parser does not emit dispatch tables directly from raw authored text.
+The route table is the object short-header generation consumes. A route can
+project itself into the MVP 64-bit short header (`byte 0 = root slot`, `byte 1
+= endpoint slot`) and `AssembledSchema` can resolve a route back from that
+header plus leg. The parser does not emit dispatch tables directly from raw
+authored text.
 
 ## File Reader
 
@@ -113,6 +123,7 @@ src/
 ├── assembled.rs    # AssembledSchema, routes, assembled types
 ├── declaration.rs  # declarations, variants, payloads
 ├── document.rs     # Schema + validation + lowering
+├── engine.rs       # builtin macro variants + lowering context
 ├── error.rs        # typed error enum
 ├── expression.rs   # primitive/container/named type expressions
 ├── feature.rs      # feature metadata
