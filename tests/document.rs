@@ -337,6 +337,356 @@ fn nota_curly_map_is_usable_for_schema_namespace_names() {
     assert_eq!(encoder.into_string(), "{Entry 1 Record 2}");
 }
 
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.4):
+// Header root `(Watch [State Records Questions])` with namespace
+// `Watch [(State StateSubscription) (Records RecordSubscription) (Questions QuestionSubscription)]`
+// is the architectural seam the multi-sub-variant header form was designed
+// around (per /174-v5 "Better Separation"). The pre-existing test only
+// exercised single-sub-variant routes; this one proves all three
+// sub-variants lower independently with monotonic endpoint slots and
+// distinct route bodies.
+#[test]
+fn multi_sub_variant_header_lowers_to_three_distinct_routes() {
+    let schema = Schema::new(
+        Imports::empty(),
+        Header::new(vec![
+            HeaderRoot::new(
+                name("Watch"),
+                vec![name("State"), name("Records"), name("Questions")],
+            )
+            .unwrap(),
+        ])
+        .unwrap(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![
+            Declaration::enumeration(
+                name("Watch"),
+                vec![
+                    Variant::with_type(name("State"), named("StateSubscription"))
+                        .with_engine(Engine::Subscribe),
+                    Variant::with_type(name("Records"), named("RecordSubscription"))
+                        .with_engine(Engine::Subscribe),
+                    Variant::with_type(name("Questions"), named("QuestionSubscription"))
+                        .with_engine(Engine::Subscribe),
+                ],
+            ),
+            Declaration::newtype(name("StateSubscription"), string()),
+            Declaration::newtype(name("RecordSubscription"), string()),
+            Declaration::newtype(name("QuestionSubscription"), string()),
+        ])
+        .unwrap(),
+        Vec::new(),
+    )
+    .unwrap();
+
+    let assembled = schema.assemble(&[]).unwrap();
+    let routes = assembled.routes();
+
+    assert_eq!(routes.len(), 3);
+
+    for route in routes {
+        assert_eq!(route.leg(), Leg::Ordinary);
+        assert_eq!(route.root_slot(), 0);
+        assert_eq!(route.root().as_str(), "Watch");
+        assert_eq!(route.engine(), Some(Engine::Subscribe));
+    }
+
+    assert_eq!(routes[0].endpoint().slot(), 0);
+    assert_eq!(routes[0].endpoint().name().as_str(), "State");
+    assert_eq!(
+        routes[0].body(),
+        &RouteBody::Type(name("StateSubscription"))
+    );
+
+    assert_eq!(routes[1].endpoint().slot(), 1);
+    assert_eq!(routes[1].endpoint().name().as_str(), "Records");
+    assert_eq!(
+        routes[1].body(),
+        &RouteBody::Type(name("RecordSubscription"))
+    );
+
+    assert_eq!(routes[2].endpoint().slot(), 2);
+    assert_eq!(routes[2].endpoint().name().as_str(), "Questions");
+    assert_eq!(
+        routes[2].body(),
+        &RouteBody::Type(name("QuestionSubscription"))
+    );
+}
+
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.5):
+// Non-Ordinary leg coverage. Owner header routes carry leg=Leg::Owner;
+// sema header routes carry leg=Leg::Sema. Without this smoke test we never
+// verified non-Ordinary legs lower at all — the lower_header dispatch is
+// generic but the test corpus only exercised one leg variant.
+#[test]
+fn owner_header_lowers_with_owner_leg() {
+    let schema = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::new(vec![
+            HeaderRoot::new(name("Configure"), vec![name("PolicyUpdate")]).unwrap(),
+        ])
+        .unwrap(),
+        Header::empty(),
+        Namespace::declarations(vec![
+            Declaration::enumeration(
+                name("Configure"),
+                vec![
+                    Variant::with_type(name("PolicyUpdate"), named("PolicyChange"))
+                        .with_engine(Engine::Mutate),
+                ],
+            ),
+            Declaration::newtype(name("PolicyChange"), string()),
+        ])
+        .unwrap(),
+        Vec::new(),
+    )
+    .unwrap();
+
+    let assembled = schema.assemble(&[]).unwrap();
+    let routes = assembled.routes();
+
+    assert_eq!(routes.len(), 1);
+    let route = &routes[0];
+    assert_eq!(route.leg(), Leg::Owner);
+    assert_eq!(route.root().as_str(), "Configure");
+    assert_eq!(route.endpoint().name().as_str(), "PolicyUpdate");
+    assert_eq!(route.body(), &RouteBody::Type(name("PolicyChange")));
+    assert_eq!(route.engine(), Some(Engine::Mutate));
+}
+
+#[test]
+fn sema_header_lowers_with_sema_leg() {
+    let schema = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::new(vec![
+            HeaderRoot::new(name("Reflect"), vec![name("Observe")]).unwrap(),
+        ])
+        .unwrap(),
+        Namespace::declarations(vec![
+            Declaration::enumeration(
+                name("Reflect"),
+                vec![
+                    Variant::with_type(name("Observe"), named("Observation"))
+                        .with_engine(Engine::Validate),
+                ],
+            ),
+            Declaration::newtype(name("Observation"), string()),
+        ])
+        .unwrap(),
+        Vec::new(),
+    )
+    .unwrap();
+
+    let assembled = schema.assemble(&[]).unwrap();
+    let routes = assembled.routes();
+
+    assert_eq!(routes.len(), 1);
+    let route = &routes[0];
+    assert_eq!(route.leg(), Leg::Sema);
+    assert_eq!(route.root().as_str(), "Reflect");
+    assert_eq!(route.endpoint().name().as_str(), "Observe");
+    assert_eq!(route.body(), &RouteBody::Type(name("Observation")));
+    assert_eq!(route.engine(), Some(Engine::Validate));
+}
+
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.2 + §6):
+// Engine annotations declared on namespace-side Variants must reach the
+// lowered Route table. Without this, the macro library (per /324 §3.1)
+// cannot build an engine-driven dispatch table. The test checks the
+// per-route accessor AND the routes_by_engine helper.
+#[test]
+fn engine_annotations_thread_through_to_routes() {
+    let schema = Builder::spirit_mvp(Vec::new()).build().unwrap();
+    let assembled = schema
+        .assemble(&[ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()])
+        .unwrap();
+
+    let routes = assembled.routes();
+    assert_eq!(routes.len(), 2);
+    assert_eq!(routes[0].engine(), Some(Engine::Assert));
+    assert_eq!(routes[1].engine(), Some(Engine::Assert));
+
+    let assert_routes: Vec<_> = assembled.routes_by_engine(Engine::Assert).collect();
+    assert_eq!(assert_routes.len(), 2);
+
+    let mutate_routes: Vec<_> = assembled.routes_by_engine(Engine::Mutate).collect();
+    assert!(mutate_routes.is_empty());
+}
+
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.6):
+// Renamed projection chases the RenamedFrom annotation. Previous schema
+// has Utterance, current schema declares Statement + carries
+// RenamedFrom { current: Statement, previous: Utterance }. Projection is
+// Projection::Renamed { current, previous }; the previous Utterance is
+// consumed by the rename and does NOT show up as Dropped.
+#[test]
+fn renamed_annotation_produces_renamed_projection() {
+    let previous = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::newtype(name("Utterance"), string())]).unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let current = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::newtype(name("Statement"), string())]).unwrap(),
+        vec![Feature::Upgrade(Upgrade::new(
+            Version::new("v0.2.0"),
+            vec![UpgradeAnnotation::RenamedFrom {
+                current: name("Statement"),
+                previous: name("Utterance"),
+            }],
+        ))],
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let plan = current.plan_upgrade_from(&previous).unwrap();
+
+    assert!(plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Renamed { current, previous }
+            if current.as_str() == "Statement" && previous.as_str() == "Utterance"
+    )));
+
+    assert!(!plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Dropped { name } if name.as_str() == "Utterance"
+    )));
+}
+
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.6):
+// Drop annotation on a removed type produces Projection::Dropped, not the
+// RemovedTypeRequiresAnnotation error path.
+#[test]
+fn drop_annotation_produces_dropped_projection() {
+    let previous = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::newtype(name("Reflection"), string())]).unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let current = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(Vec::new()).unwrap(),
+        vec![Feature::Upgrade(Upgrade::new(
+            Version::new("v0.2.0"),
+            vec![UpgradeAnnotation::Drop(name("Reflection"))],
+        ))],
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let plan = current.plan_upgrade_from(&previous).unwrap();
+
+    assert!(plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Dropped { name } if name.as_str() == "Reflection"
+    )));
+}
+
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.6):
+// Untranslatable annotation marks a removed type that cannot be migrated.
+// Resolves to Projection::Untranslatable { name }.
+#[test]
+fn untranslatable_annotation_produces_untranslatable_projection() {
+    let previous = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::newtype(name("Reflection"), string())]).unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let current = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(Vec::new()).unwrap(),
+        vec![Feature::Upgrade(Upgrade::new(
+            Version::new("v0.2.0"),
+            vec![UpgradeAnnotation::Untranslatable(name("Reflection"))],
+        ))],
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let plan = current.plan_upgrade_from(&previous).unwrap();
+
+    assert!(plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Untranslatable { name } if name.as_str() == "Reflection"
+    )));
+}
+
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2 + /171 §4.6):
+// Removed type with NO Drop or Untranslatable annotation is an upgrade
+// error. The error name carries the offending type so callers can point
+// the psyche at exactly which decision they need to make.
+#[test]
+fn removed_type_without_annotation_errors() {
+    let previous = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(vec![Declaration::newtype(name("Reflection"), string())]).unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let current = Schema::new(
+        Imports::empty(),
+        Header::empty(),
+        Header::empty(),
+        Header::empty(),
+        Namespace::declarations(Vec::new()).unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let result = current.plan_upgrade_from(&previous);
+
+    assert!(matches!(
+        result,
+        Err(Error::RemovedTypeRequiresAnnotation { name }) if name.as_str() == "Reflection"
+    ));
+}
+
 struct Builder {
     features: Vec<Feature>,
     kind_variants: Vec<&'static str>,

@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    DeclarationBody, Error, Feature, ImportBinding, Name, Projection, Result, StandardProjection,
-    UpgradeAnnotation, UpgradePlan,
+    DeclarationBody, Engine, Error, Feature, ImportBinding, Name, Projection, Result,
+    StandardProjection, UpgradeAnnotation, UpgradePlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +37,16 @@ impl AssembledSchema {
 
     pub fn routes(&self) -> &[Route] {
         &self.routes
+    }
+
+    // DESIGN-DECISION-REVIEW (second-designer/172 §3.2): routes_by_engine surfaces
+    // the engine annotation that previously lived only on the namespace-side
+    // Variant. Engine-driven dispatch codegen (per /324 §3.1) now has a stable
+    // accessor instead of having to chase variants through declaration bodies.
+    pub fn routes_by_engine(&self, engine: Engine) -> impl Iterator<Item = &Route> {
+        self.routes
+            .iter()
+            .filter(move |route| route.engine() == Some(engine))
     }
 
     pub fn types(&self) -> impl Iterator<Item = &AssembledType> {
@@ -164,6 +174,12 @@ impl AssembledType {
     }
 }
 
+// DESIGN-DECISION-REVIEW (second-designer/172 §3.2): Route now carries
+// engine: Option<Engine>. The engine annotation is sourced from the
+// namespace-side Variant during endpoint_body resolution (see
+// document::Schema::lower_header). Without this field the macro library
+// has no way to ask "which routes are assert-engine?" — the information
+// would otherwise be locked inside DeclarationBody::Enum::Variant.engine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Route {
     leg: Leg,
@@ -171,6 +187,7 @@ pub struct Route {
     root: Name,
     endpoint: Endpoint,
     body: RouteBody,
+    engine: Option<Engine>,
 }
 
 impl Route {
@@ -180,6 +197,7 @@ impl Route {
         root: Name,
         endpoint: Endpoint,
         body: RouteBody,
+        engine: Option<Engine>,
     ) -> Self {
         Self {
             leg,
@@ -187,6 +205,7 @@ impl Route {
             root,
             endpoint,
             body,
+            engine,
         }
     }
 
@@ -208,6 +227,10 @@ impl Route {
 
     pub fn body(&self) -> &RouteBody {
         &self.body
+    }
+
+    pub fn engine(&self) -> Option<Engine> {
+        self.engine
     }
 }
 

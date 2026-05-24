@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
-    AssembledSchema, AssembledType, Container, DeclarationBody, Endpoint, Error, Feature, Header,
-    ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, Leg, Name, Namespace,
-    Payload, Result, Route, RouteBody, TypeExpression, UpgradeAnnotation,
+    AssembledSchema, AssembledType, Container, DeclarationBody, Endpoint, Engine, Error, Feature,
+    Header, ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, Leg, Name,
+    Namespace, Payload, Result, Route, RouteBody, TypeExpression, UpgradeAnnotation,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -255,12 +255,16 @@ impl Schema {
         for (root_slot, root) in header.roots().iter().enumerate() {
             self.validate_route_body_variants(root.name(), root.endpoints())?;
             for (endpoint_slot, endpoint) in root.endpoints().iter().enumerate() {
+                // DESIGN-DECISION-REVIEW (second-designer/172 §3.2): resolve
+                // body AND engine in one pass so the Route carries both.
+                let (body, engine) = self.endpoint_body(root.name(), endpoint, imports)?;
                 routes.push(Route::new(
                     leg,
                     root_slot,
                     root.name().clone(),
                     Endpoint::new(endpoint_slot, endpoint.clone()),
-                    self.endpoint_body(root.name(), endpoint, imports)?,
+                    body,
+                    engine,
                 ));
             }
         }
@@ -288,7 +292,7 @@ impl Schema {
         root: &Name,
         endpoint: &Name,
         imports: &ResolvedImports,
-    ) -> Result<RouteBody> {
+    ) -> Result<(RouteBody, Option<Engine>)> {
         let declaration = self
             .declaration_body(root)
             .ok_or_else(|| Error::MissingRouteBody {
@@ -309,18 +313,22 @@ impl Schema {
                 endpoint: endpoint.clone(),
             })?;
 
-        match variant.payload() {
-            Payload::Unit => Ok(RouteBody::Unit),
+        let body = match variant.payload() {
+            Payload::Unit => RouteBody::Unit,
             Payload::Type(TypeExpression::Named(name)) => {
                 self.validate_named_body(name, imports)?;
-                Ok(RouteBody::Type(name.clone()))
+                RouteBody::Type(name.clone())
             }
-            Payload::Type(_) | Payload::Fields(_) => Err(Error::InvalidRouteBody {
-                root: root.clone(),
-                endpoint: endpoint.clone(),
-                reason: "endpoint routes must resolve to a named body type or unit".into(),
-            }),
-        }
+            Payload::Type(_) | Payload::Fields(_) => {
+                return Err(Error::InvalidRouteBody {
+                    root: root.clone(),
+                    endpoint: endpoint.clone(),
+                    reason: "endpoint routes must resolve to a named body type or unit".into(),
+                });
+            }
+        };
+
+        Ok((body, variant.engine()))
     }
 
     fn validate_named_body(&self, name: &Name, imports: &ResolvedImports) -> Result<()> {
