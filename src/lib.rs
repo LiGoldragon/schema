@@ -21,7 +21,7 @@ pub use declaration::{Declaration, DeclarationBody, Engine, Payload, Variant};
 pub use document::{Document, Schema};
 pub use engine::{
     AssembledFragment, BuiltinMacroVariant, FeatureInput, HeaderEndpointInput, HeaderInput,
-    ImportInput, LoweringContext, NodeDefinitionPoint, SchemaMacro, TypeInput,
+    ImportInput, LoweringContext, NodeDefinitionPoint, SchemaMacro, TypeInput, UpgradeRuleInput,
 };
 pub use error::{Error, Result};
 pub use expression::{Container, Primitive, TypeExpression};

@@ -4,9 +4,9 @@ use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
     BuiltinMacroVariant, Declaration, DeclarationBody, Engine, Error, Feature, Header,
     HeaderEndpointInput, HeaderInput, HeaderRoot, ImportDirective, ImportResolution, Imports,
-    Layout, Leg, LoweringContext, Name, Namespace, Payload, Primitive, Projection, RouteBody,
-    Schema, SchemaPath, StandardProjection, TypeExpression, TypeInput, Upgrade, UpgradeAnnotation,
-    Variant, Version,
+    Layout, Leg, LoweringContext, Name, Namespace, NodeDefinitionPoint, Payload, Primitive,
+    Projection, RouteBody, Schema, SchemaPath, StandardProjection, TypeExpression, TypeInput,
+    Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
 };
 
 fn name(value: &str) -> Name {
@@ -88,6 +88,22 @@ fn builtin_macro_variants_lower_into_assembled_schema_fragments() {
         assembled.route_for_short_header(Leg::Ordinary, 512),
         Some(route)
     );
+}
+
+#[test]
+fn upgrade_rule_macro_variant_lowers_into_assembled_upgrade_feature() {
+    let upgrade = Upgrade::new(
+        Version::new("v0.1"),
+        vec![UpgradeAnnotation::Migrate(name("Entry"))],
+    );
+    let variant = BuiltinMacroVariant::UpgradeRule(UpgradeRuleInput::new(upgrade.clone()));
+    assert_eq!(variant.point(), NodeDefinitionPoint::UpgradeRule);
+
+    let mut context = LoweringContext::new();
+    context.apply(variant).unwrap();
+    let assembled = context.finish();
+
+    assert_eq!(assembled.features(), &[Feature::Upgrade(upgrade)]);
 }
 
 #[test]

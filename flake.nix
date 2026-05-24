@@ -46,6 +46,9 @@
         checks = {
           build = craneLib.cargoBuild commonArguments;
           test = craneLib.cargoTest commonArguments;
+          test-upgrade-rule-macro-variant = craneLib.cargoTest (commonArguments // {
+            cargoTestExtraArgs = "--test document upgrade_rule_macro_variant_lowers_into_assembled_upgrade_feature -- --exact";
+          });
           doc = craneLib.cargoDoc (commonArguments // {
             RUSTDOCFLAGS = "-D warnings";
           });

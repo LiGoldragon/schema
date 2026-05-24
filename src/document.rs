@@ -4,7 +4,7 @@ use crate::{
     AssembledSchema, BuiltinMacroVariant, Container, DeclarationBody, Error, Feature, FeatureInput,
     Header, HeaderEndpointInput, HeaderInput, ImportBinding, ImportDirective, ImportInput,
     ImportResolution, ImportedNames, Imports, Leg, LoweringContext, Name, Namespace, Payload,
-    Result, RouteBody, TypeExpression, TypeInput, UpgradeAnnotation,
+    Result, RouteBody, TypeExpression, TypeInput, UpgradeAnnotation, UpgradeRuleInput,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,9 +132,18 @@ impl Schema {
         }
 
         for feature in &self.features {
-            context.apply(BuiltinMacroVariant::Feature(FeatureInput::new(
-                feature.clone(),
-            )))?;
+            match feature {
+                Feature::Upgrade(upgrade) => {
+                    context.apply(BuiltinMacroVariant::UpgradeRule(UpgradeRuleInput::new(
+                        upgrade.clone(),
+                    )))?;
+                }
+                _ => {
+                    context.apply(BuiltinMacroVariant::Feature(FeatureInput::new(
+                        feature.clone(),
+                    )))?;
+                }
+            }
         }
 
         Ok(context.finish())

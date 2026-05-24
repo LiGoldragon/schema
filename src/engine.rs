@@ -1,6 +1,6 @@
 use crate::{
     AssembledSchema, AssembledType, DeclarationBody, Endpoint, Engine, Feature, ImportBinding, Leg,
-    Name, Result, Route, RouteBody,
+    Name, Result, Route, RouteBody, Upgrade,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -9,6 +9,7 @@ pub enum NodeDefinitionPoint {
     HeaderRoot,
     NamespaceValue,
     FeatureItem,
+    UpgradeRule,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +18,7 @@ pub enum BuiltinMacroVariant {
     Header(HeaderInput),
     Type(TypeInput),
     Feature(FeatureInput),
+    UpgradeRule(UpgradeRuleInput),
 }
 
 impl BuiltinMacroVariant {
@@ -26,6 +28,7 @@ impl BuiltinMacroVariant {
             Self::Header(_) => NodeDefinitionPoint::HeaderRoot,
             Self::Type(_) => NodeDefinitionPoint::NamespaceValue,
             Self::Feature(_) => NodeDefinitionPoint::FeatureItem,
+            Self::UpgradeRule(_) => NodeDefinitionPoint::UpgradeRule,
         }
     }
 
@@ -35,6 +38,7 @@ impl BuiltinMacroVariant {
             Self::Header(input) => HeaderMacro.lower(input, context),
             Self::Type(input) => TypeMacro.lower(input, context),
             Self::Feature(input) => FeatureMacro.lower(input, context),
+            Self::UpgradeRule(input) => UpgradeRuleMacro.lower(input, context),
         }
     }
 }
@@ -165,6 +169,21 @@ impl FeatureInput {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpgradeRuleInput {
+    upgrade: Upgrade,
+}
+
+impl UpgradeRuleInput {
+    pub fn new(upgrade: Upgrade) -> Self {
+        Self { upgrade }
+    }
+
+    pub fn upgrade(&self) -> &Upgrade {
+        &self.upgrade
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AssembledFragment {
     Import(ImportBinding),
     Route(Route),
@@ -248,6 +267,15 @@ pub struct FeatureMacro;
 impl SchemaMacro<FeatureInput> for FeatureMacro {
     fn lower(&self, input: FeatureInput, context: &mut LoweringContext) -> Result<()> {
         context.push(AssembledFragment::Feature(input.feature));
+        Ok(())
+    }
+}
+
+pub struct UpgradeRuleMacro;
+
+impl SchemaMacro<UpgradeRuleInput> for UpgradeRuleMacro {
+    fn lower(&self, input: UpgradeRuleInput, context: &mut LoweringContext) -> Result<()> {
+        context.push(AssembledFragment::Feature(Feature::Upgrade(input.upgrade)));
         Ok(())
     }
 }
