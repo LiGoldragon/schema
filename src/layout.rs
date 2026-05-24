@@ -113,11 +113,11 @@ fn is_fixed_width_declaration(
         return false;
     }
 
-    let Some(declaration) = document.declaration(name) else {
+    let Some(body) = document.declaration_body(name) else {
         return false;
     };
 
-    match declaration.body() {
+    match body {
         DeclarationBody::Reference(_) => false,
         DeclarationBody::Local { variants } => {
             variants.iter().all(|variant| match variant.payload() {

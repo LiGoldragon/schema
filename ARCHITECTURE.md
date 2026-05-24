@@ -3,15 +3,19 @@
 ## Role
 
 `schema` hosts the typed model for Persona's NOTA schema language. The
-crate represents a resolved schema document, validates declaration and
-variant references, and derives layout metadata that tells macro code which
-fields stay in the fixed root and which fields move into ordered boxes.
+crate represents a resolved schema document as ordered, typed sections,
+validates declaration and variant references, and derives layout metadata
+that tells macro code which fields stay in the fixed root and which fields
+move into ordered boxes.
 
 ## Boundaries
 
 **Owns:**
-- Schema document types: `Document`, `Declaration`, `Variant`,
-  `Payload`, `TypeExpression`, `Primitive`, `Container`, and `Engine`.
+- Schema document types: `Document`, `Section`, `Namespace`,
+  `Declaration`, `Variant`, `Payload`, `TypeExpression`, `Primitive`,
+  `Container`, and `Engine`.
+- Curly-brace NOTA map compatibility for schema names through `Name` as a
+  `NotaMapKey`.
 - Validation of declaration uniqueness, variant uniqueness, and named type
   references.
 - Conservative root-versus-box layout planning for data-carrying variants.
@@ -36,6 +40,7 @@ src/
 ├── expression.rs # primitive/container/named type expressions
 ├── layout.rs     # fixed-root versus ordered-box planning
 ├── name.rs       # schema identifier validation
+├── section.rs    # typed top-level sections + namespace map
 └── error.rs      # typed error enum
 
 tests/
@@ -44,8 +49,15 @@ tests/
 
 ## Invariants
 
+The top level is a vector of typed `Section` objects. It is not a flat
+vector of same-kind declarations.
+
 Schema records are positional. Data-carrying variant fields are ordered
 `TypeExpression` values; the model does not carry field labels.
+
+The name-value substrate for locally defined schema names is `Namespace`,
+backed by `BTreeMap<Name, DeclarationBody>`. This mirrors NOTA's
+curly-brace map form: keys are names and values are their definitions.
 
 Names are PascalCase identifiers because declarations and variants become
 closed Rust enums or enum-like schema nodes.
@@ -61,5 +73,6 @@ boxes until a later resolved schema proves otherwise.
 ## Status
 
 Initial library scaffold. It is sufficient for macro work to depend on a
-typed schema document and a deterministic root/box layout plan, but it is
-not yet a parser, code generator, or runtime schema registry.
+typed sectioned schema document, a namespace map, and a deterministic
+root/box layout plan, but it is not yet a parser, code generator, or
+runtime schema registry.

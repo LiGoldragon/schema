@@ -36,6 +36,19 @@ impl FromStr for Name {
     }
 }
 
+impl nota_codec::NotaMapKey for Name {
+    fn as_map_key(&self) -> &str {
+        self.as_str()
+    }
+
+    fn from_map_key(text: String) -> nota_codec::Result<Self> {
+        Self::new(text).map_err(|error| nota_codec::Error::Validation {
+            type_name: "Name",
+            message: error.to_string(),
+        })
+    }
+}
+
 fn is_pascal_case_name(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {

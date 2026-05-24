@@ -8,12 +8,16 @@ macro internals.
 Current intent, in priority order:
 
 1. Represent the NOTA schema language as typed Rust data.
-2. Keep the schema language positional: type first, then fields in
+2. Keep the top-level schema as ordered typed sections, not a flat vector
+   of same-kind declarations.
+3. Use NOTA's curly-brace map form as the name-value substrate for schema
+   namespaces.
+4. Keep the schema language positional: type first, then fields in
    declaration order.
-3. Support the current Spirit MVP shape: root-verb enums, data-carrying
+5. Support the current Spirit MVP shape: root-verb enums, data-carrying
    enum payloads, `(engine X)` annotations, cross-schema references, and
    root-plus-ordered-box layout.
-4. Stay library-shaped until the runtime schema registry/triad authority is
+6. Stay library-shaped until the runtime schema registry/triad authority is
    explicitly settled.
 
 Open intent needing later settlement:
@@ -23,3 +27,5 @@ Open intent needing later settlement:
   metadata.
 - Whether a future schema daemon triad is required before schema metadata is
   queried at runtime.
+- Whether schema imports begin as path references, Cargo symbolic
+  references, or both.

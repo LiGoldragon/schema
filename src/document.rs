@@ -1,38 +1,53 @@
 use std::collections::HashSet;
 
-use crate::{Declaration, DeclarationBody, Error, Name, Payload, Result, TypeExpression};
+use crate::{DeclarationBody, Error, Name, Payload, Result, Section, TypeExpression};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Document {
-    declarations: Vec<Declaration>,
+    sections: Vec<Section>,
 }
 
 impl Document {
-    pub fn new(declarations: Vec<Declaration>) -> Result<Self> {
-        let document = Self { declarations };
+    pub fn new(sections: Vec<Section>) -> Result<Self> {
+        let document = Self { sections };
         document.validate()?;
         Ok(document)
     }
 
-    pub fn declarations(&self) -> &[Declaration] {
-        &self.declarations
+    pub fn sections(&self) -> &[Section] {
+        &self.sections
     }
 
-    pub fn declaration(&self, name: &Name) -> Option<&Declaration> {
-        self.declarations
-            .iter()
-            .find(|declaration| declaration.name() == name)
+    pub fn declaration_body(&self, name: &Name) -> Option<&DeclarationBody> {
+        for section in &self.sections {
+            match section {
+                Section::Messaging(declarations) => {
+                    if let Some(declaration) = declarations
+                        .iter()
+                        .find(|declaration| declaration.name() == name)
+                    {
+                        return Some(declaration.body());
+                    }
+                }
+                Section::Namespace(namespace) => {
+                    if let Some(body) = namespace.body(name) {
+                        return Some(body);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn variant(&self, declaration: &Name, variant: &Name) -> Result<&crate::Variant> {
-        let declaration =
-            self.declaration(declaration)
-                .ok_or_else(|| Error::MissingDeclaration {
-                    name: declaration.clone(),
-                })?;
-        let DeclarationBody::Local { variants } = declaration.body() else {
+        let body = self
+            .declaration_body(declaration)
+            .ok_or_else(|| Error::MissingDeclaration {
+                name: declaration.clone(),
+            })?;
+        let DeclarationBody::Local { variants } = body else {
             return Err(Error::MissingVariant {
-                declaration: declaration.name().clone(),
+                declaration: declaration.clone(),
                 variant: variant.clone(),
             });
         };
@@ -40,30 +55,28 @@ impl Document {
             .iter()
             .find(|candidate| candidate.name() == variant)
             .ok_or_else(|| Error::MissingVariant {
-                declaration: declaration.name().clone(),
+                declaration: declaration.clone(),
                 variant: variant.clone(),
             })
     }
 
     fn validate(&self) -> Result<()> {
         let mut declaration_names = HashSet::new();
-        for declaration in &self.declarations {
-            if !declaration_names.insert(declaration.name()) {
-                return Err(Error::DuplicateDeclaration {
-                    name: declaration.name().clone(),
-                });
+        for (name, _) in self.declaration_entries() {
+            if !declaration_names.insert(name) {
+                return Err(Error::DuplicateDeclaration { name: name.clone() });
             }
         }
 
-        for declaration in &self.declarations {
-            let DeclarationBody::Local { variants } = declaration.body() else {
+        for (name, body) in self.declaration_entries() {
+            let DeclarationBody::Local { variants } = body else {
                 continue;
             };
             let mut variant_names = HashSet::new();
             for variant in variants {
                 if !variant_names.insert(variant.name()) {
                     return Err(Error::DuplicateVariant {
-                        declaration: declaration.name().clone(),
+                        declaration: name.clone(),
                         variant: variant.name().clone(),
                     });
                 }
@@ -72,6 +85,21 @@ impl Document {
         }
 
         Ok(())
+    }
+
+    fn declaration_entries(&self) -> Vec<(&Name, &DeclarationBody)> {
+        let mut entries = Vec::new();
+        for section in &self.sections {
+            match section {
+                Section::Messaging(declarations) => {
+                    for declaration in declarations {
+                        entries.push((declaration.name(), declaration.body()));
+                    }
+                }
+                Section::Namespace(namespace) => entries.extend(namespace.entries()),
+            }
+        }
+        entries
     }
 
     fn validate_payload(&self, payload: &Payload) -> Result<()> {
@@ -91,7 +119,7 @@ impl Document {
         match expression {
             TypeExpression::Primitive(_) => Ok(()),
             TypeExpression::Named(name) => {
-                if self.declaration(name).is_some() {
+                if self.declaration_body(name).is_some() {
                     Ok(())
                 } else {
                     Err(Error::UnknownType { name: name.clone() })

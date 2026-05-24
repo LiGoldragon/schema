@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
+
+use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
-    Declaration, Engine, Error, FieldLocation, Layout, Name, Payload, Primitive, Reference,
-    TypeExpression, Variant,
+    Declaration, DeclarationBody, Engine, Error, FieldLocation, Layout, Name, Namespace, Payload,
+    Primitive, Reference, Section, TypeExpression, Variant,
 };
 
 fn name(value: &str) -> Name {
@@ -25,8 +28,13 @@ fn validates_spirit_style_subset() {
 #[test]
 fn rejects_duplicate_declaration_names() {
     let result = schema::Document::new(vec![
-        Declaration::local(name("Kind"), vec![Variant::unit(name("Decision"))]),
-        Declaration::local(name("Kind"), vec![Variant::unit(name("Principle"))]),
+        Section::Messaging(vec![Declaration::local(
+            name("Kind"),
+            vec![Variant::unit(name("Decision"))],
+        )]),
+        Section::Namespace(
+            Namespace::local(vec![(name("Kind"), vec![Variant::unit(name("Principle"))])]).unwrap(),
+        ),
     ]);
 
     assert!(matches!(result, Err(Error::DuplicateDeclaration { name }) if name.as_str() == "Kind"));
@@ -34,12 +42,15 @@ fn rejects_duplicate_declaration_names() {
 
 #[test]
 fn rejects_duplicate_variant_names() {
-    let result = schema::Document::new(vec![Declaration::local(
-        name("Kind"),
-        vec![
-            Variant::unit(name("Decision")),
-            Variant::unit(name("Decision")),
-        ],
+    let result = schema::Document::new(vec![Section::Namespace(
+        Namespace::local(vec![(
+            name("Kind"),
+            vec![
+                Variant::unit(name("Decision")),
+                Variant::unit(name("Decision")),
+            ],
+        )])
+        .unwrap(),
     )]);
 
     assert!(
@@ -50,9 +61,12 @@ fn rejects_duplicate_variant_names() {
 
 #[test]
 fn rejects_unknown_named_type() {
-    let result = schema::Document::new(vec![Declaration::local(
-        name("Entry"),
-        vec![Variant::with_fields(name("Entry"), vec![named("Topic")])],
+    let result = schema::Document::new(vec![Section::Namespace(
+        Namespace::local(vec![(
+            name("Entry"),
+            vec![Variant::with_fields(name("Entry"), vec![named("Topic")])],
+        )])
+        .unwrap(),
     )]);
 
     assert!(matches!(result, Err(Error::UnknownType { name }) if name.as_str() == "Topic"));
@@ -71,34 +85,63 @@ fn layout_places_fixed_fields_in_root_and_growing_fields_in_boxes() {
 
 #[test]
 fn cross_schema_references_validate_but_layout_is_conservative() {
-    let document = schema::Document::new(vec![
-        Declaration::reference(
-            name("Magnitude"),
-            Reference::Path("signal-sema/magnitude.schema.nota".into()),
-        ),
-        Declaration::local(
-            name("Entry"),
-            vec![Variant::with_fields(
+    let document = schema::Document::new(vec![Section::Namespace(
+        Namespace::new(vec![
+            (
+                name("Magnitude"),
+                DeclarationBody::Reference(Reference::Path(
+                    "signal-sema/magnitude.schema.nota".into(),
+                )),
+            ),
+            (
                 name("Entry"),
-                vec![named("Magnitude")],
-            )],
-        ),
-    ])
+                DeclarationBody::Local {
+                    variants: vec![Variant::with_fields(
+                        name("Entry"),
+                        vec![named("Magnitude")],
+                    )],
+                },
+            ),
+        ])
+        .unwrap(),
+    )])
     .unwrap();
 
     let layout = Layout::for_variant(&document, &name("Entry"), &name("Entry")).unwrap();
     assert_eq!(layout.box_positions(), vec![0]);
 }
 
+#[test]
+fn nota_curly_map_is_usable_for_schema_namespace_names() {
+    let mut decoder = Decoder::new("{Entry 1 Operation 2}");
+    let decoded = BTreeMap::<Name, u64>::decode(&mut decoder).unwrap();
+
+    assert_eq!(decoded.get(&name("Entry")), Some(&1));
+    assert_eq!(decoded.get(&name("Operation")), Some(&2));
+
+    let mut encoder = Encoder::new();
+    decoded.encode(&mut encoder).unwrap();
+    assert_eq!(encoder.into_string(), "{Entry 1 Operation 2}");
+}
+
 struct DocumentBuilder {
-    declarations: Vec<Declaration>,
+    messaging: Vec<Declaration>,
+    namespace: Namespace,
 }
 
 impl DocumentBuilder {
     fn spirit_subset() -> Self {
         Self {
-            declarations: vec![
-                Declaration::local(
+            messaging: vec![Declaration::local(
+                name("Operation"),
+                vec![
+                    Variant::with_type(name("State"), named("Statement"))
+                        .with_engine(Engine::Assert),
+                    Variant::with_type(name("Record"), named("Entry")).with_engine(Engine::Assert),
+                ],
+            )],
+            namespace: Namespace::local(vec![
+                (
                     name("Kind"),
                     vec![
                         Variant::unit(name("Decision")),
@@ -106,7 +149,7 @@ impl DocumentBuilder {
                         Variant::unit(name("Correction")),
                     ],
                 ),
-                Declaration::local(
+                (
                     name("Magnitude"),
                     vec![
                         Variant::unit(name("Minimum")),
@@ -114,35 +157,35 @@ impl DocumentBuilder {
                         Variant::unit(name("Maximum")),
                     ],
                 ),
-                Declaration::local(
+                (
                     name("Topic"),
                     vec![Variant::with_type(
                         name("Topic"),
                         TypeExpression::Primitive(Primitive::String),
                     )],
                 ),
-                Declaration::local(
+                (
                     name("Summary"),
                     vec![Variant::with_type(
                         name("Summary"),
                         TypeExpression::Primitive(Primitive::String),
                     )],
                 ),
-                Declaration::local(
+                (
                     name("Context"),
                     vec![Variant::with_type(
                         name("Context"),
                         TypeExpression::Primitive(Primitive::String),
                     )],
                 ),
-                Declaration::local(
+                (
                     name("Quote"),
                     vec![Variant::with_type(
                         name("Quote"),
                         TypeExpression::Primitive(Primitive::String),
                     )],
                 ),
-                Declaration::local(
+                (
                     name("Entry"),
                     vec![Variant::with_fields(
                         name("Entry"),
@@ -156,27 +199,22 @@ impl DocumentBuilder {
                         ],
                     )],
                 ),
-                Declaration::local(
+                (
                     name("Statement"),
                     vec![Variant::with_type(
                         name("Statement"),
                         TypeExpression::Primitive(Primitive::String),
                     )],
                 ),
-                Declaration::local(
-                    name("Operation"),
-                    vec![
-                        Variant::with_type(name("State"), named("Statement"))
-                            .with_engine(Engine::Assert),
-                        Variant::with_type(name("Record"), named("Entry"))
-                            .with_engine(Engine::Assert),
-                    ],
-                ),
-            ],
+            ])
+            .unwrap(),
         }
     }
 
     fn build(self) -> schema::Result<schema::Document> {
-        schema::Document::new(self.declarations)
+        schema::Document::new(vec![
+            Section::Messaging(self.messaging),
+            Section::Namespace(self.namespace),
+        ])
     }
 }
