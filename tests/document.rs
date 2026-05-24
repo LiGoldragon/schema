@@ -2,10 +2,15 @@ use std::collections::BTreeMap;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
-    Declaration, Engine, Error, Feature, Header, HeaderRoot, ImportDirective, ImportResolution,
-    Imports, Layout, Leg, Name, Namespace, Payload, Primitive, Projection, RouteBody, Schema,
-    SchemaPath, StandardProjection, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    AssembledType, Declaration, Engine, Error, Feature, FieldLocation, Header, HeaderRoot,
+    ImportDirective, ImportResolution, Imports, Layout, Leg, Name, Namespace, Payload, Primitive,
+    Projection, RouteBody, Schema, SchemaPath, StandardProjection, TypeExpression, Upgrade,
+    UpgradeAnnotation, Variant, Version,
 };
+
+fn magnitude_resolution() -> ImportResolution {
+    ImportResolution::new(name("Magnitude"), vec![name("Magnitude")]).unwrap()
+}
 
 fn name(value: &str) -> Name {
     Name::new(value).unwrap()
@@ -337,10 +342,124 @@ fn nota_curly_map_is_usable_for_schema_namespace_names() {
     assert_eq!(encoder.into_string(), "{Entry 1 Record 2}");
 }
 
+#[test]
+fn schema_carries_component_name_and_renders_namespaced_uid() {
+    let schema = Builder::spirit_mvp(Vec::new())
+        .with_component_name(name("Spirit"))
+        .build()
+        .unwrap();
+
+    assert_eq!(schema.component_name().as_str(), "Spirit");
+
+    let assembled = schema.assemble(&[magnitude_resolution()]).unwrap();
+
+    assert_eq!(assembled.component().as_str(), "Spirit");
+
+    let entry_uid = assembled.uid_for(&name("Entry"));
+    assert_eq!(entry_uid.component().as_str(), "Spirit");
+    assert_eq!(entry_uid.type_name().as_str(), "Entry");
+    assert_eq!(entry_uid.to_string(), "Spirit::namespace::Entry");
+
+    // Imported types render with the same component anchor; the imported
+    // type's *home* schema would render `Sema::namespace::Magnitude`, but
+    // this Schema's UID surface qualifies under its own component per intent
+    // 469 (each schema names the types it surfaces).
+    let magnitude_uid = assembled.uid_for(&name("Magnitude"));
+    assert_eq!(magnitude_uid.to_string(), "Spirit::namespace::Magnitude");
+
+    // Anonymous-component path falls back to the literal "Anonymous" name
+    // when no component is supplied.
+    let anonymous = Builder::spirit_mvp(Vec::new()).build().unwrap();
+    assert_eq!(anonymous.component_name().as_str(), "Anonymous");
+    let anonymous_assembled = anonymous.assemble(&[magnitude_resolution()]).unwrap();
+    assert_eq!(
+        anonymous_assembled.uid_for(&name("Entry")).to_string(),
+        "Anonymous::namespace::Entry"
+    );
+}
+
+#[test]
+fn layout_for_assembled_places_imported_fixed_width_magnitude_in_root() {
+    // The bug audited in /171 §4.3 + §5: `Layout::for_declaration(document,
+    // _)` cannot see that imported Magnitude is fixed-width, so it lands
+    // Entry position 4 (Magnitude) in `box_positions`. This test exercises
+    // the fix: assemble first, supply a fixed-width hint for the imported
+    // Magnitude, and `Layout::for_assembled` lands position 4 in
+    // `root_positions`.
+    let schema = Builder::spirit_mvp(Vec::new())
+        .with_component_name(name("Spirit"))
+        .build()
+        .unwrap();
+    let mut import_widths = BTreeMap::new();
+    import_widths.insert(name("Magnitude"), true);
+    let assembled = schema
+        .assemble(&[magnitude_resolution()])
+        .unwrap()
+        .with_import_widths(import_widths);
+
+    // Sanity check the AssembledSchema knows Magnitude as an imported type
+    // (not a local body).
+    assert!(matches!(
+        assembled.assembled_type(&name("Magnitude")),
+        Some(AssembledType::Imported { .. })
+    ));
+
+    let layout = Layout::for_assembled(&assembled, &name("Entry")).unwrap();
+
+    assert_eq!(
+        layout.root_positions(),
+        vec![1, 4],
+        "Kind (position 1) and Magnitude (position 4, imported, fixed-width hint) belong in root"
+    );
+    assert_eq!(
+        layout.box_positions(),
+        vec![0, 2, 3, 5],
+        "Topic (0), Summary (2), Context (3), Quote (5) are all variable-width newtype(String) — boxed"
+    );
+
+    // Each field's classification is individually inspectable; check Magnitude.
+    let magnitude_field = layout
+        .fields()
+        .iter()
+        .find(|field| field.position() == 4)
+        .expect("Entry has a position-4 field");
+    assert_eq!(magnitude_field.location(), FieldLocation::Root);
+}
+
+#[test]
+fn layout_for_declaration_remains_conservative_for_imported_magnitude() {
+    // The legacy pre-assembly path: Layout::for_declaration cannot see
+    // imported Magnitude's width, so it falls back to variable-width (box).
+    // This preserves the prior behaviour while the new for_assembled path
+    // gets the fixed-width-in-root result.
+    let schema = Builder::spirit_mvp(Vec::new()).build().unwrap();
+    let layout = Layout::for_declaration(&schema, &name("Entry")).unwrap();
+
+    assert_eq!(layout.root_positions(), vec![1]);
+    assert_eq!(layout.box_positions(), vec![0, 2, 3, 4, 5]);
+}
+
+#[test]
+fn layout_for_assembled_without_import_hint_falls_back_to_box() {
+    // Without an import-width hint, an imported Name conservatively lands in
+    // a box. This is the safe default per /171 §5.
+    let schema = Builder::spirit_mvp(Vec::new())
+        .with_component_name(name("Spirit"))
+        .build()
+        .unwrap();
+    let assembled = schema.assemble(&[magnitude_resolution()]).unwrap();
+
+    let layout = Layout::for_assembled(&assembled, &name("Entry")).unwrap();
+
+    assert_eq!(layout.root_positions(), vec![1]);
+    assert_eq!(layout.box_positions(), vec![0, 2, 3, 4, 5]);
+}
+
 struct Builder {
     features: Vec<Feature>,
     kind_variants: Vec<&'static str>,
     entry_extra_field: Option<TypeExpression>,
+    component_name: Option<Name>,
 }
 
 impl Builder {
@@ -349,6 +468,7 @@ impl Builder {
             features,
             kind_variants: vec!["Decision", "Principle", "Correction"],
             entry_extra_field: None,
+            component_name: None,
         }
     }
 
@@ -362,21 +482,41 @@ impl Builder {
         self
     }
 
+    fn with_component_name(mut self, component: Name) -> Self {
+        self.component_name = Some(component);
+        self
+    }
+
     fn build(self) -> schema::Result<Schema> {
-        Schema::new(
-            Imports::new(vec![(
-                name("Magnitude"),
-                ImportDirective::import_all(SchemaPath::new("../signal-sema/magnitude.schema")),
-            )])?,
-            Header::new(vec![
-                HeaderRoot::new(name("State"), vec![name("Statement")])?,
-                HeaderRoot::new(name("Record"), vec![name("Entry")])?,
-            ])?,
-            Header::empty(),
-            Header::empty(),
-            Namespace::declarations(self.declarations())?,
-            self.features,
-        )
+        let imports = Imports::new(vec![(
+            name("Magnitude"),
+            ImportDirective::import_all(SchemaPath::new("../signal-sema/magnitude.schema")),
+        )])?;
+        let ordinary = Header::new(vec![
+            HeaderRoot::new(name("State"), vec![name("Statement")])?,
+            HeaderRoot::new(name("Record"), vec![name("Entry")])?,
+        ])?;
+        let namespace = Namespace::declarations(self.declarations())?;
+
+        match self.component_name {
+            Some(component) => Schema::for_component(
+                component,
+                imports,
+                ordinary,
+                Header::empty(),
+                Header::empty(),
+                namespace,
+                self.features,
+            ),
+            None => Schema::new(
+                imports,
+                ordinary,
+                Header::empty(),
+                Header::empty(),
+                namespace,
+                self.features,
+            ),
+        }
     }
 
     fn declarations(&self) -> Vec<Declaration> {

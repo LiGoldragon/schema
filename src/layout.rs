@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{Container, DeclarationBody, Document, Name, Payload, Result, TypeExpression};
+use crate::{
+    AssembledSchema, Container, DeclarationBody, Document, Name, Payload, Result, TypeExpression,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
@@ -8,6 +10,11 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Plan layout from a pre-assembly Document. Imported type names cannot
+    /// be resolved through the Document alone, so they fall back to the
+    /// conservative variable-width classification (box). For the
+    /// post-import classification that lands Magnitude in root (audit 171
+    /// §4.3 + §5), prefer `Layout::for_assembled`.
     pub fn for_declaration(document: &Document, declaration: &Name) -> Result<Self> {
         let body = document.declaration_body(declaration).ok_or_else(|| {
             crate::Error::MissingDeclaration {
@@ -15,13 +22,58 @@ impl Layout {
             }
         })?;
         Ok(Self {
-            fields: fields_for_body(document, body),
+            fields: fields_for_body(&DocumentSource(document), body),
         })
     }
 
     pub fn for_variant(document: &Document, declaration: &Name, variant: &Name) -> Result<Self> {
         let variant = document.variant(declaration, variant)?;
-        let fields = fields_for_payload(document, variant.payload());
+        let fields = fields_for_payload(&DocumentSource(document), variant.payload());
+        Ok(Self { fields })
+    }
+
+    /// Plan layout from a post-assembly AssembledSchema. Local bodies
+    /// resolve via `AssembledSchema::body`; imported names consult
+    /// `AssembledSchema::import_width` for the fixed-width hint (per audit
+    /// 171 §4.3 + §5). Without a hint, an imported name defaults to
+    /// variable-width (box), matching the legacy Document path's
+    /// conservatism.
+    pub fn for_assembled(assembled: &AssembledSchema, declaration: &Name) -> Result<Self> {
+        let body = assembled
+            .body(declaration)
+            .ok_or_else(|| crate::Error::MissingDeclaration {
+                name: declaration.clone(),
+            })?;
+        Ok(Self {
+            fields: fields_for_body(&AssembledSource(assembled), body),
+        })
+    }
+
+    /// Plan a variant's payload layout from a post-assembly AssembledSchema.
+    pub fn for_assembled_variant(
+        assembled: &AssembledSchema,
+        declaration: &Name,
+        variant_name: &Name,
+    ) -> Result<Self> {
+        let body = assembled
+            .body(declaration)
+            .ok_or_else(|| crate::Error::MissingDeclaration {
+                name: declaration.clone(),
+            })?;
+        let DeclarationBody::Enum { variants } = body else {
+            return Err(crate::Error::MissingVariant {
+                declaration: declaration.clone(),
+                variant: variant_name.clone(),
+            });
+        };
+        let variant = variants
+            .iter()
+            .find(|candidate| candidate.name() == variant_name)
+            .ok_or_else(|| crate::Error::MissingVariant {
+                declaration: declaration.clone(),
+                variant: variant_name.clone(),
+            })?;
+        let fields = fields_for_payload(&AssembledSource(assembled), variant.payload());
         Ok(Self { fields })
     }
 
@@ -46,38 +98,75 @@ impl Layout {
     }
 }
 
-fn fields_for_body(document: &Document, body: &DeclarationBody) -> Vec<FieldLayout> {
+/// Source of declaration bodies + import-width hints for layout planning.
+///
+/// Two concrete sources: `DocumentSource` (pre-assembly) treats every name
+/// without a local body as variable-width; `AssembledSource` (post-assembly)
+/// consults the import-width hint table.
+trait LayoutSource {
+    fn declaration_body(&self, name: &Name) -> Option<&DeclarationBody>;
+    fn import_width(&self, name: &Name) -> Option<bool>;
+}
+
+struct DocumentSource<'document>(&'document Document);
+
+impl LayoutSource for DocumentSource<'_> {
+    fn declaration_body(&self, name: &Name) -> Option<&DeclarationBody> {
+        self.0.declaration_body(name)
+    }
+
+    fn import_width(&self, _name: &Name) -> Option<bool> {
+        None
+    }
+}
+
+struct AssembledSource<'assembled>(&'assembled AssembledSchema);
+
+impl LayoutSource for AssembledSource<'_> {
+    fn declaration_body(&self, name: &Name) -> Option<&DeclarationBody> {
+        self.0.body(name)
+    }
+
+    fn import_width(&self, name: &Name) -> Option<bool> {
+        self.0.import_width(name)
+    }
+}
+
+fn fields_for_body(source: &dyn LayoutSource, body: &DeclarationBody) -> Vec<FieldLayout> {
     match body {
         DeclarationBody::Enum { .. } => Vec::new(),
         DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
             vec![FieldLayout::new(
                 0,
                 expression.clone(),
-                location(document, expression),
+                location(source, expression),
             )]
         }
-        DeclarationBody::Record(expressions) => fields_for_expressions(document, expressions),
+        DeclarationBody::Record(expressions) => fields_for_expressions(source, expressions),
     }
 }
 
-fn fields_for_payload(document: &Document, payload: &Payload) -> Vec<FieldLayout> {
+fn fields_for_payload(source: &dyn LayoutSource, payload: &Payload) -> Vec<FieldLayout> {
     match payload {
         Payload::Unit => Vec::new(),
         Payload::Type(expression) => vec![FieldLayout::new(
             0,
             expression.clone(),
-            location(document, expression),
+            location(source, expression),
         )],
-        Payload::Fields(expressions) => fields_for_expressions(document, expressions),
+        Payload::Fields(expressions) => fields_for_expressions(source, expressions),
     }
 }
 
-fn fields_for_expressions(document: &Document, expressions: &[TypeExpression]) -> Vec<FieldLayout> {
+fn fields_for_expressions(
+    source: &dyn LayoutSource,
+    expressions: &[TypeExpression],
+) -> Vec<FieldLayout> {
     expressions
         .iter()
         .enumerate()
         .map(|(position, expression)| {
-            FieldLayout::new(position, expression.clone(), location(document, expression))
+            FieldLayout::new(position, expression.clone(), location(source, expression))
         })
         .collect()
 }
@@ -117,8 +206,8 @@ pub enum FieldLocation {
     Box,
 }
 
-fn location(document: &Document, expression: &TypeExpression) -> FieldLocation {
-    if is_fixed_width(document, expression, &mut HashSet::new()) {
+fn location(source: &dyn LayoutSource, expression: &TypeExpression) -> FieldLocation {
+    if is_fixed_width(source, expression, &mut HashSet::new()) {
         FieldLocation::Root
     } else {
         FieldLocation::Box
@@ -126,7 +215,7 @@ fn location(document: &Document, expression: &TypeExpression) -> FieldLocation {
 }
 
 fn is_fixed_width(
-    document: &Document,
+    source: &dyn LayoutSource,
     expression: &TypeExpression,
     visited: &mut HashSet<Name>,
 ) -> bool {
@@ -135,12 +224,12 @@ fn is_fixed_width(
         TypeExpression::Container(
             Container::Vector(_) | Container::Optional(_) | Container::Map { .. },
         ) => false,
-        TypeExpression::Named(name) => is_fixed_width_declaration(document, name, visited),
+        TypeExpression::Named(name) => is_fixed_width_declaration(source, name, visited),
     }
 }
 
 fn is_fixed_width_declaration(
-    document: &Document,
+    source: &dyn LayoutSource,
     name: &Name,
     visited: &mut HashSet<Name>,
 ) -> bool {
@@ -148,25 +237,27 @@ fn is_fixed_width_declaration(
         return false;
     }
 
-    let Some(body) = document.declaration_body(name) else {
-        return false;
+    let Some(body) = source.declaration_body(name) else {
+        // No local body — could be an imported type. Consult the import
+        // hint table; fall back to conservative variable-width.
+        return source.import_width(name).unwrap_or(false);
     };
 
     match body {
         DeclarationBody::Enum { variants } => {
             variants.iter().all(|variant| match variant.payload() {
                 Payload::Unit => true,
-                Payload::Type(expression) => is_fixed_width(document, expression, visited),
+                Payload::Type(expression) => is_fixed_width(source, expression, visited),
                 Payload::Fields(expressions) => expressions
                     .iter()
-                    .all(|expression| is_fixed_width(document, expression, visited)),
+                    .all(|expression| is_fixed_width(source, expression, visited)),
             })
         }
         DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
-            is_fixed_width(document, expression, visited)
+            is_fixed_width(source, expression, visited)
         }
         DeclarationBody::Record(expressions) => expressions
             .iter()
-            .all(|expression| is_fixed_width(document, expression, visited)),
+            .all(|expression| is_fixed_width(source, expression, visited)),
     }
 }

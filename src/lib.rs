@@ -15,7 +15,7 @@ mod reader;
 mod section;
 mod upgrade;
 
-pub use assembled::{AssembledSchema, AssembledType, Endpoint, Leg, Route, RouteBody};
+pub use assembled::{AssembledSchema, AssembledType, Endpoint, Leg, Route, RouteBody, Uid};
 pub use declaration::{Declaration, DeclarationBody, Engine, Payload, Variant};
 pub use document::{Document, Schema};
 pub use error::{Error, Result};

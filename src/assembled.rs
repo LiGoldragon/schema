@@ -1,26 +1,35 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use crate::{
     DeclarationBody, Error, Feature, ImportBinding, Name, Projection, Result, StandardProjection,
     UpgradeAnnotation, UpgradePlan,
 };
 
+/// Reserved namespace label between the component and the type name in a UID
+/// per intent 469 (`component::namespace::Type`).
+const NAMESPACE_LABEL: &str = "namespace";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssembledSchema {
+    component: Name,
     imports: Vec<ImportBinding>,
     routes: Vec<Route>,
     types: BTreeMap<Name, AssembledType>,
     features: Vec<Feature>,
+    import_widths: BTreeMap<Name, bool>,
 }
 
 impl AssembledSchema {
     pub fn new(
+        component: Name,
         imports: Vec<ImportBinding>,
         routes: Vec<Route>,
         types: Vec<AssembledType>,
         features: Vec<Feature>,
     ) -> Self {
         Self {
+            component,
             imports,
             routes,
             types: types
@@ -28,7 +37,36 @@ impl AssembledSchema {
                 .map(|schema_type| (schema_type.name().clone(), schema_type))
                 .collect(),
             features,
+            import_widths: BTreeMap::new(),
         }
+    }
+
+    /// Attach fixed-width hints for imported types, returning a new
+    /// AssembledSchema with the hints folded in. Per audit 171 §4.3 +
+    /// recommendation §5(b): the layout planner uses these hints when
+    /// classifying an imported `TypeExpression::Named` reference.
+    ///
+    /// Each map entry says: "the imported type `Name` is fixed-width (`true`)
+    /// or variable-width (`false`)". Missing entries fall back to the
+    /// conservative variable-width classification.
+    pub fn with_import_widths(mut self, widths: BTreeMap<Name, bool>) -> Self {
+        for (name, fixed) in widths {
+            self.import_widths.insert(name, fixed);
+        }
+        self
+    }
+
+    pub fn component(&self) -> &Name {
+        &self.component
+    }
+
+    /// Render the UID for a declared (local or imported) type as
+    /// `component::namespace::TypeName` per intent 469. The type does not
+    /// need to be declared in this schema — the Uid is built from the
+    /// component name alone — but callers that pass an unknown name receive
+    /// the same shape, on the assumption the caller knows what UID it wants.
+    pub fn uid_for(&self, type_name: &Name) -> Uid {
+        Uid::new(self.component.clone(), type_name.clone())
     }
 
     pub fn imports(&self) -> &[ImportBinding] {
@@ -52,6 +90,20 @@ impl AssembledSchema {
             Some(AssembledType::Local { body, .. }) => Some(body),
             Some(AssembledType::Imported { .. }) | None => None,
         }
+    }
+
+    /// Look up the declared type (local or imported) for a name, or None if
+    /// the schema does not surface it.
+    pub fn assembled_type(&self, name: &Name) -> Option<&AssembledType> {
+        self.types.get(name)
+    }
+
+    /// Fixed-width hint for an imported type. Returns Some(true) when the
+    /// imported type is known fixed-width, Some(false) when known
+    /// variable-width, and None when no hint was supplied (callers should
+    /// fall back to the conservative variable-width default).
+    pub fn import_width(&self, name: &Name) -> Option<bool> {
+        self.import_widths.get(name).copied()
     }
 
     pub fn plan_upgrade_from(&self, previous: &Self) -> Result<UpgradePlan> {
@@ -242,6 +294,41 @@ impl Endpoint {
 pub enum RouteBody {
     Type(Name),
     Unit,
+}
+
+/// Component-qualified type identifier per intent 469 + audit 171 §7.
+/// Displays as `component::namespace::TypeName`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Uid {
+    component: Name,
+    type_name: Name,
+}
+
+impl Uid {
+    pub fn new(component: Name, type_name: Name) -> Self {
+        Self {
+            component,
+            type_name,
+        }
+    }
+
+    pub fn component(&self) -> &Name {
+        &self.component
+    }
+
+    pub fn type_name(&self) -> &Name {
+        &self.type_name
+    }
+}
+
+impl fmt::Display for Uid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{}::{}::{}",
+            self.component, NAMESPACE_LABEL, self.type_name
+        )
+    }
 }
 
 fn standard_projection(

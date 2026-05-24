@@ -8,6 +8,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Schema {
+    component_name: Name,
     imports: Imports,
     ordinary_header: Header,
     owner_header: Header,
@@ -18,7 +19,20 @@ pub struct Schema {
 
 pub type Document = Schema;
 
+/// Anonymous component name used when callers construct a schema without a
+/// known component (the legacy `Schema::new` path, parser entrypoints that
+/// have no filename in hand). The eventual `.schema` reader supplies the real
+/// component name through `Schema::for_component` per intent 471.
+fn anonymous_component_name() -> Name {
+    Name::new("Anonymous").expect("Anonymous is a valid PascalCase name")
+}
+
 impl Schema {
+    /// Construct a Schema with the anonymous component name.
+    ///
+    /// Preserved for callers (notably the parser) that do not yet have a
+    /// filename-derived component in hand. Prefer `Schema::for_component`
+    /// whenever the caller knows the component.
     pub fn new(
         imports: Imports,
         ordinary_header: Header,
@@ -27,7 +41,31 @@ impl Schema {
         namespace: Namespace,
         features: Vec<Feature>,
     ) -> Result<Self> {
+        Self::for_component(
+            anonymous_component_name(),
+            imports,
+            ordinary_header,
+            owner_header,
+            sema_header,
+            namespace,
+            features,
+        )
+    }
+
+    /// Construct a Schema with an explicit component name (per intent 471 +
+    /// audit 171 §4.1). The component anchors UID generation through
+    /// `AssembledSchema::uid_for` as `component::namespace::Name`.
+    pub fn for_component(
+        component_name: Name,
+        imports: Imports,
+        ordinary_header: Header,
+        owner_header: Header,
+        sema_header: Header,
+        namespace: Namespace,
+        features: Vec<Feature>,
+    ) -> Result<Self> {
         let schema = Self {
+            component_name,
             imports,
             ordinary_header,
             owner_header,
@@ -37,6 +75,10 @@ impl Schema {
         };
         schema.validate_authored()?;
         Ok(schema)
+    }
+
+    pub fn component_name(&self) -> &Name {
+        &self.component_name
     }
 
     pub fn imports(&self) -> &Imports {
@@ -106,6 +148,7 @@ impl Schema {
         }
 
         Ok(AssembledSchema::new(
+            self.component_name.clone(),
             import_index.bindings,
             routes,
             types,
