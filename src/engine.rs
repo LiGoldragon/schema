@@ -229,7 +229,7 @@ impl LoweringContext {
             let AssembledType::Local { name, body } = schema_type else {
                 continue;
             };
-            if !UniversalUnknownMacro::is_response_enum_name(name) {
+            if !UniversalUnknownMacro::is_universal_unknown_carrier_name(name) {
                 continue;
             }
             UniversalUnknownMacro::inject_unknown_into_enum_body(body);
@@ -331,6 +331,26 @@ impl UniversalUnknownMacro {
     /// shape-logic detection per /338 §5.1 core macros.
     pub fn is_response_enum_name(name: &Name) -> bool {
         name.as_str().ends_with("Response")
+    }
+
+    /// Wire-side analogue of `is_response_enum_name`: the schema-driven
+    /// POC-from-v0.3 work (psyche 2026-05-26 + the three-language
+    /// structure per intent records 709, 710) extends the universal-
+    /// Unknown floor to the wire's `Reply` enum --- a closed Reply
+    /// variant set still needs forward-compat for clients that send
+    /// future operations the daemon doesn't recognise. The schema's
+    /// Reply type is the top-level enum that wraps every per-operation
+    /// reply, so the convention is exact-match `Reply` (not a suffix
+    /// match like `*Response`).
+    pub fn is_wire_reply_enum_name(name: &Name) -> bool {
+        name.as_str() == "Reply"
+    }
+
+    /// Either suffix-`Response` (actor side) or exact-`Reply` (wire
+    /// side) qualifies. The post-pass hook walks every local enum and
+    /// applies the injector to anything matching either rule.
+    pub fn is_universal_unknown_carrier_name(name: &Name) -> bool {
+        Self::is_response_enum_name(name) || Self::is_wire_reply_enum_name(name)
     }
 
     /// Whether the body is enum-shaped (Unknown injection only
