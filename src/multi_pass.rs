@@ -851,10 +851,12 @@ impl EffectTableRecognizer {
                 message: "`(EffectTable [ ... ])` requires exactly one rows sequence".into(),
             });
         }
-        let rows = items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
-            context: "multi_pass effect table",
-            message: "EffectTable body must be a sequence".into(),
-        })?;
+        let rows = items[1]
+            .as_sequence()
+            .ok_or_else(|| Error::InvalidSchemaText {
+                context: "multi_pass effect table",
+                message: "EffectTable body must be a sequence".into(),
+            })?;
         let entries = rows
             .iter()
             .map(|row| {
@@ -893,10 +895,12 @@ impl FanOutTargetsRecognizer {
                 message: "`(FanOutTargets [ ... ])` requires exactly one rows sequence".into(),
             });
         }
-        let rows = items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
-            context: "multi_pass fan-out targets",
-            message: "FanOutTargets body must be a sequence".into(),
-        })?;
+        let rows = items[1]
+            .as_sequence()
+            .ok_or_else(|| Error::InvalidSchemaText {
+                context: "multi_pass fan-out targets",
+                message: "FanOutTargets body must be a sequence".into(),
+            })?;
         let entries = rows
             .iter()
             .map(|row| {
@@ -916,10 +920,12 @@ impl FanOutTargetsRecognizer {
                 }
                 let effect = identifier_to_name(&row_items[0], "FanOutTargets effect")?;
                 let outputs_value =
-                    row_items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
-                        context: "multi_pass fan-out targets",
-                        message: "outputs payload must be a sequence".into(),
-                    })?;
+                    row_items[1]
+                        .as_sequence()
+                        .ok_or_else(|| Error::InvalidSchemaText {
+                            context: "multi_pass fan-out targets",
+                            message: "outputs payload must be a sequence".into(),
+                        })?;
                 let outputs = outputs_value
                     .iter()
                     .map(Self::recognize_output)
@@ -1006,10 +1012,12 @@ impl StorageDescriptorRecognizer {
                 message: "`(StorageDescriptor [ ... ])` requires exactly one rows sequence".into(),
             });
         }
-        let rows = items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
-            context: "multi_pass storage descriptor",
-            message: "StorageDescriptor body must be a sequence".into(),
-        })?;
+        let rows = items[1]
+            .as_sequence()
+            .ok_or_else(|| Error::InvalidSchemaText {
+                context: "multi_pass storage descriptor",
+                message: "StorageDescriptor body must be a sequence".into(),
+            })?;
         let entries = rows
             .iter()
             .map(|row| {
@@ -1027,7 +1035,8 @@ impl StorageDescriptorRecognizer {
                         message: "`(LogicalName TableType)` requires two positions".into(),
                     });
                 }
-                let logical_name = identifier_to_name(&row_items[0], "StorageDescriptor logical name")?;
+                let logical_name =
+                    identifier_to_name(&row_items[0], "StorageDescriptor logical name")?;
                 let table_type = identifier_to_name(&row_items[1], "StorageDescriptor table type")?;
                 Ok(StorageDescriptorEntry::new(logical_name, table_type))
             })

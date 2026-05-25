@@ -309,8 +309,7 @@ impl ShapeParser {
                 let row_data = expect_record_data(shape, "FanOutTargets entry")?;
                 let effect = Name::new(head.to_owned())?;
                 expect_exact_count("FanOutTargets entry", row_data.len(), 1)?;
-                let outputs_seq =
-                    expect_sequence(&row_data[0], "FanOutTargets outputs sequence")?;
+                let outputs_seq = expect_sequence(&row_data[0], "FanOutTargets outputs sequence")?;
                 let outputs = outputs_seq
                     .iter()
                     .map(|output| self.parse_fan_out_output(output))

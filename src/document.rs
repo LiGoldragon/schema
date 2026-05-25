@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
-    AssembledSchema, BuiltinMacroVariant, Container, DeclarationBody, Error, FanOutOutputDeclaration,
-    Feature, FeatureInput, Header, HeaderEndpointInput, HeaderInput, ImportBinding,
-    ImportDirective, ImportInput, ImportResolution, ImportedNames, Imports, Leg, LoweringContext,
-    Name, Namespace, Payload, Result, RouteBody, TypeExpression, TypeInput, UpgradeAnnotation,
-    UpgradeRuleInput,
+    AssembledSchema, BuiltinMacroVariant, Container, DeclarationBody, Error,
+    FanOutOutputDeclaration, Feature, FeatureInput, Header, HeaderEndpointInput, HeaderInput,
+    ImportBinding, ImportDirective, ImportInput, ImportResolution, ImportedNames, Imports, Leg,
+    LoweringContext, Name, Namespace, Payload, Result, RouteBody, TypeExpression, TypeInput,
+    UpgradeAnnotation, UpgradeRuleInput,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
