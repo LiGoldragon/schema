@@ -10,10 +10,12 @@ mod feature;
 mod header;
 mod import;
 mod layout;
+pub mod multi_pass;
 mod name;
 mod parser;
 mod reader;
 mod section;
+mod shape_parser;
 mod upgrade;
 
 pub use assembled::{AssembledSchema, AssembledType, Endpoint, Leg, Route, RouteBody};

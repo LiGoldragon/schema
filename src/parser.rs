@@ -7,7 +7,8 @@ use crate::{
 };
 
 impl Schema {
-    pub fn parse_str(input: &str) -> Result<Self> {
+    #[doc(hidden)]
+    pub fn parse_str_with_streaming_decoder(input: &str) -> Result<Self> {
         Parser::new(input).parse_schema()
     }
 }
