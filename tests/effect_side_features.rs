@@ -21,14 +21,16 @@ fn shape_parser_recognises_effect_table_and_fan_out_features() {
     let text = std::fs::read_to_string(fixture("recorder.schema")).expect("fixture exists");
     let schema = Schema::parse_str(&text).expect("schema parses through shape_parser");
     let features = schema.features();
-    assert!(matches!(
-        features.iter().find(|f| matches!(f, Feature::EffectTable(_))),
-        Some(_)
-    ));
-    assert!(matches!(
-        features.iter().find(|f| matches!(f, Feature::FanOutTargets(_))),
-        Some(_)
-    ));
+    assert!(
+        features
+            .iter()
+            .any(|f| matches!(f, Feature::EffectTable(_))),
+    );
+    assert!(
+        features
+            .iter()
+            .any(|f| matches!(f, Feature::FanOutTargets(_))),
+    );
 }
 
 #[test]
@@ -37,14 +39,16 @@ fn streaming_parser_recognises_effect_table_and_fan_out_features() {
     let schema = Schema::parse_str_with_streaming_decoder(&text)
         .expect("schema parses through streaming decoder");
     let features = schema.features();
-    assert!(matches!(
-        features.iter().find(|f| matches!(f, Feature::EffectTable(_))),
-        Some(_)
-    ));
-    assert!(matches!(
-        features.iter().find(|f| matches!(f, Feature::FanOutTargets(_))),
-        Some(_)
-    ));
+    assert!(
+        features
+            .iter()
+            .any(|f| matches!(f, Feature::EffectTable(_))),
+    );
+    assert!(
+        features
+            .iter()
+            .any(|f| matches!(f, Feature::FanOutTargets(_))),
+    );
 }
 
 #[test]

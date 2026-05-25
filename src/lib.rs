@@ -24,14 +24,14 @@ pub use declaration::{Declaration, DeclarationBody, Engine, Field, Payload, Vari
 pub use document::{Document, Schema};
 pub use engine::{
     AssembledFragment, BuiltinMacroVariant, FeatureInput, HeaderEndpointInput, HeaderInput,
-    ImportInput, LoweringContext, NodeDefinitionPoint, SchemaMacro, TypeInput, UniversalUnknownMacro,
-    UpgradeRuleInput,
+    ImportInput, LoweringContext, NodeDefinitionPoint, SchemaMacro, TypeInput,
+    UniversalUnknownMacro, UpgradeRuleInput,
 };
 pub use error::{Error, Result};
 pub use expression::{Container, Primitive, TypeExpression};
 pub use feature::{
-    EffectTableEntry, EffectTableFeature, EventFeature, FanOutOutputDeclaration, FanOutTargetsEntry,
-    FanOutTargetsFeature, Feature, ObservableFeature, StorageDescriptorEntry,
+    EffectTableEntry, EffectTableFeature, EventFeature, FanOutOutputDeclaration,
+    FanOutTargetsEntry, FanOutTargetsFeature, Feature, ObservableFeature, StorageDescriptorEntry,
     StorageDescriptorFeature,
 };
 pub use header::{Header, HeaderRoot};
