@@ -94,7 +94,7 @@ impl FieldLayout {
     pub fn new(position: usize, expression: TypeExpression, location: FieldLocation) -> Self {
         Self {
             position,
-            name: None,
+            name: Some(Field::inferred(expression.clone()).effective_name()),
             expression,
             location,
         }
@@ -103,7 +103,7 @@ impl FieldLayout {
     pub fn from_field(position: usize, document: &Document, field: &Field) -> Self {
         Self {
             position,
-            name: field.name().cloned(),
+            name: Some(field.effective_name()),
             expression: field.expression().clone(),
             location: location(document, field.expression()),
         }

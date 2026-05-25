@@ -10,8 +10,8 @@
 []
 []
 {
-  State [(Statement Statement) (Declaration Declaration)]
-  Record [(Entry Entry)]
+  State [(Statement) (Declaration)]
+  Record [(Entry)]
   Observe [(Records RecordQuery)]
 
   Kind [Decision Principle Correction]

@@ -405,9 +405,23 @@ fn parser_accepts_bool_as_boolean_primitive_alias() {
 }
 
 #[test]
-fn parser_accepts_explicit_field_names_without_changing_field_types() {
-    let schema = Schema::parse_str(
+fn parser_rejects_explicit_field_names() {
+    let error = Schema::parse_str(
         "{} [] [] [] { Magnitude [Maximum Medium] Confidence ((certainty Magnitude) (priority Magnitude)) } []",
+    )
+    .unwrap_err();
+    let message = format!("{error}");
+
+    assert!(
+        message.contains("field names are inferred from type names"),
+        "expected inferred field-name error, got: {message}"
+    );
+}
+
+#[test]
+fn field_names_are_derived_from_type_names() {
+    let schema = Schema::parse_str(
+        "{} [] [] [] { Magnitude [Maximum Medium] Certainty (Magnitude) Priority (Magnitude) Confidence (Certainty Priority) } []",
     )
     .unwrap();
 
@@ -416,13 +430,18 @@ fn parser_accepts_explicit_field_names_without_changing_field_types() {
     };
 
     assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name(), None);
     assert_eq!(
-        fields[0].name(),
-        Some(&FieldName::new("certainty").unwrap())
+        fields[0].derived_name(),
+        FieldName::new("certainty").unwrap()
     );
-    assert_eq!(fields[0].expression(), &named("Magnitude"));
-    assert_eq!(fields[1].name(), Some(&FieldName::new("priority").unwrap()));
-    assert_eq!(fields[1].expression(), &named("Magnitude"));
+    assert_eq!(fields[0].expression(), &named("Certainty"));
+    assert_eq!(fields[1].name(), None);
+    assert_eq!(
+        fields[1].derived_name(),
+        FieldName::new("priority").unwrap()
+    );
+    assert_eq!(fields[1].expression(), &named("Priority"));
 
     let layout = Layout::for_declaration(&schema, &name("Confidence")).unwrap();
     assert_eq!(
@@ -433,26 +452,23 @@ fn parser_accepts_explicit_field_names_without_changing_field_types() {
 }
 
 #[test]
-fn field_name_only_change_does_not_require_storage_upgrade_annotation() {
-    let previous = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Entry (Topic Magnitude) Topic (String) } []",
-    )
-    .unwrap()
-    .assemble(&[])
-    .unwrap();
-    let current = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Entry (Topic (certainty Magnitude)) Topic (String) } []",
-    )
-    .unwrap()
-    .assemble(&[])
-    .unwrap();
+fn container_field_names_are_derived_from_container_shape() {
+    let schema =
+        Schema::parse_str("{} [] [] [] { Topic (String) Query ((Option Topic) (Vec Topic)) } []")
+            .unwrap();
 
-    let plan = current.plan_upgrade_from(&previous).unwrap();
+    let Some(DeclarationBody::Record(fields)) = schema.declaration_body(&name("Query")) else {
+        panic!("expected record body");
+    };
 
-    assert!(plan.projections().iter().any(|projection| matches!(
-        projection,
-        Projection::Identity { name } if name.as_str() == "Entry"
-    )));
+    assert_eq!(
+        fields[0].derived_name(),
+        FieldName::new("optionTopic").unwrap()
+    );
+    assert_eq!(
+        fields[1].derived_name(),
+        FieldName::new("vecTopic").unwrap()
+    );
 }
 
 #[test]

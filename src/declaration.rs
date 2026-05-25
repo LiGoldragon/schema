@@ -1,4 +1,4 @@
-use crate::{FieldName, Name, TypeExpression};
+use crate::{Container, FieldName, Name, Primitive, TypeExpression};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declaration {
@@ -203,6 +203,14 @@ impl Field {
         self.name.as_ref()
     }
 
+    pub fn derived_name(&self) -> FieldName {
+        field_name_for_expression(&self.expression)
+    }
+
+    pub fn effective_name(&self) -> FieldName {
+        self.name.clone().unwrap_or_else(|| self.derived_name())
+    }
+
     pub fn expression(&self) -> &TypeExpression {
         &self.expression
     }
@@ -216,4 +224,60 @@ impl From<TypeExpression> for Field {
     fn from(expression: TypeExpression) -> Self {
         Self::inferred(expression)
     }
+}
+
+fn field_name_for_expression(expression: &TypeExpression) -> FieldName {
+    FieldName::new(field_name_text_for_expression(expression))
+        .expect("schema-derived field names are generated in field-name shape")
+}
+
+fn field_name_text_for_expression(expression: &TypeExpression) -> String {
+    match expression {
+        TypeExpression::Named(name) => lower_first(name.as_str()),
+        TypeExpression::Primitive(primitive) => primitive_field_name(*primitive).into(),
+        TypeExpression::Container(Container::Optional(inner)) => {
+            format!(
+                "option{}",
+                upper_first(&field_name_text_for_expression(inner))
+            )
+        }
+        TypeExpression::Container(Container::Vector(inner)) => {
+            format!("vec{}", upper_first(&field_name_text_for_expression(inner)))
+        }
+        TypeExpression::Container(Container::Map { key, value }) => format!(
+            "map{}{}",
+            upper_first(&field_name_text_for_expression(key)),
+            upper_first(&field_name_text_for_expression(value))
+        ),
+    }
+}
+
+fn primitive_field_name(primitive: Primitive) -> &'static str {
+    match primitive {
+        Primitive::String => "string",
+        Primitive::Bytes => "bytes",
+        Primitive::Boolean => "boolean",
+        Primitive::Unsigned8 => "u8",
+        Primitive::Unsigned16 => "u16",
+        Primitive::Unsigned32 => "u32",
+        Primitive::Unsigned64 => "u64",
+        Primitive::Date => "date",
+        Primitive::Time => "time",
+    }
+}
+
+fn lower_first(value: &str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    first.to_ascii_lowercase().to_string() + chars.as_str()
+}
+
+fn upper_first(value: &str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    first.to_ascii_uppercase().to_string() + chars.as_str()
 }

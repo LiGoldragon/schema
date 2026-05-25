@@ -48,8 +48,8 @@ fn first_pass_classifies_namespace_macro_candidate_shapes() {
     assert!(route_enum.is_sequence());
     let variants = route_enum.as_sequence().expect("route body variants");
     assert_eq!(variants.len(), 2);
-    assert!(variants[0].has_data_shape("Statement", 1));
-    assert!(variants[1].has_data_shape("Declaration", 1));
+    assert!(variants[0].has_data_shape("Statement", 0));
+    assert!(variants[1].has_data_shape("Declaration", 0));
 
     let newtype_candidate = map_value(namespace, "Topic");
     assert!(newtype_candidate.is_record());

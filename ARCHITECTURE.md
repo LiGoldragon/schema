@@ -38,6 +38,19 @@ root body declarations reserve their root key. A schema cannot define both a
 normal data type named `State` and a route-body declaration named `State` in
 the same namespace.
 
+Record and payload fields do not carry authored lowercase names. Field names
+are derived from the field type expression. A bare `Certainty` field, or the
+explicit self-named field form `(Certainty)`, lowers to the generated field
+name `certainty`; `(Vec Topic)` lowers to `vecTopic`.
+When the generated name needs to be more specific, the schema introduces a
+more specific PascalCase type such as `RecordSummaries (Vec RecordSummary)`
+and uses `RecordSummaries` in the field position. The direct
+`(fieldName Type)` form is rejected.
+
+Enum variants use the same self-named shorthand. `(Record)` in an enum means
+a data-carrying variant named `Record` whose payload type is the existing type
+`Record`. The repeated `(Record Record)` spelling is invalid for that case.
+
 ## Lowered Shape
 
 `Schema::assemble` resolves imports and lowers the authored schema into
@@ -72,6 +85,12 @@ emits assembled fragments into a `LoweringContext`.
   name, body, and optional Sema engine class;
 - local and imported type entries;
 - feature metadata copied from the authored schema.
+
+Generated-code names should be treated as schema-context names. The long-term
+codegen direction is fully qualified names that carry crate/schema context,
+or generated Rust modules that mirror schema-file contexts. Either way,
+imports and local declarations must leave one unambiguous item per name in a
+context; import/name clashes are errors, not shadowing.
 
 The route table is the object short-header generation consumes. A route can
 project itself into the MVP 64-bit short header (`byte 0 = root slot`, `byte 1

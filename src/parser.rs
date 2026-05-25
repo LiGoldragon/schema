@@ -1,9 +1,9 @@
 use nota_codec::{Decoder, Token};
 
 use crate::{
-    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, FieldName, Header,
-    HeaderRoot, ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result,
-    Schema, SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, Header, HeaderRoot,
+    ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result, Schema,
+    SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
 };
 
 impl Schema {
@@ -127,6 +127,13 @@ impl<'input> Parser<'input> {
         if matches!(self.peek_token("variant")?, Some(Token::LParen)) {
             self.expect_record_start("data-carrying variant")?;
             let name = self.read_name("variant name")?;
+            if self.peek_is_record_end("data-carrying variant")? {
+                self.expect_record_end("data-carrying variant")?;
+                return Ok(Variant::with_type(
+                    name.clone(),
+                    TypeExpression::named(name),
+                ));
+            }
             let mut fields = Vec::new();
             while !self.peek_is_record_end("data-carrying variant")? {
                 fields.push(self.parse_field()?);
@@ -140,8 +147,19 @@ impl<'input> Parser<'input> {
 
     fn parse_record_body(&mut self) -> Result<DeclarationBody> {
         self.expect_record_start("record declaration")?;
+        if let Some(Token::Ident(head)) = self.peek_token("record declaration")?
+            && is_container_head(&head)
+        {
+            let head = self.read_name_text("record declaration")?;
+            let expression = self.parse_container_expression_after_head(&head)?;
+            self.expect_record_end("record declaration")?;
+            return Ok(DeclarationBody::Newtype(expression));
+        }
+
         let mut fields = Vec::new();
+        let mut has_parenthesized_field = false;
         while !self.peek_is_record_end("record declaration")? {
+            has_parenthesized_field |= matches!(self.peek_token("field")?, Some(Token::LParen));
             fields.push(self.parse_field()?);
         }
         self.expect_record_end("record declaration")?;
@@ -151,16 +169,16 @@ impl<'input> Parser<'input> {
                 context: "record declaration",
                 message: "declaration record must carry at least one type expression".into(),
             }),
-            1 if fields[0].name().is_none() => Ok(DeclarationBody::Newtype(
-                fields.remove(0).expression().clone(),
-            )),
+            1 if !has_parenthesized_field && fields[0].name().is_none() => Ok(
+                DeclarationBody::Newtype(fields.remove(0).expression().clone()),
+            ),
             _ => Ok(DeclarationBody::Record(fields)),
         }
     }
 
     fn parse_field(&mut self) -> Result<Field> {
         if matches!(self.peek_token("field")?, Some(Token::LParen)) {
-            return self.parse_named_or_container_field();
+            return self.parse_container_field();
         }
         self.parse_type_expression().map(Field::inferred)
     }
@@ -204,7 +222,7 @@ impl<'input> Parser<'input> {
         Ok(expression)
     }
 
-    fn parse_named_or_container_field(&mut self) -> Result<Field> {
+    fn parse_container_field(&mut self) -> Result<Field> {
         self.expect_record_start("field")?;
         let head = self.read_field_or_container_head()?;
         if is_container_head(&head) {
@@ -212,11 +230,17 @@ impl<'input> Parser<'input> {
             self.expect_record_end("field")?;
             return Ok(Field::inferred(expression));
         }
+        if self.peek_is_record_end("field")? {
+            self.expect_record_end("field")?;
+            return Ok(Field::inferred(type_expression_from_text(&head)?));
+        }
 
-        let name = FieldName::new(head)?;
-        let expression = self.parse_type_expression()?;
-        self.expect_record_end("field")?;
-        Ok(Field::named(name, expression))
+        Err(Error::InvalidSchemaText {
+            context: "field",
+            message: format!(
+                "field names are inferred from type names; `{head}` is not a container type expression"
+            ),
+        })
     }
 
     fn parse_container_expression_after_head(&mut self, head: &str) -> Result<TypeExpression> {
@@ -498,6 +522,14 @@ impl<'input> Parser<'input> {
         self.decoder
             .peek_token()
             .map_err(|error| nota_error(context, error))
+    }
+}
+
+fn type_expression_from_text(text: &str) -> Result<TypeExpression> {
+    if let Some(primitive) = primitive(text) {
+        Ok(primitive)
+    } else {
+        Name::new(text).map(TypeExpression::named)
     }
 }
 

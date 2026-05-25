@@ -6,8 +6,8 @@ const IMPORT_FREE_SCHEMA: &str = r#"
 []
 []
 {
-  State [(Statement Statement) (Declaration Declaration)]
-  Record [(Entry Entry)]
+  State [(Statement) (Declaration)]
+  Record [(Entry)]
 
   Topic (String)
   Kind [Decision Principle]
@@ -56,7 +56,7 @@ fn multi_pass_pipeline_rejects_non_uniform_header_shape() {
 []
 []
 {
-  State [(Statement Statement)]
+  State [(Statement)]
   Statement (String)
 }
 []

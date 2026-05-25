@@ -49,8 +49,11 @@ impl nota_codec::NotaMapKey for Name {
     }
 }
 
-/// Field name used when a schema field needs a name that differs from
-/// the type-derived default.
+/// Rust-facing field name derived from a schema field's type expression.
+///
+/// Authored schema fields do not carry direct lowercase names. When a field
+/// needs a more specific generated name, the schema names the type more
+/// specifically and the field name is derived from that PascalCase type.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FieldName(String);
 

@@ -651,6 +651,13 @@ impl TypeMacroRecognizer {
                     }
                 })?;
                 let name = Name::new(head)?;
+                if items.len() == 1 {
+                    variants.push(Variant::with_type(
+                        name.clone(),
+                        TypeExpression::named(name),
+                    ));
+                    continue;
+                }
                 let fields = items[1..]
                     .iter()
                     .map(parse_field)
@@ -944,8 +951,8 @@ fn parse_field(value: &NotaValue) -> Result<Field> {
     // A field is either:
     //  - a bare identifier (positional field, name = type) — handled
     //    by lower_type_expression below;
-    //  - a `(name TypeExpression)` 2-record where the head is a
-    //    lowercase identifier (field-name override per operator/180);
+    //  - a single `(Type)` record for the explicit self-named field
+    //    form;
     //  - a `(Container ...)` record (Option / Vec / Map) which is
     //    ITSELF the type expression.
     if value.is_record() {
@@ -964,17 +971,16 @@ fn parse_field(value: &NotaValue) -> Result<Field> {
             let expr = lower_container_expression_after_head(head_text, &items[1..])?;
             return Ok(Field::inferred(expr));
         }
-        // Field-name override: `(camelCase Type)` with a non-Pascal
-        // head identifier. Per operator/180.
-        if !starts_with_uppercase(head_text) && items.len() == 2 {
-            let field_name = crate::FieldName::new(head_text.to_string())?;
-            let type_expr = lower_type_expression(&items[1])?;
-            return Ok(Field::named(field_name, type_expr));
+        if items.len() == 1 {
+            let expr = lower_type_expression(head_value)?;
+            return Ok(Field::inferred(expr));
         }
-        // Otherwise: treat as a positional Pascal-cased type-name
-        // record (rare; the parser would normally treat this as a
-        // newtype). Fall through to the generic type-expression
-        // path.
+        return Err(Error::InvalidSchemaText {
+            context: "multi_pass field",
+            message: format!(
+                "field names are inferred from type names; `{head_text}` is not a container type expression"
+            ),
+        });
     }
     let expr = lower_type_expression(value)?;
     Ok(Field::inferred(expr))
@@ -1086,12 +1092,6 @@ fn identifier_or_string(value: &NotaValue) -> Result<String> {
 
 fn is_container_head(text: &str) -> bool {
     matches!(text, "Option" | "Vec" | "Map")
-}
-
-fn starts_with_uppercase(text: &str) -> bool {
-    text.as_bytes()
-        .first()
-        .is_some_and(|byte| byte.is_ascii_uppercase())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
