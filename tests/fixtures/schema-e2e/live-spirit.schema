@@ -4,11 +4,11 @@
 }
 
 [
-  (State [Statement])
-  (Record [Entry])
-  (Observe [Observation])
-  (Watch [Subscription])
-  (Unwatch [SubscriptionToken])
+  (State (Statement))
+  (Record (Entry))
+  (Observe (Observation))
+  (Watch (Subscription))
+  (Unwatch (SubscriptionToken))
 ]
 
 []

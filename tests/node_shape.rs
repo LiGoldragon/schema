@@ -78,7 +78,7 @@ fn node_shape_error_reports_definition_point_and_value_kind() {
 fn multi_pass_pipeline_accepts_all_public_namespace_shapes() {
     let text = "
 {}
-[(Route [Record Alias Newtype ContainerNewtype Enum])]
+[(Route (Record Alias Newtype ContainerNewtype Enum))]
 []
 []
 {

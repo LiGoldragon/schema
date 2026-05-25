@@ -377,14 +377,14 @@ impl<'document> MacroPipeline<'document> {
     fn lower_header(&mut self, candidates: Vec<HeaderCandidate<'document>>) -> Result<()> {
         for candidate in candidates {
             let root_value = candidate.value;
-            // A header root is `(Root [SubVariant ...])` — a tagged
-            // record with exactly two positions: head + sequence of
-            // endpoint names. Shape-logic dispatch.
+            // A header root is `(Root (SubVariant ...))` — a tagged
+            // record with exactly two positions: head + enum-shaped
+            // endpoint choices. Shape-logic dispatch.
             if !root_value.is_record() || root_value.record_arity() != Some(2) {
                 return Err(Error::InvalidSchemaText {
                     context: "multi_pass header",
                     message: format!(
-                        "{:?} root must be `(Root [SubVariant ...])` with two positions, got arity {:?}",
+                        "{:?} root must be `(Root (SubVariant ...))` with two positions, got arity {:?}",
                         candidate.position,
                         root_value.record_arity(),
                     ),
@@ -399,13 +399,13 @@ impl<'document> MacroPipeline<'document> {
                     })?;
             let root = Name::new(root_name_text)?;
             let endpoints_value = &root_value.as_record().unwrap()[1];
-            if !endpoints_value.is_sequence() {
+            if !endpoints_value.is_record() {
                 return Err(Error::InvalidSchemaText {
                     context: "multi_pass header",
-                    message: format!("root `{root_name_text}` requires a `[...]` endpoint list"),
+                    message: format!("root `{root_name_text}` requires a `(...)` endpoint enum"),
                 });
             }
-            let endpoint_idents = endpoints_value.as_sequence().unwrap();
+            let endpoint_idents = endpoints_value.as_record().unwrap();
             let body_lookup = self.snapshot_local_bodies()?;
             let mut endpoints = Vec::new();
             for (endpoint_slot, endpoint_value) in endpoint_idents.iter().enumerate() {

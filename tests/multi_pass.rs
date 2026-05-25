@@ -2,7 +2,7 @@ use schema::{Schema, multi_pass};
 
 const IMPORT_FREE_SCHEMA: &str = r#"
 {}
-[(State [Statement Declaration]) (Record [Entry])]
+[(State (Statement Declaration)) (Record (Entry))]
 []
 []
 {
@@ -66,7 +66,7 @@ fn multi_pass_pipeline_rejects_non_uniform_header_shape() {
     assert!(
         error
             .to_string()
-            .contains("requires a `[...]` endpoint list")
+            .contains("requires a `(...)` endpoint enum")
     );
 }
 
@@ -74,7 +74,7 @@ fn multi_pass_pipeline_rejects_non_uniform_header_shape() {
 fn multi_pass_pipeline_rejects_repeated_self_payload_variant() {
     let bad = r#"
 {}
-[(Route [Record])]
+[(Route (Record))]
 []
 []
 {

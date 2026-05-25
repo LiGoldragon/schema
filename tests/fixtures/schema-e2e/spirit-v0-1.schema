@@ -3,9 +3,9 @@
   SemaSet (Import ./sema.schema [SemaOperation SemaObservation])
 }
 [
-  (State [Statement Declaration])
-  (Record [Entry])
-  (Observe [Records])
+  (State (Statement Declaration))
+  (Record (Entry))
+  (Observe (Records))
 ]
 []
 []

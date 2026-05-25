@@ -81,7 +81,7 @@ impl<'input> Parser<'input> {
         while !self.peek_is_seq_end(context)? {
             self.expect_record_start(context)?;
             let root = self.read_name(context)?;
-            let endpoints = self.parse_name_vector(context)?;
+            let endpoints = self.parse_name_record(context)?;
             self.expect_record_end(context)?;
             roots.push(HeaderRoot::new(root, endpoints)?);
         }
@@ -411,6 +411,16 @@ impl<'input> Parser<'input> {
             names.push(self.read_name(context)?);
         }
         self.expect_seq_end(context)?;
+        Ok(names)
+    }
+
+    fn parse_name_record(&mut self, context: &'static str) -> Result<Vec<Name>> {
+        self.expect_record_start(context)?;
+        let mut names = Vec::new();
+        while !self.peek_is_record_end(context)? {
+            names.push(self.read_name(context)?);
+        }
+        self.expect_record_end(context)?;
         Ok(names)
     }
 

@@ -84,7 +84,7 @@ impl ShapeParser {
                 let root_name = Name::new(expect_record_head(shape, context)?.to_owned())?;
                 let data = expect_record_data(shape, context)?;
                 expect_exact_count(context, data.len(), 1)?;
-                let endpoints = self.parse_name_sequence(&data[0], context)?;
+                let endpoints = self.parse_name_record(&data[0], context)?;
                 HeaderRoot::new(root_name, endpoints)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -402,6 +402,11 @@ impl ShapeParser {
 
     fn parse_name_sequence(&self, value: &NotaValue, context: &'static str) -> Result<Vec<Name>> {
         let values = expect_sequence(value, context)?;
+        self.parse_names(values, context)
+    }
+
+    fn parse_name_record(&self, value: &NotaValue, context: &'static str) -> Result<Vec<Name>> {
+        let values = expect_record_values(value, context)?;
         self.parse_names(values, context)
     }
 

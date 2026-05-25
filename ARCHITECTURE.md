@@ -28,8 +28,9 @@ directive. The supported MVP directives are `Import` and `ImportAll`.
 Imported names enter the local namespace directly; the binding does not
 create a qualified prefix.
 
-Each header root uses the uniform v13 form `(Root [SubVariant ...])`.
-Single-sub-variant roots still use the vector form. Header entries are route
+Each header root uses the uniform enum-choice form
+`(Root (SubVariant ...))`. Single-sub-variant roots still use the
+parenthesized enum form: `(Record (Entry))`. Header entries are route
 selectors only. Body types are declared in the namespace and connected during
 lowering.
 

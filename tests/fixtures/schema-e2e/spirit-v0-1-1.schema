@@ -4,9 +4,9 @@
   Shared (Import ./shared.schema [Source Stamp])
 }
 [
-  (State [Statement Declaration])
-  (Record [Entry])
-  (Observe [Records])
+  (State (Statement Declaration))
+  (Record (Entry))
+  (Observe (Records))
 ]
 []
 []

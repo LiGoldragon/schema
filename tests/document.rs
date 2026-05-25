@@ -454,7 +454,7 @@ fn field_names_are_derived_from_type_names() {
 #[test]
 fn parser_uses_vectors_for_struct_fields_and_records_for_enum_variants() {
     let schema = Schema::parse_str(
-        "{} [(Route [Record])] [] [] { Route ((Record)) Record [Topic Kind] Topic [String] Kind (Decision) } []",
+        "{} [(Route (Record))] [] [] { Route ((Record)) Record [Topic Kind] Topic [String] Kind (Decision) } []",
     )
     .unwrap();
 
@@ -471,7 +471,7 @@ fn parser_uses_vectors_for_struct_fields_and_records_for_enum_variants() {
 
 #[test]
 fn parser_rejects_repeated_self_payload_variant() {
-    let text = "{} [(Route [Record])] [] [] { Route ((Record Record)) Record [Topic Kind] Topic [String] Kind (Decision) } []";
+    let text = "{} [(Route (Record))] [] [] { Route ((Record Record)) Record [Topic Kind] Topic [String] Kind (Decision) } []";
 
     let shape_error = Schema::parse_str(text).unwrap_err().to_string();
     assert!(
