@@ -48,10 +48,10 @@ pub enum NamespaceValueShape {
 impl NamespaceValueShape {
     pub fn recognize(value: &NotaValue) -> Result<Self> {
         match value.kind() {
-            NotaValueKind::Sequence => Ok(Self::Enum),
+            NotaValueKind::Sequence if is_newtype_sequence(value) => Ok(Self::Newtype),
+            NotaValueKind::Sequence => Ok(Self::Record),
             NotaValueKind::Identifier => Ok(Self::Alias),
-            NotaValueKind::Record if is_newtype_record(value) => Ok(Self::Newtype),
-            NotaValueKind::Record => Ok(Self::Record),
+            NotaValueKind::Record => Ok(Self::Enum),
             _ => Err(unsupported_shape(
                 NodeDefinitionPoint::NamespaceValue,
                 value,
@@ -61,20 +61,8 @@ impl NamespaceValueShape {
     }
 }
 
-fn is_newtype_record(value: &NotaValue) -> bool {
-    if let Some([inner]) = value.as_record() {
-        return inner.is_identifier()
-            || inner
-                .record_head_identifier()
-                .is_some_and(is_container_head);
-    }
-    value
-        .record_head_identifier()
-        .is_some_and(is_container_head)
-}
-
-fn is_container_head(head: &str) -> bool {
-    matches!(head, "Option" | "Vec" | "Map")
+fn is_newtype_sequence(value: &NotaValue) -> bool {
+    matches!(value.as_sequence(), Some([_]))
 }
 
 fn expect_kind(

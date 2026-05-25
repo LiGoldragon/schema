@@ -606,11 +606,11 @@ impl ImportMacroRecognizer {
     }
 }
 
-/// Builtin Type macro recognizer. Dispatches by SHAPE — sequence /
-/// record-with-arity / bare identifier — into enum / record / newtype
+/// Builtin Type macro recognizer. Dispatches by SHAPE — record /
+/// sequence-with-arity / bare identifier — into enum / record / newtype
 /// / alias bodies. This is the load-bearing
-/// `(F1 F2 …)` vs `(T)` vs `[V1 V2 …]` vs `bare-identifier` dispatch
-/// from `reports/second-designer/170-schema-lowering-executor-model-2026-05-24.md` §2.
+/// `[F1 F2 ...]` vs `[T]` vs `(V1 V2 ...)` vs `bare-identifier`
+/// dispatch from the schema grammar intent.
 struct TypeMacroRecognizer;
 
 impl TypeMacroRecognizer {
@@ -633,7 +633,7 @@ impl TypeMacroRecognizer {
     }
 
     fn recognize_enum(value: &NotaValue) -> Result<DeclarationBody> {
-        let variants_value = value.as_sequence().unwrap();
+        let variants_value = value.as_record().unwrap();
         let mut variants = Vec::new();
         for variant_value in variants_value {
             // Each variant dispatches on shape too: bare ident =
@@ -662,6 +662,7 @@ impl TypeMacroRecognizer {
                     .iter()
                     .map(parse_field)
                     .collect::<Result<Vec<_>>>()?;
+                reject_repeated_self_payload(&name, &fields, "multi_pass type")?;
                 variants.push(variant_with_fields(name, fields));
             } else {
                 return Err(Error::InvalidSchemaText {
@@ -674,19 +675,14 @@ impl TypeMacroRecognizer {
     }
 
     fn recognize_record(value: &NotaValue) -> Result<DeclarationBody> {
-        Ok(DeclarationBody::Record(fields_from_record(value)?))
+        Ok(DeclarationBody::Record(fields_from_sequence(value)?))
     }
 
     fn recognize_newtype(value: &NotaValue) -> Result<DeclarationBody> {
-        let items = value.as_record().unwrap();
+        let items = value.as_sequence().unwrap();
         if let [inner] = items {
-            return Ok(DeclarationBody::Newtype(lower_type_expression(inner)?));
-        }
-        if value
-            .record_head_identifier()
-            .is_some_and(is_container_head)
-        {
-            return Ok(DeclarationBody::Newtype(lower_type_expression(value)?));
+            let field = parse_field(inner)?;
+            return Ok(DeclarationBody::Newtype(field.expression().clone()));
         }
         Err(Error::InvalidSchemaText {
             context: "multi_pass type",
@@ -695,8 +691,8 @@ impl TypeMacroRecognizer {
     }
 }
 
-fn fields_from_record(value: &NotaValue) -> Result<Vec<Field>> {
-    let items = value.as_record().unwrap();
+fn fields_from_sequence(value: &NotaValue) -> Result<Vec<Field>> {
+    let items = value.as_sequence().unwrap();
     if items.is_empty() {
         return Err(Error::InvalidSchemaText {
             context: "multi_pass type",
@@ -1075,6 +1071,25 @@ fn variant_with_fields(name: Name, fields: Vec<Field>) -> Variant {
         ),
         _ => Variant::with_field_entries(name, fields),
     }
+}
+
+fn reject_repeated_self_payload(
+    name: &Name,
+    fields: &[Field],
+    context: &'static str,
+) -> Result<()> {
+    if let [field] = fields
+        && field.name().is_none()
+        && matches!(field.expression(), TypeExpression::Named(payload) if payload == name)
+    {
+        return Err(Error::InvalidSchemaText {
+            context,
+            message: format!(
+                "self-named variant payload `{name}` uses `({name})`, not `({name} {name})`"
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn identifier_or_string(value: &NotaValue) -> Result<String> {

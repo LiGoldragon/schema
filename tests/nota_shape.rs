@@ -45,27 +45,28 @@ fn first_pass_classifies_namespace_macro_candidate_shapes() {
     let namespace = values[4].as_map().expect("namespace map");
 
     let route_enum = map_value(namespace, "State");
-    assert!(route_enum.is_sequence());
-    let variants = route_enum.as_sequence().expect("route body variants");
+    assert!(route_enum.is_record());
+    let variants = route_enum.as_record().expect("route body variants");
     assert_eq!(variants.len(), 2);
     assert!(variants[0].has_data_shape("Statement", 0));
     assert!(variants[1].has_data_shape("Declaration", 0));
 
     let newtype_candidate = map_value(namespace, "Topic");
-    assert!(newtype_candidate.is_record());
-    assert_eq!(newtype_candidate.record_arity(), Some(1));
-    assert_eq!(newtype_candidate.record_head_identifier(), Some("String"));
+    assert!(newtype_candidate.is_sequence());
+    let newtype_items = newtype_candidate
+        .as_sequence()
+        .expect("newtype candidate sequence");
+    assert_eq!(newtype_items.len(), 1);
+    assert_eq!(newtype_items[0].identifier_text(), Some("String"));
 
     let record_candidate = map_value(namespace, "Entry");
-    assert!(record_candidate.is_record());
-    assert_eq!(record_candidate.record_arity(), Some(8));
-    assert_eq!(
-        record_candidate.as_record().expect("record")[0].identifier_text(),
-        Some("Topic")
-    );
+    assert!(record_candidate.is_sequence());
+    let record_fields = record_candidate.as_sequence().expect("record fields");
+    assert_eq!(record_fields.len(), 8);
+    assert_eq!(record_fields[0].identifier_text(), Some("Topic"));
 
     let container_field = map_value(namespace, "RecordsObserved")
-        .as_record()
+        .as_sequence()
         .expect("record with vector field");
     assert_eq!(container_field.len(), 1);
     assert!(container_field[0].has_data_shape("Vec", 1));

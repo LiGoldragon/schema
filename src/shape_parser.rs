@@ -105,8 +105,8 @@ impl ShapeParser {
 
     fn parse_declaration_body(&self, value: &NotaValue) -> Result<DeclarationBody> {
         match value.kind() {
-            NotaValueKind::Sequence => self.parse_enum_body(value),
-            NotaValueKind::Record => self.parse_record_body(value),
+            NotaValueKind::Sequence => self.parse_record_body(value),
+            NotaValueKind::Record => self.parse_enum_body(value),
             _ => self
                 .parse_type_expression(value)
                 .map(DeclarationBody::Alias),
@@ -114,7 +114,7 @@ impl ShapeParser {
     }
 
     fn parse_enum_body(&self, value: &NotaValue) -> Result<DeclarationBody> {
-        let variants = expect_sequence(value, "enum declaration")?
+        let variants = expect_record_values(value, "enum declaration")?
             .iter()
             .map(|variant| self.parse_variant(variant))
             .collect::<Result<Vec<_>>>()?;
@@ -136,6 +136,7 @@ impl ShapeParser {
                 .iter()
                 .map(|field| self.parse_field(field))
                 .collect::<Result<Vec<_>>>()?;
+            reject_repeated_self_payload(&name, &fields, "data-carrying variant")?;
             Ok(variant_with_fields(name, fields))
         } else {
             self.read_name(value, "unit variant").map(Variant::unit)
@@ -143,15 +144,7 @@ impl ShapeParser {
     }
 
     fn parse_record_body(&self, value: &NotaValue) -> Result<DeclarationBody> {
-        let values = expect_record_values(value, "record declaration")?;
-        if let Some(head) = values.first().and_then(NotaValue::identifier_text)
-            && is_container_head(head)
-        {
-            return self
-                .parse_container_expression_after_head(head, &values[1..])
-                .map(DeclarationBody::Newtype);
-        }
-
+        let values = expect_sequence(value, "record declaration")?;
         let fields = values
             .iter()
             .map(|field| self.parse_field(field))
@@ -162,7 +155,7 @@ impl ShapeParser {
                 context: "record declaration",
                 message: "declaration record must carry at least one type expression".into(),
             }),
-            1 if !values[0].is_record() && fields[0].name().is_none() => {
+            1 if fields[0].name().is_none() => {
                 Ok(DeclarationBody::Newtype(fields[0].expression().clone()))
             }
             _ => Ok(DeclarationBody::Record(fields)),
@@ -520,6 +513,25 @@ fn variant_with_fields(name: Name, fields: Vec<Field>) -> Variant {
         ),
         _ => Variant::with_field_entries(name, fields),
     }
+}
+
+fn reject_repeated_self_payload(
+    name: &Name,
+    fields: &[Field],
+    context: &'static str,
+) -> Result<()> {
+    if let [field] = fields
+        && field.name().is_none()
+        && matches!(field.expression(), TypeExpression::Named(payload) if payload == name)
+    {
+        return Err(Error::InvalidSchemaText {
+            context,
+            message: format!(
+                "self-named variant payload `{name}` uses `({name})`, not `({name} {name})`"
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn primitive(text: &str) -> Option<TypeExpression> {

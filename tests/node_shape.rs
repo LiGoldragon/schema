@@ -12,9 +12,9 @@ fn parse_one(text: &str) -> NotaValue {
 
 #[test]
 fn namespace_shape_recognizer_splits_enum_record_newtype_and_alias() {
-    let enum_value = parse_one("[Decision Principle]");
-    let record_value = parse_one("(Topic Kind)");
-    let newtype_value = parse_one("(String)");
+    let enum_value = parse_one("(Decision Principle)");
+    let record_value = parse_one("[Topic Kind]");
+    let newtype_value = parse_one("[String]");
     let alias_value = parse_one("Topic");
 
     assert_eq!(
@@ -38,7 +38,7 @@ fn namespace_shape_recognizer_splits_enum_record_newtype_and_alias() {
 
 #[test]
 fn container_namespace_value_is_a_newtype_shape() {
-    let value = parse_one("(Vec Topic)");
+    let value = parse_one("[(Vec Topic)]");
 
     assert_eq!(
         NodeDefinitionShape::recognize(NodeDefinitionPoint::NamespaceValue, &value).unwrap(),
@@ -48,7 +48,7 @@ fn container_namespace_value_is_a_newtype_shape() {
 
 #[test]
 fn multi_field_namespace_value_is_a_record_shape() {
-    let value = parse_one("(Topic Kind)");
+    let value = parse_one("[Topic Kind]");
 
     assert_eq!(
         NodeDefinitionShape::recognize(NodeDefinitionPoint::NamespaceValue, &value).unwrap(),
@@ -82,14 +82,14 @@ fn multi_pass_pipeline_accepts_all_public_namespace_shapes() {
 []
 []
 {
-  Route [(Record) (Alias) (Newtype) (ContainerNewtype) (Enum)]
-  Record ((Topic) (Kind))
-  Alias (Topic)
-  Newtype (String)
-  ContainerNewtype (Vec Topic)
-  Enum [Decision Principle]
-  Topic (String)
-  Kind [Decision Principle]
+  Route ((Record) (Alias) (Newtype) (ContainerNewtype) (Enum))
+  Record [(Topic) (Kind)]
+  Alias Topic
+  Newtype [String]
+  ContainerNewtype [(Vec Topic)]
+  Enum (Decision Principle)
+  Topic [String]
+  Kind (Decision Principle)
 }
 []
 ";

@@ -6,15 +6,15 @@ const IMPORT_FREE_SCHEMA: &str = r#"
 []
 []
 {
-  State [(Statement) (Declaration)]
-  Record [(Entry)]
+  State ((Statement) (Declaration))
+  Record ((Entry))
 
-  Topic (String)
-  Kind [Decision Principle]
-  Statement (Topic)
-  Declaration (Topic Kind)
-  Entry (Topic Kind)
-  RecordAccepted (u64)
+  Topic [String]
+  Kind (Decision Principle)
+  Statement [Topic]
+  Declaration [Topic Kind]
+  Entry [Topic Kind]
+  RecordAccepted [u64]
 }
 [(Reply RecordAccepted)]
 "#;
@@ -56,8 +56,8 @@ fn multi_pass_pipeline_rejects_non_uniform_header_shape() {
 []
 []
 {
-  State [(Statement)]
-  Statement (String)
+  State ((Statement))
+  Statement [String]
 }
 []
 "#;
@@ -67,5 +67,30 @@ fn multi_pass_pipeline_rejects_non_uniform_header_shape() {
         error
             .to_string()
             .contains("requires a `[...]` endpoint list")
+    );
+}
+
+#[test]
+fn multi_pass_pipeline_rejects_repeated_self_payload_variant() {
+    let bad = r#"
+{}
+[(Route [Record])]
+[]
+[]
+{
+  Route ((Record Record))
+  Record [Topic Kind]
+  Topic [String]
+  Kind (Decision)
+}
+[]
+"#;
+
+    let error = multi_pass::read_schema_six_position(bad)
+        .expect_err("repeated self-payload variant must fail");
+
+    assert!(
+        error.to_string().contains("self-named variant payload"),
+        "expected self-named payload error, got: {error}"
     );
 }

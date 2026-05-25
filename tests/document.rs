@@ -394,7 +394,7 @@ fn migrate_annotation_allows_changed_record_projection() {
 
 #[test]
 fn parser_accepts_bool_as_boolean_primitive_alias() {
-    let schema = Schema::parse_str("{} [] [] [] { Flag (bool) } []").unwrap();
+    let schema = Schema::parse_str("{} [] [] [] { Flag [bool] } []").unwrap();
 
     assert_eq!(
         schema.declaration_body(&name("Flag")),
@@ -407,7 +407,7 @@ fn parser_accepts_bool_as_boolean_primitive_alias() {
 #[test]
 fn parser_rejects_explicit_field_names() {
     let error = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Confidence ((certainty Magnitude) (priority Magnitude)) } []",
+        "{} [] [] [] { Magnitude (Maximum Medium) Confidence [(certainty Magnitude) (priority Magnitude)] } []",
     )
     .unwrap_err();
     let message = format!("{error}");
@@ -421,7 +421,7 @@ fn parser_rejects_explicit_field_names() {
 #[test]
 fn field_names_are_derived_from_type_names() {
     let schema = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Certainty (Magnitude) Priority (Magnitude) Confidence (Certainty Priority) } []",
+        "{} [] [] [] { Magnitude (Maximum Medium) Certainty [Magnitude] Priority [Magnitude] Confidence [Certainty Priority] } []",
     )
     .unwrap();
 
@@ -452,9 +452,46 @@ fn field_names_are_derived_from_type_names() {
 }
 
 #[test]
+fn parser_uses_vectors_for_struct_fields_and_records_for_enum_variants() {
+    let schema = Schema::parse_str(
+        "{} [(Route [Record])] [] [] { Route ((Record)) Record [Topic Kind] Topic [String] Kind (Decision) } []",
+    )
+    .unwrap();
+
+    let record = schema.variant(&name("Route"), &name("Record")).unwrap();
+    assert_eq!(record.payload(), &Payload::Type(named("Record")));
+
+    let Some(DeclarationBody::Record(fields)) = schema.declaration_body(&name("Record")) else {
+        panic!("expected vector-shaped record body");
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].expression(), &named("Topic"));
+    assert_eq!(fields[1].expression(), &named("Kind"));
+}
+
+#[test]
+fn parser_rejects_repeated_self_payload_variant() {
+    let text = "{} [(Route [Record])] [] [] { Route ((Record Record)) Record [Topic Kind] Topic [String] Kind (Decision) } []";
+
+    let shape_error = Schema::parse_str(text).unwrap_err().to_string();
+    assert!(
+        shape_error.contains("self-named variant payload"),
+        "expected self-named payload error, got: {shape_error}"
+    );
+
+    let streaming_error = Schema::parse_str_with_streaming_decoder(text)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        streaming_error.contains("self-named variant payload"),
+        "expected self-named payload error, got: {streaming_error}"
+    );
+}
+
+#[test]
 fn container_field_names_are_derived_from_container_shape() {
     let schema =
-        Schema::parse_str("{} [] [] [] { Topic (String) Query ((Option Topic) (Vec Topic)) } []")
+        Schema::parse_str("{} [] [] [] { Topic [String] Query [(Option Topic) (Vec Topic)] } []")
             .unwrap();
 
     let Some(DeclarationBody::Record(fields)) = schema.declaration_body(&name("Query")) else {

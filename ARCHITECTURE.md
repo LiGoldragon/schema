@@ -38,18 +38,22 @@ root body declarations reserve their root key. A schema cannot define both a
 normal data type named `State` and a route-body declaration named `State` in
 the same namespace.
 
-Record and payload fields do not carry authored lowercase names. Field names
-are derived from the field type expression. A bare `Certainty` field, or the
-explicit self-named field form `(Certainty)`, lowers to the generated field
-name `certainty`; `(Vec Topic)` lowers to `vecTopic`.
+Struct fields use vector syntax because a struct is an ordered vector of
+fields: `Entry [Topic Kind Summary]`. Record and payload fields do not carry
+authored lowercase names. Field names are derived from the field type
+expression. A bare `Certainty` field, or the explicit self-named field form
+`(Certainty)`, lowers to the generated field name `certainty`; `(Vec Topic)`
+lowers to `vecTopic`.
 When the generated name needs to be more specific, the schema introduces a
-more specific PascalCase type such as `RecordSummaries (Vec RecordSummary)`
+more specific PascalCase type such as `RecordSummaries [(Vec RecordSummary)]`
 and uses `RecordSummaries` in the field position. The direct
 `(fieldName Type)` form is rejected.
 
-Enum variants use the same self-named shorthand. `(Record)` in an enum means
-a data-carrying variant named `Record` whose payload type is the existing type
-`Record`. The repeated `(Record Record)` spelling is invalid for that case.
+Enum variants use record syntax because an enum is one-of:
+`Kind (Decision Principle Correction)`. Data-carrying variants use the same
+self-named shorthand. `(Record)` in an enum means a data-carrying variant
+named `Record` whose payload type is the existing type `Record`. The repeated
+`(Record Record)` spelling is invalid for that case.
 
 ## Lowered Shape
 

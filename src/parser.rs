@@ -103,8 +103,8 @@ impl<'input> Parser<'input> {
 
     fn parse_declaration_body(&mut self) -> Result<DeclarationBody> {
         match self.peek_token("declaration body")? {
-            Some(Token::LBracket) => self.parse_enum_body(),
-            Some(Token::LParen) => self.parse_record_body(),
+            Some(Token::LBracket) => self.parse_record_body(),
+            Some(Token::LParen) => self.parse_enum_body(),
             Some(_) => self.parse_type_expression().map(DeclarationBody::Alias),
             None => Err(Error::InvalidSchemaText {
                 context: "declaration body",
@@ -114,12 +114,12 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_enum_body(&mut self) -> Result<DeclarationBody> {
-        self.expect_seq_start("enum declaration")?;
+        self.expect_record_start("enum declaration")?;
         let mut variants = Vec::new();
-        while !self.peek_is_seq_end("enum declaration")? {
+        while !self.peek_is_record_end("enum declaration")? {
             variants.push(self.parse_variant()?);
         }
-        self.expect_seq_end("enum declaration")?;
+        self.expect_record_end("enum declaration")?;
         Ok(DeclarationBody::Enum { variants })
     }
 
@@ -139,6 +139,7 @@ impl<'input> Parser<'input> {
                 fields.push(self.parse_field()?);
             }
             self.expect_record_end("data-carrying variant")?;
+            reject_repeated_self_payload(&name, &fields, "data-carrying variant")?;
             Ok(variant_with_fields(name, fields))
         } else {
             self.read_name("unit variant").map(Variant::unit)
@@ -146,32 +147,21 @@ impl<'input> Parser<'input> {
     }
 
     fn parse_record_body(&mut self) -> Result<DeclarationBody> {
-        self.expect_record_start("record declaration")?;
-        if let Some(Token::Ident(head)) = self.peek_token("record declaration")?
-            && is_container_head(&head)
-        {
-            let head = self.read_name_text("record declaration")?;
-            let expression = self.parse_container_expression_after_head(&head)?;
-            self.expect_record_end("record declaration")?;
-            return Ok(DeclarationBody::Newtype(expression));
-        }
-
+        self.expect_seq_start("record declaration")?;
         let mut fields = Vec::new();
-        let mut has_parenthesized_field = false;
-        while !self.peek_is_record_end("record declaration")? {
-            has_parenthesized_field |= matches!(self.peek_token("field")?, Some(Token::LParen));
+        while !self.peek_is_seq_end("record declaration")? {
             fields.push(self.parse_field()?);
         }
-        self.expect_record_end("record declaration")?;
+        self.expect_seq_end("record declaration")?;
 
         match fields.len() {
             0 => Err(Error::InvalidSchemaText {
                 context: "record declaration",
                 message: "declaration record must carry at least one type expression".into(),
             }),
-            1 if !has_parenthesized_field && fields[0].name().is_none() => Ok(
-                DeclarationBody::Newtype(fields.remove(0).expression().clone()),
-            ),
+            1 if fields[0].name().is_none() => Ok(DeclarationBody::Newtype(
+                fields.remove(0).expression().clone(),
+            )),
             _ => Ok(DeclarationBody::Record(fields)),
         }
     }
@@ -542,6 +532,25 @@ fn variant_with_fields(name: Name, fields: Vec<Field>) -> Variant {
         ),
         _ => Variant::with_field_entries(name, fields),
     }
+}
+
+fn reject_repeated_self_payload(
+    name: &Name,
+    fields: &[Field],
+    context: &'static str,
+) -> Result<()> {
+    if let [field] = fields
+        && field.name().is_none()
+        && matches!(field.expression(), TypeExpression::Named(payload) if payload == name)
+    {
+        return Err(Error::InvalidSchemaText {
+            context,
+            message: format!(
+                "self-named variant payload `{name}` uses `({name})`, not `({name} {name})`"
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn primitive(text: &str) -> Option<TypeExpression> {
