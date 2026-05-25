@@ -78,14 +78,15 @@ fn node_shape_error_reports_definition_point_and_value_kind() {
 fn multi_pass_pipeline_accepts_all_public_namespace_shapes() {
     let text = "
 {}
-[(Route [Record Alias Newtype Enum])]
+[(Route [Record Alias Newtype ContainerNewtype Enum])]
 []
 []
 {
-  Route [(Record Record) (Alias Alias) (Newtype Newtype) (Enum Enum)]
+  Route [(Record Record) (Alias Alias) (Newtype Newtype) (ContainerNewtype ContainerNewtype) (Enum Enum)]
   Record ((topic Topic) (kind Kind))
   Alias Topic
   Newtype (String)
+  ContainerNewtype (Vec Topic)
   Enum [Decision Principle]
   Topic (String)
   Kind [Decision Principle]
@@ -94,6 +95,6 @@ fn multi_pass_pipeline_accepts_all_public_namespace_shapes() {
 ";
 
     let assembled = read_schema_six_position(text).expect("pipeline accepts explicit shapes");
-    assert_eq!(assembled.routes().len(), 4);
-    assert_eq!(assembled.types().count(), 7);
+    assert_eq!(assembled.routes().len(), 5);
+    assert_eq!(assembled.types().count(), 8);
 }

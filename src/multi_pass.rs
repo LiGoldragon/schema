@@ -671,9 +671,15 @@ impl TypeMacroRecognizer {
     }
 
     fn recognize_newtype(value: &NotaValue) -> Result<DeclarationBody> {
-        let fields = fields_from_record(value)?;
-        if fields.len() == 1 && fields[0].name().is_none() {
-            return Ok(DeclarationBody::Newtype(fields[0].expression().clone()));
+        let items = value.as_record().unwrap();
+        if let [inner] = items {
+            return Ok(DeclarationBody::Newtype(lower_type_expression(inner)?));
+        }
+        if value
+            .record_head_identifier()
+            .is_some_and(is_container_head)
+        {
+            return Ok(DeclarationBody::Newtype(lower_type_expression(value)?));
         }
         Err(Error::InvalidSchemaText {
             context: "multi_pass type",
