@@ -64,6 +64,101 @@ project itself into the MVP 64-bit short header (`byte 0 = root slot`, `byte 1
 header plus leg. The parser does not emit dispatch tables directly from raw
 authored text.
 
+## Reader model — multi-pass NOTA-first
+
+Per spirit record 549, the schema reader uses a multi-pass NOTA-first
+model: one universal NOTA parser produces a generic `NotaValue` tree, then
+context-sensitive macro passes interpret values per their
+`NodeDefinitionPoint` position, then assembly produces the canonical
+`AssembledSchema`. One syntax (NOTA), one parser, multiple semantic passes
+layered on top.
+
+The pass sequence:
+
+1. **Pass 0 — lexical** (text → tokens). Lives in `nota-codec` as
+   `Lexer::next_token`. No schema-specific behavior.
+2. **Pass 1 — syntactic** (tokens → `NotaValue` tree). Aspirationally
+   lives in `nota-codec`; current code builds a private tree assembler on
+   top of the streaming `Decoder`. The intended home is `nota-codec`
+   exposing `NotaValue` + `parse_str` + `Lexer::next_token_with_span` for
+   every NOTA-reading client (schema, sema, intent records, lock files).
+3. **Pass 2 — structural** (`NotaValue` sequence → schema document
+   positions). A `.schema` file is six top-level values in sequence with
+   no enclosing wrapper. Pass 2 reads six successive values matching
+   imports / ordinary header / owner header / sema header / namespace /
+   features.
+4. **Pass 3 — macro identification**. Collect names; identify macro
+   positions in the namespace; resolve imports for cross-schema references.
+5. **Pass 4 — macro application**. Reuse `BuiltinMacroVariant` +
+   `LoweringContext`. Imports run first because subsequent variants may
+   reference imported names.
+6. **Pass 5 — assembly**. Conceptually distinct: assembly, validation,
+   UID minting, layout. Operationally folded into the lowering context's
+   `finish()`.
+
+Byte-equivalence with the canonical reader is the proof: the multi-pass
+module's output is Debug-equivalent to `LoadedSchema::read_path` for all
+three live schemas (spirit / version-handover / orchestrate). The current
+single-pass implementation in `parser.rs` is already correct; the
+multi-pass refactor clarifies pass boundaries and relocates Pass 1 down
+to `nota-codec`. Full design + corrections in
+`primary/reports/designer/334-v2-multi-pass-nota-first-schema-reader.md`.
+
+## Macro fixed-point iteration
+
+Per spirit record 569, schema macro application is iterative to a fixed
+point. Each pass identifies macro positions in the namespace and applies
+their lowerers; macros can introduce new macros into the namespace which
+trigger further passes; iteration continues until no macro positions
+remain and the namespace is pure typed enums, structs, and newtypes.
+
+The lowering loop terminates when the namespace stabilises — when one
+pass produces no new macro positions, the namespace is fully lowered.
+`UpgradeRule` (landed via closed bead `primary-cklr`) is one of the
+macro variants that participates in this fixed-point lowering loop.
+
+## Namespace dependency order
+
+Per spirit record 570, the schema namespace is dependency-ordered: most
+basic definitions come first, derived definitions later; consumers
+reference only earlier-declared names. This supports linear loading (per
+record 553) and matches the schema-as-source-of-truth principle (record
+551).
+
+## Newtype shape
+
+Per spirit record 571, a newtype in the schema language emits a Rust
+single-tuple struct that wraps inner data of some named type (scalar,
+vector, or other), exposing the inner trait implementations transparently
+while letting the newtype carry its own trait impls. This is the
+`Newtype` schema position; it folds into `TypeInput` rather than
+carrying a separate `NewtypeDefinition` variant.
+
+## Diff taxonomy and slot policy
+
+Per spirit record 561, schema diff operations have three families —
+**Add**, **Remove**, **Modify** — and Modify subdivides into
+`ContainerEmbed`, `EnumWrap`, `Reorder`, and `KeyChange` sub-cases.
+This taxonomy frames the upgrade-rule emission in §"Upgrade Model".
+
+Per spirit record 562, **data-carrying variants take the first seven
+enum slots (0-6); unit variants come after**. This slot-assignment
+policy makes adding a new unit variant a no-op upgrade on the wire
+format — the new unit variant lands after the existing units, no
+mechanical upgrade needed. Enum-slot planning at authoring time
+minimises database rewrites across compatible upgrades (record 557).
+
+Per spirit record 563, enum space is pre-allocated by inner-type
+semantics so each enum occupies the minimum bits its variant set
+requires: Boolean fits in one bit, Option in two (None vs Some-with-
+inner-tag), and micro-enums let SEMA fit smaller than rkyv with raw
+enums by pre-breaking the encoding space by type. The wire form is the
+discriminator, not the string — common workspace identifiers (record,
+forward, send, and similar per record 564) are already stored as enum-
+encoded composite names with a composable namespace across components.
+This enables multilingual labels because the wire form is the
+discriminator, not the string.
+
 ## File Reader
 
 `Schema::parse_str` parses one authored `.schema` document through
@@ -79,12 +174,19 @@ validation path, then appear as imported entries in `AssembledSchema`.
 
 Upgrade knowledge belongs to the next schema. The current library models an
 `Upgrade` feature with `Migrate`, `RenamedFrom`, `Drop`, `Custom`, and
-`Untranslatable` annotations.
+`Untranslatable` annotations, plus `UpgradeRule` as a `BuiltinMacroVariant`
+landed for explicit schema-diff operation emission (closed bead
+`primary-cklr`).
 
 `AssembledSchema::plan_upgrade_from` compares the next assembled schema to a
 previous assembled schema. It currently infers identity projections and
 additive enum-variant projections. Changed records require an explicit
 annotation. Removed types require `Drop` or `Untranslatable`.
+
+The diff taxonomy (Add / Remove / Modify[ContainerEmbed | EnumWrap |
+Reorder | KeyChange]) per record 561 frames how the planner emits typed
+upgrade operations. The slot policy in §"Diff taxonomy and slot policy"
+keeps adding a new unit variant a no-op upgrade.
 
 This is an MVP planner for macro emission, not the runtime handover engine.
 Runtime database copy, dual-write, and failure reporting belong to the
