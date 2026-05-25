@@ -11,7 +11,7 @@ checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 [[package]]
 name = "nota-codec"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-codec.git?branch=main#38f5e41543fa3de85561881b8dbd20640dbb061b"
+source = "git+https://github.com/LiGoldragon/nota-codec.git?branch=main#323a3a748bcbc126e087da705423f88e87915a8f"
 dependencies = [
  "camino",
  "nota-derive",
@@ -21,7 +21,7 @@ dependencies = [
 [[package]]
 name = "nota-derive"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-derive.git?branch=main#f22a947a94024be2d9b60eba3ee51dd492b29852"
+source = "git+https://github.com/LiGoldragon/nota-derive.git?branch=main#cde0e8262f2f90afbdf26d9b1b3561376723d816"
 dependencies = [
  "proc-macro2",
  "quote",

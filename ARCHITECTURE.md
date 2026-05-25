@@ -43,6 +43,14 @@ the same namespace.
 `Schema::assemble` resolves imports and lowers the authored schema into
 `AssembledSchema`.
 
+Before typed lowering, macro-front code can parse the same authored text into
+`nota_codec::NotaDocument` / `NotaValue`. That generic tree preserves the
+shape needed for macro dispatch: ordered maps, vectors, records, record head
+tokens, PascalCase identifiers, local `./*` import paths, and block strings.
+It does not replace the typed parser; it is the reusable first-pass substrate
+for fixed-point macro expansion and for handing still-generic subobjects to
+later passes.
+
 Lowering runs through the builtin schema engine. Each authored node is
 translated into a data-carrying `BuiltinMacroVariant` at a
 `NodeDefinitionPoint`: import map values become `ImportInput`, header roots
