@@ -1,4 +1,4 @@
-use crate::{Name, TypeExpression};
+use crate::{FieldName, Name, TypeExpression};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declaration {
@@ -190,6 +190,10 @@ impl Field {
 
     pub fn expression(&self) -> &TypeExpression {
         &self.expression
+    }
+
+    pub fn name(&self) -> FieldName {
+        self.expression.derived_field_name()
     }
 
     pub fn storage_matches(&self, other: &Self) -> bool {

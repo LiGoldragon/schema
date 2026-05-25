@@ -1,4 +1,4 @@
-use crate::Name;
+use crate::{FieldName, Name};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeExpression {
@@ -26,6 +26,14 @@ impl TypeExpression {
             value: Box::new(value),
         })
     }
+
+    pub fn derived_field_name(&self) -> FieldName {
+        match self {
+            Self::Primitive(primitive) => primitive.derived_field_name(),
+            Self::Named(name) => FieldName::from_schema_name(name),
+            Self::Container(container) => container.derived_field_name(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -45,6 +53,21 @@ impl Primitive {
     pub fn is_fixed_width(self) -> bool {
         !matches!(self, Self::String | Self::Bytes)
     }
+
+    pub fn derived_field_name(self) -> FieldName {
+        let text = match self {
+            Self::String => "string",
+            Self::Bytes => "bytes",
+            Self::Boolean => "boolean",
+            Self::Unsigned8 => "unsigned8",
+            Self::Unsigned16 => "unsigned16",
+            Self::Unsigned32 => "unsigned32",
+            Self::Unsigned64 => "unsigned64",
+            Self::Date => "date",
+            Self::Time => "time",
+        };
+        FieldName::from_primitive(text)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -55,4 +78,13 @@ pub enum Container {
         key: Box<TypeExpression>,
         value: Box<TypeExpression>,
     },
+}
+
+impl Container {
+    pub fn derived_field_name(&self) -> FieldName {
+        match self {
+            Self::Vector(inner) | Self::Optional(inner) => inner.derived_field_name(),
+            Self::Map { .. } => FieldName::from_primitive("map"),
+        }
+    }
 }

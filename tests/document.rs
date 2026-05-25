@@ -430,6 +430,39 @@ fn schema_names_single_field_meaning_with_newtypes() {
 }
 
 #[test]
+fn field_names_are_derived_from_positional_type_names() {
+    let schema = Schema::parse_str(
+        "{} [] [] [] { Topic (String) Kind [Decision Principle] Entry (Topic Kind) } []",
+    )
+    .unwrap();
+
+    let Some(DeclarationBody::Record(fields)) = schema.declaration_body(&name("Entry")) else {
+        panic!("expected record body");
+    };
+
+    assert_eq!(fields[0].name().as_str(), "topic");
+    assert_eq!(fields[1].name().as_str(), "kind");
+
+    let layout = Layout::for_declaration(&schema, &name("Entry")).unwrap();
+    assert_eq!(layout.fields()[0].name().as_str(), "topic");
+    assert_eq!(layout.fields()[1].name().as_str(), "kind");
+}
+
+#[test]
+fn specific_field_names_come_from_specific_newtypes() {
+    let schema = Schema::parse_str(
+        "{} [] [] [] { Topic (String) FocusTopic (Topic) Query (FocusTopic) } []",
+    )
+    .unwrap();
+
+    let Some(DeclarationBody::Newtype(expression)) = schema.declaration_body(&name("Query")) else {
+        panic!("expected newtype body");
+    };
+
+    assert_eq!(expression.derived_field_name().as_str(), "focus_topic");
+}
+
+#[test]
 fn nota_curly_map_is_usable_for_schema_namespace_names() {
     let mut decoder = Decoder::new("{Entry 1 Record 2}");
     let decoded = BTreeMap::<Name, u64>::decode(&mut decoder).unwrap();

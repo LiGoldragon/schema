@@ -168,10 +168,12 @@ tests/
 ## Invariants
 
 Schema records are positional. Data-carrying variant fields are ordered
-`TypeExpression` values; the model does not carry field labels. A lowercase
-`(field Type)` pair is not schema syntax. If a position needs a meaningful
-name distinct from the contained type, the schema introduces a named newtype or
-enum variant and uses that type in the positional record.
+`TypeExpression` values; authored records do not carry field labels. The
+generated field name is derived from the field's type expression:
+`Entry (Topic Kind)` yields `topic` and `kind`. A lowercase `(field Type)`
+pair is not schema syntax. If a position needs a meaningful name distinct from
+the contained type, the schema introduces a named newtype or enum variant and
+uses that type in the positional record.
 
 Names are PascalCase identifiers because declarations and variants become
 closed Rust enums or enum-like schema nodes.

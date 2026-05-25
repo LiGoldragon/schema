@@ -49,6 +49,30 @@ impl nota_codec::NotaMapKey for Name {
     }
 }
 
+/// Lowercase field name derived from a positional schema field's type.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FieldName(String);
+
+impl FieldName {
+    pub fn from_schema_name(name: &Name) -> Self {
+        Self(pascal_to_snake_case(name.as_str()))
+    }
+
+    pub fn from_primitive(text: &'static str) -> Self {
+        Self(text.to_string())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for FieldName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 fn is_pascal_case_name(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -59,4 +83,15 @@ fn is_pascal_case_name(value: &str) -> bool {
         && value
             .chars()
             .any(|character| character.is_ascii_alphabetic())
+}
+
+fn pascal_to_snake_case(value: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in value.chars().enumerate() {
+        if index > 0 && character.is_ascii_uppercase() {
+            output.push('_');
+        }
+        output.push(character.to_ascii_lowercase());
+    }
+    output
 }

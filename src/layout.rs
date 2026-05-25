@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{Container, DeclarationBody, Document, Field, Name, Payload, Result, TypeExpression};
+use crate::{
+    Container, DeclarationBody, Document, Field, FieldName, Name, Payload, Result, TypeExpression,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
@@ -83,6 +85,7 @@ fn fields_for_schema_fields(document: &Document, fields: &[Field]) -> Vec<FieldL
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FieldLayout {
     position: usize,
+    name: FieldName,
     expression: TypeExpression,
     location: FieldLocation,
 }
@@ -91,6 +94,7 @@ impl FieldLayout {
     pub fn new(position: usize, expression: TypeExpression, location: FieldLocation) -> Self {
         Self {
             position,
+            name: expression.derived_field_name(),
             expression,
             location,
         }
@@ -99,6 +103,7 @@ impl FieldLayout {
     pub fn from_field(position: usize, document: &Document, field: &Field) -> Self {
         Self {
             position,
+            name: field.name(),
             expression: field.expression().clone(),
             location: location(document, field.expression()),
         }
@@ -106,6 +111,10 @@ impl FieldLayout {
 
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    pub fn name(&self) -> &FieldName {
+        &self.name
     }
 
     pub fn expression(&self) -> &TypeExpression {
