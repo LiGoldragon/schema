@@ -47,12 +47,13 @@ use std::collections::BTreeMap;
 use nota_codec::{NotaValue, parse_sequence};
 
 use crate::{
-    AssembledSchema, BuiltinMacroVariant, DeclarationBody, Endpoint, Engine, Error, EventFeature,
-    Feature, FeatureInput, Field, HeaderEndpointInput, HeaderInput, ImportBinding, ImportInput,
-    ImportedNames, Leg, LoweringContext, Name, NamespaceValueShape, NodeDefinitionPoint,
-    NodeDefinitionShape, ObservableFeature, Payload, Primitive, Result, Route, RouteBody,
-    SchemaPath, TypeExpression, TypeInput, Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant,
-    Version,
+    AssembledSchema, BuiltinMacroVariant, DeclarationBody, EffectTableEntry, EffectTableFeature,
+    Endpoint, Engine, Error, EventFeature, FanOutOutputDeclaration, FanOutTargetsEntry,
+    FanOutTargetsFeature, Feature, FeatureInput, Field, HeaderEndpointInput, HeaderInput,
+    ImportBinding, ImportInput, ImportedNames, Leg, LoweringContext, Name, NamespaceValueShape,
+    NodeDefinitionPoint, NodeDefinitionShape, ObservableFeature, Payload, Primitive, Result, Route,
+    RouteBody, SchemaPath, StorageDescriptorEntry, StorageDescriptorFeature, TypeExpression,
+    TypeInput, Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
 };
 
 /// Run the full multi-pass pipeline against `.schema` text and
@@ -339,13 +340,17 @@ impl<'document> MacroPipeline<'document> {
         // Order mirrors the canonical `Schema::assemble` so the
         // resulting `AssembledSchema` is byte-equivalent: imports,
         // then headers (each leg), then local types, then imported
-        // types, then features.
+        // types, then features. After type lowering we run the
+        // universal-Unknown finalization pass (per /346 §9) so every
+        // local RESPONSE enum carries the safety-floor variant before
+        // the schema assembles.
         self.lower_imports()?;
         self.lower_header(self.index.ordinary_headers.clone())?;
         self.lower_header(self.index.owner_headers.clone())?;
         self.lower_header(self.index.sema_headers.clone())?;
         self.lower_namespace_local_types()?;
         self.lower_imported_types()?;
+        self.context.finalize_universal_unknowns();
         self.lower_features()?;
         Ok(std::mem::take(&mut self.context).finish())
     }
@@ -819,12 +824,226 @@ impl FeatureMacroRecognizer {
                 )))
             }
             "Upgrade" => UpgradeFeatureRecognizer::recognize(value).map(Feature::Upgrade),
+            "EffectTable" => EffectTableRecognizer::recognize(value).map(Feature::EffectTable),
+            "FanOutTargets" => {
+                FanOutTargetsRecognizer::recognize(value).map(Feature::FanOutTargets)
+            }
+            "StorageDescriptor" => {
+                StorageDescriptorRecognizer::recognize(value).map(Feature::StorageDescriptor)
+            }
             other => Err(Error::InvalidSchemaText {
                 context: "multi_pass feature",
                 message: format!("unknown feature `{other}`"),
             }),
         }
     }
+}
+
+/// `(EffectTable [ (Action Effect) ... ])` per /343 §3 + /346 §10.
+struct EffectTableRecognizer;
+
+impl EffectTableRecognizer {
+    fn recognize(value: &NotaValue) -> Result<EffectTableFeature> {
+        let items = value.as_record().unwrap();
+        if items.len() != 2 {
+            return Err(Error::InvalidSchemaText {
+                context: "multi_pass effect table",
+                message: "`(EffectTable [ ... ])` requires exactly one rows sequence".into(),
+            });
+        }
+        let rows = items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
+            context: "multi_pass effect table",
+            message: "EffectTable body must be a sequence".into(),
+        })?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                if !row.is_record() {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass effect table",
+                        message: "each EffectTable row must be a `(Action Effect)` record".into(),
+                    });
+                }
+                let row_items = row.as_record().unwrap();
+                if row_items.len() != 2 {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass effect table",
+                        message: "`(Action Effect)` must have exactly two positions".into(),
+                    });
+                }
+                let action = identifier_to_name(&row_items[0], "EffectTable action")?;
+                let effect = identifier_to_name(&row_items[1], "EffectTable effect")?;
+                Ok(EffectTableEntry::new(action, effect))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(EffectTableFeature::new(entries))
+    }
+}
+
+/// `(FanOutTargets [ (Effect [Output ...]) ... ])` per /343 §4 + /346
+/// §10.
+struct FanOutTargetsRecognizer;
+
+impl FanOutTargetsRecognizer {
+    fn recognize(value: &NotaValue) -> Result<FanOutTargetsFeature> {
+        let items = value.as_record().unwrap();
+        if items.len() != 2 {
+            return Err(Error::InvalidSchemaText {
+                context: "multi_pass fan-out targets",
+                message: "`(FanOutTargets [ ... ])` requires exactly one rows sequence".into(),
+            });
+        }
+        let rows = items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
+            context: "multi_pass fan-out targets",
+            message: "FanOutTargets body must be a sequence".into(),
+        })?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                if !row.is_record() {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass fan-out targets",
+                        message: "FanOutTargets row must be a `(Effect [Output ...])` record"
+                            .into(),
+                    });
+                }
+                let row_items = row.as_record().unwrap();
+                if row_items.len() != 2 {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass fan-out targets",
+                        message: "`(Effect [Output ...])` requires two positions".into(),
+                    });
+                }
+                let effect = identifier_to_name(&row_items[0], "FanOutTargets effect")?;
+                let outputs_value =
+                    row_items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
+                        context: "multi_pass fan-out targets",
+                        message: "outputs payload must be a sequence".into(),
+                    })?;
+                let outputs = outputs_value
+                    .iter()
+                    .map(Self::recognize_output)
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(FanOutTargetsEntry::new(effect, outputs))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(FanOutTargetsFeature::new(entries))
+    }
+
+    fn recognize_output(value: &NotaValue) -> Result<FanOutOutputDeclaration> {
+        if !value.is_record() {
+            return Err(Error::InvalidSchemaText {
+                context: "multi_pass fan-out output",
+                message: "fan-out output must be a record".into(),
+            });
+        }
+        let head = value
+            .record_head_identifier()
+            .ok_or_else(|| Error::InvalidSchemaText {
+                context: "multi_pass fan-out output",
+                message: "fan-out output must start with an identifier".into(),
+            })?;
+        let items = value.as_record().unwrap();
+        match head {
+            "Reply" => {
+                if items.len() != 2 {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass fan-out output",
+                        message: "`(Reply Variant)` requires two positions".into(),
+                    });
+                }
+                let variant = identifier_to_name(&items[1], "Reply variant")?;
+                Ok(FanOutOutputDeclaration::Reply { variant })
+            }
+            "FanOutSubscribers" => {
+                if items.len() != 3 {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass fan-out output",
+                        message: "`(FanOutSubscribers ActorType DispatchMethod)` requires three positions"
+                            .into(),
+                    });
+                }
+                let actor_type = identifier_to_name(&items[1], "FanOutSubscribers actor type")?;
+                let dispatch_method =
+                    identifier_to_name(&items[2], "FanOutSubscribers dispatch method")?;
+                Ok(FanOutOutputDeclaration::Subscribers {
+                    actor_type,
+                    dispatch_method,
+                })
+            }
+            method_tag => {
+                if items.len() != 3 {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass fan-out output",
+                        message: format!(
+                            "`({method_tag} ActorType ActorMethod)` requires three positions"
+                        ),
+                    });
+                }
+                let method_tag = Name::new(method_tag)?;
+                let actor_type = identifier_to_name(&items[1], "fan-out output actor type")?;
+                let actor_method = identifier_to_name(&items[2], "fan-out output actor method")?;
+                Ok(FanOutOutputDeclaration::Actor {
+                    method_tag,
+                    actor_type,
+                    actor_method,
+                })
+            }
+        }
+    }
+}
+
+/// `(StorageDescriptor [ (LogicalName TableType) ... ])` per /343 §8
+/// item 4 + /346 §4.
+struct StorageDescriptorRecognizer;
+
+impl StorageDescriptorRecognizer {
+    fn recognize(value: &NotaValue) -> Result<StorageDescriptorFeature> {
+        let items = value.as_record().unwrap();
+        if items.len() != 2 {
+            return Err(Error::InvalidSchemaText {
+                context: "multi_pass storage descriptor",
+                message: "`(StorageDescriptor [ ... ])` requires exactly one rows sequence".into(),
+            });
+        }
+        let rows = items[1].as_sequence().ok_or_else(|| Error::InvalidSchemaText {
+            context: "multi_pass storage descriptor",
+            message: "StorageDescriptor body must be a sequence".into(),
+        })?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                if !row.is_record() {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass storage descriptor",
+                        message: "StorageDescriptor row must be a `(LogicalName TableType)` record"
+                            .into(),
+                    });
+                }
+                let row_items = row.as_record().unwrap();
+                if row_items.len() != 2 {
+                    return Err(Error::InvalidSchemaText {
+                        context: "multi_pass storage descriptor",
+                        message: "`(LogicalName TableType)` requires two positions".into(),
+                    });
+                }
+                let logical_name = identifier_to_name(&row_items[0], "StorageDescriptor logical name")?;
+                let table_type = identifier_to_name(&row_items[1], "StorageDescriptor table type")?;
+                Ok(StorageDescriptorEntry::new(logical_name, table_type))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(StorageDescriptorFeature::new(entries))
+    }
+}
+
+fn identifier_to_name(value: &NotaValue, context: &'static str) -> Result<Name> {
+    let text = value
+        .identifier_text()
+        .ok_or_else(|| Error::InvalidSchemaText {
+            context,
+            message: format!("expected identifier, got {value:?}"),
+        })?;
+    Name::new(text)
 }
 
 struct UpgradeFeatureRecognizer;

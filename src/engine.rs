@@ -1,6 +1,6 @@
 use crate::{
     AssembledSchema, AssembledType, DeclarationBody, Endpoint, Engine, Feature, ImportBinding, Leg,
-    Name, Result, Route, RouteBody, Upgrade,
+    Name, Payload, Primitive, Result, Route, RouteBody, TypeExpression, Upgrade, Variant,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -217,6 +217,25 @@ impl LoweringContext {
         }
     }
 
+    /// Inject `Unknown(String)` into every local RESPONSE-shaped enum
+    /// per /346 §9. Runs after all `TypeMacro` invocations but before
+    /// features so the assembled schema exposes the universal safety
+    /// floor on every actor's response channel.
+    ///
+    /// Idempotent: enums that already carry an `Unknown` variant are
+    /// left untouched.
+    pub fn finalize_universal_unknowns(&mut self) {
+        for schema_type in &mut self.types {
+            let AssembledType::Local { name, body } = schema_type else {
+                continue;
+            };
+            if !UniversalUnknownMacro::is_response_enum_name(name) {
+                continue;
+            }
+            UniversalUnknownMacro::inject_unknown_into_enum_body(body);
+        }
+    }
+
     pub fn finish(self) -> AssembledSchema {
         AssembledSchema::new(self.imports, self.routes, self.types, self.features)
     }
@@ -279,3 +298,76 @@ impl SchemaMacro<UpgradeRuleInput> for UpgradeRuleMacro {
         Ok(())
     }
 }
+
+/// Universal-Unknown injector for actor RESPONSE-shaped enums per
+/// /346 §9.
+///
+/// Every actor schema's RESPONSE enum carries a `Unknown` variant
+/// carrying a `String` reason (per /346 §1 the safety floor). Rather
+/// than authoring this manually in every schema, the schema engine
+/// injects it through this builtin macro.
+///
+/// The macro runs as a post-lowering sweep over `LoweringContext`:
+/// any local enum type whose name ends in `Response` (the convention
+/// per /346 §1) gets an `Unknown(String)` variant appended IF it
+/// doesn't already carry one. Parallel to how `signal_channel!`'s
+/// existing observable macro injects `Tap`/`Untap` operations per
+/// /346 §9.
+///
+/// BLOCKED: wiring into `BuiltinMacroVariant::lower` requires a
+/// post-pass `LoweringContext::finalize_universal_unknowns(&mut self)`
+/// hook that runs AFTER all `TypeMacro` invocations but BEFORE
+/// `LoweringContext::finish()`. The hook walks `self.types` and
+/// mutates each Response enum's variant list. See /346 §11 step 1.
+///
+/// The implementation below is a stub that documents the intended
+/// shape; full wiring is operator slice per /346 §11 step 1.
+pub struct UniversalUnknownMacro;
+
+impl UniversalUnknownMacro {
+    /// Identifier convention per /346 §1: actor RESPONSE enums end in
+    /// `Response`. Schema authors who use a different convention can
+    /// opt out by NOT ending the type name in `Response` --- this is
+    /// shape-logic detection per /338 §5.1 core macros.
+    pub fn is_response_enum_name(name: &Name) -> bool {
+        name.as_str().ends_with("Response")
+    }
+
+    /// Whether the body is enum-shaped (Unknown injection only
+    /// applies to closed enums per /346 §1).
+    pub fn body_is_enum(body: &crate::DeclarationBody) -> bool {
+        matches!(body, crate::DeclarationBody::Enum { .. })
+    }
+
+    /// The injected variant's name. Universal per /346 §9.
+    pub const UNKNOWN_VARIANT_NAME: &'static str = "Unknown";
+
+    /// Apply the universal-Unknown injection to a Response enum body.
+    /// Idempotent --- if the body already carries an `Unknown` variant,
+    /// this is a no-op. Only enum-shaped bodies are touched (records,
+    /// newtypes, and aliases are skipped silently).
+    ///
+    /// The injected variant carries a `String` payload --- the
+    /// universal "I don't know what you're asking for" channel per
+    /// /346 §1.
+    pub fn inject_unknown_into_enum_body(body: &mut DeclarationBody) {
+        let DeclarationBody::Enum { variants } = body else {
+            return;
+        };
+        let already_has_unknown = variants
+            .iter()
+            .any(|variant| variant.name().as_str() == Self::UNKNOWN_VARIANT_NAME);
+        if already_has_unknown {
+            return;
+        }
+        let name = Name::new(Self::UNKNOWN_VARIANT_NAME)
+            .expect("`Unknown` is a valid PascalCase identifier");
+        variants.push(Variant::with_type(
+            name,
+            TypeExpression::Primitive(Primitive::String),
+        ));
+    }
+}
+
+#[allow(dead_code)]
+fn _payload_marker(_: &Payload, _: &RouteBody) {}

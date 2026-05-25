@@ -141,6 +141,9 @@ fn pipeline_report_counts_match_live_spirit_schema_shape() {
             Feature::Event(_) => has_event = true,
             Feature::Observable(_) => has_observable = true,
             Feature::Upgrade(_) => {}
+            Feature::EffectTable(_)
+            | Feature::FanOutTargets(_)
+            | Feature::StorageDescriptor(_) => {}
         }
     }
     assert!(has_reply, "Reply feature missing");

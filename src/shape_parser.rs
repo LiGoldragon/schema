@@ -1,9 +1,11 @@
 use nota_codec::{NotaValue, NotaValueKind};
 
 use crate::{
-    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, Header, HeaderRoot,
-    ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result, Schema,
-    SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    Declaration, DeclarationBody, EffectTableEntry, EffectTableFeature, Error, EventFeature,
+    FanOutOutputDeclaration, FanOutTargetsEntry, FanOutTargetsFeature, Feature, Field, Header,
+    HeaderRoot, ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result,
+    Schema, SchemaPath, StorageDescriptorEntry, StorageDescriptorFeature, TypeExpression, Upgrade,
+    UpgradeAnnotation, Variant, Version,
 };
 
 impl Schema {
@@ -261,11 +263,118 @@ impl ShapeParser {
             "Event" => self.parse_event_feature(data),
             "Observable" => self.parse_observable_feature(data),
             "Upgrade" => self.parse_upgrade_feature(data),
+            "EffectTable" => self.parse_effect_table_feature(data),
+            "FanOutTargets" => self.parse_fan_out_targets_feature(data),
+            "StorageDescriptor" => self.parse_storage_descriptor_feature(data),
             _ => Err(Error::InvalidSchemaText {
                 context: "feature",
                 message: format!("unknown feature `{head}`"),
             }),
         }
+    }
+
+    /// Parse `(EffectTable [ (Action Effect) ... ])` per /343 §3 +
+    /// /346 §10. Each row is a `(action_name effect_type)` record.
+    fn parse_effect_table_feature(&self, data: &[NotaValue]) -> Result<Feature> {
+        expect_exact_count("EffectTable feature", data.len(), 1)?;
+        let rows = expect_sequence(&data[0], "EffectTable rows")?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                let shape = expect_record(row, "EffectTable entry")?;
+                let head = expect_record_head(shape, "EffectTable entry")?;
+                let row_data = expect_record_data(shape, "EffectTable entry")?;
+                let action = Name::new(head.to_owned())?;
+                expect_exact_count("EffectTable entry", row_data.len(), 1)?;
+                let effect = self.read_name(&row_data[0], "EffectTable effect")?;
+                Ok(EffectTableEntry::new(action, effect))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Feature::EffectTable(EffectTableFeature::new(entries)))
+    }
+
+    /// Parse `(FanOutTargets [ (Effect [Output...]) ... ])` per /343
+    /// §4 + /346 §10. Each row is `(effect_name [output ...])` where
+    /// `output` is one of `(Reply Variant)`,
+    /// `(MethodTag ActorType ActorMethod)`, or
+    /// `(FanOutSubscribers ActorType DispatchMethod)`.
+    fn parse_fan_out_targets_feature(&self, data: &[NotaValue]) -> Result<Feature> {
+        expect_exact_count("FanOutTargets feature", data.len(), 1)?;
+        let rows = expect_sequence(&data[0], "FanOutTargets rows")?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                let shape = expect_record(row, "FanOutTargets entry")?;
+                let head = expect_record_head(shape, "FanOutTargets entry")?;
+                let row_data = expect_record_data(shape, "FanOutTargets entry")?;
+                let effect = Name::new(head.to_owned())?;
+                expect_exact_count("FanOutTargets entry", row_data.len(), 1)?;
+                let outputs_seq =
+                    expect_sequence(&row_data[0], "FanOutTargets outputs sequence")?;
+                let outputs = outputs_seq
+                    .iter()
+                    .map(|output| self.parse_fan_out_output(output))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(FanOutTargetsEntry::new(effect, outputs))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Feature::FanOutTargets(FanOutTargetsFeature::new(entries)))
+    }
+
+    fn parse_fan_out_output(&self, value: &NotaValue) -> Result<FanOutOutputDeclaration> {
+        let shape = expect_record(value, "FanOutOutput")?;
+        let head = expect_record_head(shape, "FanOutOutput")?;
+        let payload = expect_record_data(shape, "FanOutOutput")?;
+        match head {
+            "Reply" => {
+                expect_exact_count("FanOutOutput Reply", payload.len(), 1)?;
+                let variant = self.read_name(&payload[0], "FanOutOutput Reply variant")?;
+                Ok(FanOutOutputDeclaration::Reply { variant })
+            }
+            "FanOutSubscribers" => {
+                expect_exact_count("FanOutOutput FanOutSubscribers", payload.len(), 2)?;
+                let actor_type = self.read_name(&payload[0], "FanOutSubscribers actor type")?;
+                let dispatch_method =
+                    self.read_name(&payload[1], "FanOutSubscribers dispatch method")?;
+                Ok(FanOutOutputDeclaration::Subscribers {
+                    actor_type,
+                    dispatch_method,
+                })
+            }
+            method_tag => {
+                expect_exact_count("FanOutOutput Actor", payload.len(), 2)?;
+                let method_tag = Name::new(method_tag.to_owned())?;
+                let actor_type = self.read_name(&payload[0], "FanOutOutput actor type")?;
+                let actor_method = self.read_name(&payload[1], "FanOutOutput actor method")?;
+                Ok(FanOutOutputDeclaration::Actor {
+                    method_tag,
+                    actor_type,
+                    actor_method,
+                })
+            }
+        }
+    }
+
+    /// Parse `(StorageDescriptor [ (LogicalName TableType) ... ])` per
+    /// /343 §8 item 4 + /346 §4.
+    fn parse_storage_descriptor_feature(&self, data: &[NotaValue]) -> Result<Feature> {
+        expect_exact_count("StorageDescriptor feature", data.len(), 1)?;
+        let rows = expect_sequence(&data[0], "StorageDescriptor rows")?;
+        let entries = rows
+            .iter()
+            .map(|row| {
+                let shape = expect_record(row, "StorageDescriptor entry")?;
+                let head = expect_record_head(shape, "StorageDescriptor entry")?;
+                let row_data = expect_record_data(shape, "StorageDescriptor entry")?;
+                let logical_name = Name::new(head.to_owned())?;
+                expect_exact_count("StorageDescriptor entry", row_data.len(), 1)?;
+                let table_type = self.read_name(&row_data[0], "StorageDescriptor table type")?;
+                Ok(StorageDescriptorEntry::new(logical_name, table_type))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Feature::StorageDescriptor(StorageDescriptorFeature::new(
+            entries,
+        )))
     }
 
     fn parse_event_feature(&self, data: &[NotaValue]) -> Result<Feature> {

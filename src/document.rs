@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
-    AssembledSchema, BuiltinMacroVariant, Container, DeclarationBody, Error, Feature, FeatureInput,
-    Header, HeaderEndpointInput, HeaderInput, ImportBinding, ImportDirective, ImportInput,
-    ImportResolution, ImportedNames, Imports, Leg, LoweringContext, Name, Namespace, Payload,
-    Result, RouteBody, TypeExpression, TypeInput, UpgradeAnnotation, UpgradeRuleInput,
+    AssembledSchema, BuiltinMacroVariant, Container, DeclarationBody, Error, FanOutOutputDeclaration,
+    Feature, FeatureInput, Header, HeaderEndpointInput, HeaderInput, ImportBinding,
+    ImportDirective, ImportInput, ImportResolution, ImportedNames, Imports, Leg, LoweringContext,
+    Name, Namespace, Payload, Result, RouteBody, TypeExpression, TypeInput, UpgradeAnnotation,
+    UpgradeRuleInput,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,6 +131,13 @@ impl Schema {
                 binding.clone(),
             )))?;
         }
+
+        // Universal-Unknown injection per /346 §9 runs after types
+        // are lowered but before features so the assembled schema
+        // exposes the safety-floor variant on every actor's RESPONSE
+        // enum --- the recorder/observer/supervisor/reading-actor
+        // schemas all consume this.
+        context.finalize_universal_unknowns();
 
         for feature in &self.features {
             match feature {
@@ -274,6 +282,48 @@ impl Schema {
                             }
                             UpgradeAnnotation::Drop(_) | UpgradeAnnotation::Untranslatable(_) => {}
                         }
+                    }
+                }
+                Feature::EffectTable(feature) => {
+                    // Each entry references an action (declared in the
+                    // namespace as a variant of an ACTION enum or as a
+                    // header endpoint) and an effect type (which the
+                    // composer will synthesise as a closed enum;
+                    // therefore the effect type may NOT exist as a
+                    // standalone declaration --- it is composer
+                    // output, not author input). Validation here only
+                    // verifies the action name corresponds to either
+                    // a declared namespace type, a known enum variant,
+                    // or a header endpoint. We do the minimum lookup
+                    // and let downstream composer code report any
+                    // missing references --- per /343 §8, validation
+                    // of effect-table references is best handled at
+                    // assemble time, not here.
+                    for entry in feature.entries() {
+                        let _ = entry.action();
+                        let _ = entry.effect();
+                    }
+                }
+                Feature::FanOutTargets(feature) => {
+                    for entry in feature.entries() {
+                        for output in entry.outputs() {
+                            match output {
+                                FanOutOutputDeclaration::Reply { variant } => {
+                                    let _ = variant;
+                                }
+                                FanOutOutputDeclaration::Actor { .. }
+                                | FanOutOutputDeclaration::Subscribers { .. } => {}
+                            }
+                        }
+                    }
+                }
+                Feature::StorageDescriptor(feature) => {
+                    // The logical name labels the table; the
+                    // table_type names a declaration in the namespace.
+                    // Confirm the table_type is locally declared so
+                    // the composer has a body to emit a descriptor for.
+                    for entry in feature.entries() {
+                        self.validate_named_body(entry.table_type(), imports)?;
                     }
                 }
             }

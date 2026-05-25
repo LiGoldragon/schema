@@ -1,0 +1,23 @@
+;; storage.schema --- minimal storage descriptor fixture.
+
+;; imports --- none
+{}
+
+;; no wire headers --- storage contract
+[] [] []
+
+;; namespace
+{
+  RecordsTable [u64 StampedEntry]
+  StampedEntry [Topic Date Time]
+  Topic [String]
+  Date [u32 u32 u32]
+  Time [u32 u32 u32]
+}
+
+;; features
+[
+  (StorageDescriptor [
+    (Records RecordsTable)
+  ])
+]
