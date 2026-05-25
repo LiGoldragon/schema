@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use schema::{Leg, LoadedSchema, Name, Projection, RouteBody, UpgradeAnnotation};
+use schema::{Leg, LoadedSchema, ModuleName, Name, Projection, RouteBody, UpgradeAnnotation};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -75,6 +75,32 @@ fn reads_schema_file_with_local_imports_and_lowers_routes() {
         observe_records.body(),
         &RouteBody::Type(schema_name("RecordQuery"))
     );
+}
+
+#[test]
+fn loaded_schema_derives_module_and_qualified_type_names_from_schema_paths() {
+    let loaded = LoadedSchema::read_path(fixture("spirit-v0-1-1.schema")).unwrap();
+    let assembled = loaded.assembled();
+
+    assert_eq!(
+        loaded.module(),
+        Some(&ModuleName::new("spirit_v0_1_1").unwrap())
+    );
+
+    let entry = assembled
+        .qualified_name_for(&schema_name("Entry"))
+        .expect("local type has qualified name");
+    assert_eq!(entry.to_string(), "spirit_v0_1_1::Entry");
+
+    let magnitude = assembled
+        .qualified_name_for(&schema_name("Magnitude"))
+        .expect("imported type has qualified name");
+    assert_eq!(magnitude.to_string(), "magnitude::Magnitude");
+
+    let source = assembled
+        .qualified_name_for(&schema_name("Source"))
+        .expect("selected imported type has qualified name");
+    assert_eq!(source.to_string(), "shared::Source");
 }
 
 #[test]

@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    DeclarationBody, Engine, Error, Feature, ImportBinding, Name, Projection, Result,
-    StandardProjection, UpgradeAnnotation, UpgradePlan,
+    DeclarationBody, Engine, Error, Feature, ImportBinding, ModuleName, Name, Projection,
+    QualifiedName, Result, StandardProjection, UpgradeAnnotation, UpgradePlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssembledSchema {
+    module: Option<ModuleName>,
     imports: Vec<ImportBinding>,
     routes: Vec<Route>,
     types: BTreeMap<Name, AssembledType>,
@@ -21,6 +22,7 @@ impl AssembledSchema {
         features: Vec<Feature>,
     ) -> Self {
         Self {
+            module: None,
             imports,
             routes,
             types: types
@@ -29,6 +31,15 @@ impl AssembledSchema {
                 .collect(),
             features,
         }
+    }
+
+    pub fn with_module(mut self, module: ModuleName) -> Self {
+        self.module = Some(module);
+        self
+    }
+
+    pub fn module(&self) -> Option<&ModuleName> {
+        self.module.as_ref()
     }
 
     pub fn imports(&self) -> &[ImportBinding] {
@@ -60,6 +71,21 @@ impl AssembledSchema {
         match self.types.get(name) {
             Some(AssembledType::Local { body, .. }) => Some(body),
             Some(AssembledType::Imported { .. }) | None => None,
+        }
+    }
+
+    pub fn qualified_name_for(&self, name: &Name) -> Option<QualifiedName> {
+        match self.types.get(name)? {
+            AssembledType::Local { name, .. } => self
+                .module
+                .clone()
+                .map(|module| QualifiedName::new(module, name.clone())),
+            AssembledType::Imported { name, binding } => self
+                .imports
+                .iter()
+                .find(|candidate| candidate.binding() == binding)
+                .and_then(|candidate| ModuleName::from_schema_path(candidate.path().as_str()).ok())
+                .map(|module| QualifiedName::new(module, name.clone())),
         }
     }
 

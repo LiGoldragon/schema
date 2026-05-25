@@ -12,6 +12,9 @@ pub enum Error {
     InvalidFieldName {
         name: String,
     },
+    InvalidModuleName {
+        name: String,
+    },
     InvalidSchemaText {
         context: &'static str,
         message: String,
@@ -112,6 +115,9 @@ impl fmt::Display for Error {
             Self::InvalidName { name } => write!(formatter, "invalid schema name `{name}`"),
             Self::InvalidFieldName { name } => {
                 write!(formatter, "invalid schema field name `{name}`")
+            }
+            Self::InvalidModuleName { name } => {
+                write!(formatter, "invalid schema module name `{name}`")
             }
             Self::InvalidSchemaText { context, message } => {
                 write!(

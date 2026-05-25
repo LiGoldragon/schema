@@ -84,17 +84,22 @@ emits assembled fragments into a `LoweringContext`.
 
 `AssembledSchema` currently contains:
 
+- the optional schema module identity for file-loaded schemas;
 - import bindings with resolved imported names;
 - explicit routes with leg, root slot, root name, endpoint slot, endpoint
   name, body, and optional Sema engine class;
 - local and imported type entries;
 - feature metadata copied from the authored schema.
 
-Generated-code names should be treated as schema-context names. The long-term
-codegen direction is fully qualified names that carry crate/schema context,
-or generated Rust modules that mirror schema-file contexts. Either way,
-imports and local declarations must leave one unambiguous item per name in a
-context; import/name clashes are errors, not shadowing.
+Generated-code names are schema-context names. `LoadedSchema::read_path`
+derives a Rust module name from the `.schema` file stem (hyphens become
+underscores) and stores it on `AssembledSchema`. `AssembledSchema` can project
+local and imported types into `QualifiedName` values such as
+`spirit::Entry`, `magnitude::Magnitude`, or `shared::Source`; import targets
+derive their module from the imported schema path. Code emission therefore has
+one module per schema file, and imports/local declarations must leave one
+unambiguous item per name in a context. Import/name clashes are errors, not
+shadowing.
 
 The route table is the object short-header generation consumes. A route can
 project itself into the MVP 64-bit short header (`byte 0 = root slot`, `byte 1

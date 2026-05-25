@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::Path;
 use std::str::FromStr;
 
 use crate::error::{Error, Result};
@@ -78,6 +79,69 @@ impl fmt::Display for FieldName {
     }
 }
 
+/// Rust module name generated from one `.schema` file.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ModuleName(String);
+
+impl ModuleName {
+    pub fn new(value: impl Into<String>) -> Result<Self> {
+        let value = value.into();
+        if is_module_name(&value) {
+            Ok(Self(value))
+        } else {
+            Err(Error::InvalidModuleName { name: value })
+        }
+    }
+
+    pub fn from_schema_path(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| Error::InvalidModuleName {
+                name: path.display().to_string(),
+            })?;
+        Self::new(stem.replace('-', "_"))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ModuleName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Type name qualified by the schema module that owns it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct QualifiedName {
+    module: ModuleName,
+    name: Name,
+}
+
+impl QualifiedName {
+    pub fn new(module: ModuleName, name: Name) -> Self {
+        Self { module, name }
+    }
+
+    pub fn module(&self) -> &ModuleName {
+        &self.module
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+}
+
+impl fmt::Display for QualifiedName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}::{}", self.module, self.name)
+    }
+}
+
 fn is_pascal_case_name(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -97,6 +161,20 @@ fn is_field_name(value: &str) -> bool {
     };
     first.is_ascii_lowercase()
         && chars.all(|character| character.is_ascii_alphanumeric() || character == '_')
+        && value
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+}
+
+fn is_module_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && chars.all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
+        })
         && value
             .chars()
             .any(|character| character.is_ascii_alphabetic())

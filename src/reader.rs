@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{AssembledSchema, Error, ImportDirective, ImportResolution, Name, Result, Schema};
+use crate::{
+    AssembledSchema, Error, ImportDirective, ImportResolution, ModuleName, Name, Result, Schema,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoadedSchema {
@@ -26,6 +28,10 @@ impl LoadedSchema {
 
     pub fn assembled(&self) -> &AssembledSchema {
         &self.assembled
+    }
+
+    pub fn module(&self) -> Option<&ModuleName> {
+        self.assembled.module()
     }
 
     fn exported_names(&self) -> Vec<Name> {
@@ -68,7 +74,9 @@ impl Reader {
         })?;
         let schema = Schema::parse_str(&text)?;
         let resolutions = self.import_resolutions(path, &schema)?;
-        let assembled = schema.assemble(&resolutions)?;
+        let assembled = schema
+            .assemble(&resolutions)?
+            .with_module(ModuleName::from_schema_path(path)?);
 
         Ok(LoadedSchema {
             path: path.to_path_buf(),
