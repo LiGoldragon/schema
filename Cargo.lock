@@ -11,7 +11,7 @@ checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 [[package]]
 name = "nota-codec"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-codec.git?branch=main#323a3a748bcbc126e087da705423f88e87915a8f"
+source = "git+https://github.com/LiGoldragon/nota-codec.git?branch=feature%2Fnotavalue-shape-logic-and-sequence-parser#d00fbf53808f941a173bfe473ca062e13029339e"
 dependencies = [
  "camino",
  "nota-derive",

@@ -12,7 +12,7 @@ name = "schema"
 path = "src/lib.rs"
 
 [dependencies]
-nota-codec = { git = "https://github.com/LiGoldragon/nota-codec.git", branch = "main" }
+nota-codec = { git = "https://github.com/LiGoldragon/nota-codec.git", branch = "feature/notavalue-shape-logic-and-sequence-parser" }
 
 [lints.rust]
 unsafe_code = "forbid"
