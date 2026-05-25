@@ -1,8 +1,8 @@
-use nota_codec::{NotaDocument, NotaValue};
+use nota_codec::{NotaValue, parse_sequence};
 
-fn spirit_fixture() -> NotaDocument {
-    NotaDocument::parse(include_str!("fixtures/schema-e2e/spirit-v0-1-1.schema"))
-        .expect("fixture parses as generic NOTA document")
+fn spirit_fixture() -> Vec<NotaValue> {
+    parse_sequence(include_str!("fixtures/schema-e2e/spirit-v0-1-1.schema"))
+        .expect("fixture parses as generic top-level NOTA values")
 }
 
 fn map_value<'a>(map: &'a [nota_codec::NotaMapEntry], key: &str) -> &'a NotaValue {
@@ -14,8 +14,7 @@ fn map_value<'a>(map: &'a [nota_codec::NotaMapEntry], key: &str) -> &'a NotaValu
 
 #[test]
 fn first_pass_sees_six_schema_positions_and_local_import_shapes() {
-    let document = spirit_fixture();
-    let values = document.values();
+    let values = spirit_fixture();
 
     assert_eq!(values.len(), 6);
     assert!(values[0].is_map());
@@ -42,8 +41,8 @@ fn first_pass_sees_six_schema_positions_and_local_import_shapes() {
 
 #[test]
 fn first_pass_classifies_namespace_macro_candidate_shapes() {
-    let document = spirit_fixture();
-    let namespace = document.values()[4].as_map().expect("namespace map");
+    let values = spirit_fixture();
+    let namespace = values[4].as_map().expect("namespace map");
 
     let route_enum = map_value(namespace, "State");
     assert!(route_enum.is_sequence());
@@ -54,12 +53,12 @@ fn first_pass_classifies_namespace_macro_candidate_shapes() {
 
     let newtype_candidate = map_value(namespace, "Topic");
     assert!(newtype_candidate.is_record());
-    assert_eq!(newtype_candidate.record_item_count(), Some(1));
-    assert_eq!(newtype_candidate.record_head(), Some("String"));
+    assert_eq!(newtype_candidate.record_arity(), Some(1));
+    assert_eq!(newtype_candidate.record_head_identifier(), Some("String"));
 
     let record_candidate = map_value(namespace, "Entry");
     assert!(record_candidate.is_record());
-    assert_eq!(record_candidate.record_item_count(), Some(8));
+    assert_eq!(record_candidate.record_arity(), Some(8));
     assert_eq!(
         record_candidate.as_record().expect("record")[0].identifier_text(),
         Some("Topic")
@@ -74,11 +73,11 @@ fn first_pass_classifies_namespace_macro_candidate_shapes() {
 
 #[test]
 fn first_pass_classifies_upgrade_macro_shape() {
-    let document = spirit_fixture();
-    let features = document.values()[5].as_sequence().expect("features vector");
+    let values = spirit_fixture();
+    let features = values[5].as_sequence().expect("features vector");
     let upgrade = features
         .iter()
-        .find(|value| value.has_record_head("Upgrade"))
+        .find(|value| value.is_tagged_record("Upgrade"))
         .expect("upgrade feature");
 
     assert!(upgrade.has_data_shape("Upgrade", 2));
