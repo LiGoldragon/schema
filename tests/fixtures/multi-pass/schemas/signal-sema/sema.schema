@@ -1,0 +1,15 @@
+{}
+
+[]
+
+[]
+
+[]
+
+{
+  SemaOperation [Assert Mutate Retract Match Subscribe Validate]
+  SemaOutcome [Asserted Mutated Retracted Matched Subscribed Validated NoChange]
+  SemaObservation (SemaOperation SemaOutcome)
+}
+
+[]

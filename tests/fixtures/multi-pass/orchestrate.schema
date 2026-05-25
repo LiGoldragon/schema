@@ -1,0 +1,166 @@
+{
+  SemaSet (Import schemas/signal-sema/sema.schema [SemaOperation SemaObservation])
+}
+
+[
+  (Claim [Role])
+  (Release [Role])
+  (Handoff [Role])
+  (Observe [Roles Lanes])
+  (Submit [Activity])
+  (Query [Activity])
+  (Watch [Operations])
+  (Unwatch [Token])
+]
+
+[
+  (Create [Role])
+  (Retire [Role Lane])
+  (Refresh [RepositoryIndex])
+  (Register [Lane])
+  (SetAuthority [Lane])
+]
+
+[]
+
+{
+  HarnessKind [Codex Claude]
+  LaneAuthority [Structural Support]
+  DownstreamComponent [Router Harness Terminal Message Mind System Introspect]
+  ApplicationFailureReason [Unreachable Rejected Unimplemented TimedOut Unknown]
+  UnimplementedReason [NotBuiltYet IntegrationNotLanded DependencyNotReady]
+  RoleCreationRejectionReason [RoleAlreadyExists ReportRepositoryAlreadyExists ReportLaneAlreadyExists]
+  HandoffRejectionReason [
+    SourceRoleDoesNotHold
+    (TargetRoleConflict (Vec ScopeConflict))
+  ]
+  ScopeReference [
+    (Path WirePath)
+    (Task TaskToken)
+  ]
+  ActivityFilter [
+    (RoleFilter RoleIdentifier)
+    (PathPrefix WirePath)
+    (TaskTokenFilter TaskToken)
+  ]
+  OperationKind [
+    Claim Release Handoff Observe Submit Query Watch Unwatch
+  ]
+  OwnerOperationKind [
+    Create Retire Refresh Register SetAuthority
+  ]
+
+  RoleIdentifier (String)
+  RoleToken (String)
+  LaneIdentifier (String)
+  WirePath (String)
+  TaskToken (String)
+  ScopeReason (String)
+  TimestampNanos (u64)
+  ActivitySlot (u64)
+  ObservationToken (u64)
+  RecordCount (u32)
+  ActivityLimit (u32)
+
+  Role ((Vec RoleToken))
+
+  RoleClaim (RoleIdentifier (Vec ScopeReference) ScopeReason)
+  RoleRelease (RoleIdentifier)
+  RoleHandoff (RoleIdentifier RoleIdentifier (Vec ScopeReference) ScopeReason)
+
+  ActivitySubmission (RoleIdentifier ScopeReference ScopeReason)
+  Activity (RoleIdentifier ScopeReference ScopeReason TimestampNanos)
+  ActivityQuery (ActivityLimit (Vec ActivityFilter))
+
+  ObservationSubscription (Boolean Boolean)
+
+  ScopeConflict (ScopeReference RoleIdentifier ScopeReason)
+
+  ClaimEntry (ScopeReference ScopeReason)
+  RoleStatus (RoleIdentifier HarnessKind (Vec ClaimEntry))
+
+  LaneRegistration (LaneIdentifier Role LaneAuthority)
+  LaneRegistrationRequest (Role LaneAuthority)
+  LaneAuthorityChange (LaneIdentifier LaneAuthority)
+
+  CreateRoleOrder (RoleIdentifier HarnessKind)
+  RetireRoleOrder (RoleIdentifier)
+  RefreshRepositoryIndexOrder (RecordCount)
+
+  ApplicationSuccess (DownstreamComponent ScopeReason)
+  ApplicationFailure (DownstreamComponent ApplicationFailureReason ScopeReason)
+
+  Claim [(Role RoleClaim)]
+  Release [(Role RoleRelease)]
+  Handoff [(Role RoleHandoff)]
+  Observe [Roles Lanes]
+  Submit [(Activity ActivitySubmission)]
+  Query [(Activity ActivityQuery)]
+  Watch [(Operations ObservationSubscription)]
+  Unwatch [(Token ObservationToken)]
+
+  Create [(Role CreateRoleOrder)]
+  Retire [
+    (Role RetireRoleOrder)
+    (Lane LaneIdentifier)
+  ]
+  Refresh [(RepositoryIndex RefreshRepositoryIndexOrder)]
+  Register [(Lane LaneRegistrationRequest)]
+  SetAuthority [(Lane LaneAuthorityChange)]
+
+  ClaimAcceptance (RoleIdentifier (Vec ScopeReference))
+  ClaimRejection (RoleIdentifier (Vec ScopeConflict))
+  ReleaseAcknowledgment (RoleIdentifier (Vec ScopeReference))
+  HandoffAcceptance (RoleIdentifier RoleIdentifier (Vec ScopeReference))
+  HandoffRejection (RoleIdentifier RoleIdentifier HandoffRejectionReason)
+  RoleSnapshot ((Vec RoleStatus) (Vec Activity))
+  LanesObserved ((Vec LaneRegistration))
+  ActivityAcknowledgment (ActivitySlot)
+  ActivityList ((Vec Activity))
+  PartialApplied ((Vec ApplicationSuccess) (Vec ApplicationFailure))
+  ObservationOpened (ObservationToken)
+  ObservationClosed (ObservationToken)
+  OrchestrateRequestUnimplemented (OperationKind UnimplementedReason)
+
+  RoleCreated (RoleIdentifier HarnessKind WirePath WirePath)
+  RoleRetired (RoleIdentifier)
+  RoleCreationRejected (RoleIdentifier RoleCreationRejectionReason)
+  RepositoryIndexRefreshed (RecordCount)
+  LaneRegistered (LaneRegistration)
+  LaneRetired (LaneIdentifier)
+  LaneAuthoritySet (LaneIdentifier LaneAuthority)
+  OwnerOrchestrateRequestUnimplemented (OwnerOperationKind UnimplementedReason)
+
+  OperationReceived (OperationKind)
+  EffectEmitted (SemaObservation)
+}
+
+[
+  (Reply
+    ClaimAcceptance
+    ClaimRejection
+    ReleaseAcknowledgment
+    HandoffAcceptance
+    HandoffRejection
+    RoleSnapshot
+    LanesObserved
+    ActivityAcknowledgment
+    ActivityList
+    PartialApplied
+    ObservationOpened
+    ObservationClosed
+    OrchestrateRequestUnimplemented
+    RoleCreated
+    RoleRetired
+    RoleCreationRejected
+    RepositoryIndexRefreshed
+    LaneRegistered
+    LaneRetired
+    LaneAuthoritySet
+    OwnerOrchestrateRequestUnimplemented)
+
+  (Observable
+    (filter default)
+    (operation_event OperationReceived)
+    (effect_event EffectEmitted))
+]

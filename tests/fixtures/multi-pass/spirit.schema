@@ -1,0 +1,94 @@
+{
+  Magnitude (ImportAll schemas/signal-sema/magnitude.schema)
+  SemaSet (Import schemas/signal-sema/sema.schema [SemaOperation SemaOutcome SemaObservation])
+}
+
+[
+  (State [Statement])
+  (Record [Entry])
+  (Observe [Observation])
+  (Watch [Subscription])
+  (Unwatch [SubscriptionToken])
+]
+
+[]
+
+[]
+
+{
+  State [(Statement Statement)]
+  Record [(Entry Entry)]
+  Observe [(Observation Observation)]
+  Watch [(Subscription Subscription)]
+  Unwatch [(SubscriptionToken SubscriptionToken)]
+
+  Kind [Decision Principle Correction Clarification Constraint]
+  ObservationMode [SummaryOnly WithProvenance]
+  Presence [Active Absent]
+  UnimplementedReason [NotBuiltYet IntegrationNotLanded]
+
+  Topic (String)
+  Summary (String)
+  Context (String)
+  Quote (String)
+  StatementText (String)
+  FocusArea (String)
+  RecordIdentifier (u64)
+  QuestionIdentifier (String)
+  QuestionText (String)
+  StateSubscriptionToken (u64)
+  RecordSubscriptionToken (u64)
+
+  Entry (Topic Kind Summary Context Magnitude Quote)
+  Statement (StatementText)
+  RecordQuery ((Option Topic) (Option Kind) ObservationMode)
+  RecordObservation (RecordQuery)
+  RecordSubscription ((Option Topic) ObservationMode)
+  RecordSummary (RecordIdentifier Topic Kind Summary Magnitude)
+  RecordProvenance (RecordSummary Context Date Time Quote)
+  TopicCount (Topic u64)
+  QuestionSummary (QuestionIdentifier QuestionText)
+
+  Observation [State (Records RecordQuery) Topics Questions]
+  Subscription [State (Records RecordSubscription)]
+  SubscriptionToken [(State StateSubscriptionToken) (Records RecordSubscriptionToken)]
+
+  RecordAccepted (RecordIdentifier)
+  StateObserved (State)
+  RecordsObserved ((Vec RecordSummary))
+  RecordProvenancesObserved ((Vec RecordProvenance))
+  TopicsObserved ((Vec TopicCount))
+  QuestionsObserved ((Vec QuestionSummary))
+  SubscriptionOpened (SubscriptionToken SubscriptionSnapshot)
+  SubscriptionRetracted (SubscriptionToken)
+  RequestUnimplemented (UnimplementedReason)
+  SubscriptionSnapshot [(State State) (Records (Vec RecordSummary))]
+
+  StateChanged (State)
+  RecordCaptured (RecordSummary)
+  OperationKind [State Record Observe Watch Unwatch]
+  OperationReceived (OperationKind)
+  EffectEmitted (SemaObservation)
+}
+
+[
+  (Reply
+    RecordAccepted
+    StateObserved
+    RecordsObserved
+    RecordProvenancesObserved
+    TopicsObserved
+    QuestionsObserved
+    SubscriptionOpened
+    SubscriptionRetracted
+    RequestUnimplemented)
+
+  (Event (belongs DomainStream)
+    StateChanged
+    RecordCaptured)
+
+  (Observable
+    (filter default)
+    (operation_event OperationReceived)
+    (effect_event EffectEmitted))
+]

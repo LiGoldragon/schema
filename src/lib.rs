@@ -10,6 +10,7 @@ mod feature;
 mod header;
 mod import;
 mod layout;
+pub mod multi_pass;
 mod name;
 mod parser;
 mod reader;

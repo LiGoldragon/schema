@@ -1,0 +1,82 @@
+{}
+
+[
+  (AskHandoverMarker [Request])
+  (ReadyToHandover [Report])
+  (HandoverCompleted [Report])
+  (Mirror [Payload])
+  (Divergence [Payload])
+  (RecoverFromFailure [Request])
+]
+
+[]
+
+[]
+
+{
+  ComponentName (String)
+  ContractVersion (Bytes)
+  RecordKind (String)
+
+  HandoverRejectionReason [
+    SchemaMismatch
+    CommitSequenceAdvanced
+    AlreadyInHandover
+    NotReady
+  ]
+  DivergenceReason [
+    NotRepresentable
+    TargetUnavailable
+    TargetRejected
+  ]
+
+  HandoverMarker (
+    ComponentName
+    ContractVersion
+    u64
+    u64
+    (Option u64)
+    Date
+    Time)
+  MarkerRequest (ComponentName)
+  ReadinessReport (ComponentName HandoverMarker)
+  CompletionReport (ComponentName HandoverMarker)
+  MirrorPayload (
+    ComponentName
+    ContractVersion
+    ContractVersion
+    RecordKind
+    Bytes)
+  DivergencePayload (
+    ComponentName
+    ContractVersion
+    ContractVersion
+    DivergenceReason
+    RecordKind
+    Bytes)
+  RecoveryRequest (ComponentName u64)
+  HandoverAcceptance (HandoverMarker)
+  HandoverFinalization (HandoverMarker)
+  MirrorAcknowledgement (ComponentName u64)
+  DivergenceAcknowledgement (ComponentName u64)
+  RecoveryResult (ComponentName Boolean)
+  HandoverRejection (ComponentName HandoverRejectionReason)
+
+  AskHandoverMarker [(Request MarkerRequest)]
+  ReadyToHandover [(Report ReadinessReport)]
+  HandoverCompleted [(Report CompletionReport)]
+  Mirror [(Payload MirrorPayload)]
+  Divergence [(Payload DivergencePayload)]
+  RecoverFromFailure [(Request RecoveryRequest)]
+}
+
+[
+  (Reply
+    HandoverMarker
+    HandoverAcceptance
+    HandoverFinalization
+    MirrorAcknowledgement
+    DivergenceAcknowledgement
+    RecoveryResult
+    HandoverRejection)
+]
