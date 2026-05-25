@@ -3,9 +3,8 @@
 //! This module proves end-to-end that:
 //!
 //! - The full schema-language pipeline can run on top of
-//!   `nota_codec::NotaValue` (tree-parser landed in nota-codec
-//!   per `feature/notavalue-shape-logic-and-sequence-parser`) WITHOUT
-//!   the schema crate needing its own NOTA tree assembler.
+//!   `nota_codec::NotaValue` WITHOUT the schema crate needing its own
+//!   NOTA tree assembler.
 //! - The four canonical macro families (Import / Header / Type /
 //!   Feature) lower a real `.schema` file into the SAME
 //!   `AssembledSchema` the canonical `Schema::parse_str` builds —
@@ -21,15 +20,18 @@
 //! - Pass 0 + Pass 1 — `nota_codec::parse_sequence` returns the six
 //!   top-level `NotaValue`s. Lexical + syntactic in one call now that
 //!   nota-codec exposes the tree.
-//! - Pass 2 (structural) — `Document::from_six_values` checks each
+//! - Pass 2 (structural) — `SchemaDocument::from_six_values` checks each
 //!   position carries the right NOTA kind (map / sequence) and
 //!   captures it.
-//! - Pass 3 + Pass 4 (identify + apply) — `MacroPipeline::run` walks
-//!   each position and dispatches into the relevant
+//! - Pass 3 (index) — `MacroIndex::from_document` records macro
+//!   endpoints in source order. Later passes can resolve/import lazily
+//!   without rediscovering where each macro lives.
+//! - Pass 4 + Pass 5 (identify + apply) — `MacroPipeline::run` walks
+//!   indexed candidates and dispatches into the relevant
 //!   `BuiltinMacroVariant` through the EXISTING `LoweringContext` from
 //!   `schema::engine`. The dispatch is driven by shape-logic
 //!   predicates from `nota_codec::NotaValue`.
-//! - Pass 5 (assembly) — `LoweringContext::finish()`.
+//! - Pass 6 (assembly) — `LoweringContext::finish()`.
 //!
 //! Cross-references:
 //! - `reports/designer/334-v2-multi-pass-nota-first-schema-reader.md`
@@ -67,8 +69,8 @@ pub fn read_schema_six_position(text: &str) -> Result<AssembledSchema> {
         context: "multi_pass parse_sequence",
         message: error.to_string(),
     })?;
-    let document = Document::from_six_values(raw_values)?;
-    let mut pipeline = MacroPipeline::new(&document);
+    let document = SchemaDocument::from_six_values(raw_values)?;
+    let mut pipeline = MacroPipeline::new(&document)?;
     pipeline.run()
 }
 
@@ -78,6 +80,7 @@ pub fn read_schema_six_position(text: &str) -> Result<AssembledSchema> {
 /// so the struct itself is `Eq`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PipelineReport {
+    pub macro_index: MacroIndexReport,
     pub import_firings: usize,
     pub header_firings: usize,
     pub type_firings: usize,
@@ -93,10 +96,12 @@ pub fn read_schema_with_report(text: &str) -> Result<PipelineReport> {
         context: "multi_pass parse_sequence",
         message: error.to_string(),
     })?;
-    let document = Document::from_six_values(raw_values)?;
-    let mut pipeline = MacroPipeline::new(&document);
+    let document = SchemaDocument::from_six_values(raw_values)?;
+    let mut pipeline = MacroPipeline::new(&document)?;
     let assembled = pipeline.run()?;
+    let macro_index = pipeline.index.report();
     Ok(PipelineReport {
+        macro_index,
         import_firings: pipeline.import_firings,
         header_firings: pipeline.header_firings,
         type_firings: pipeline.type_firings,
@@ -105,12 +110,11 @@ pub fn read_schema_with_report(text: &str) -> Result<PipelineReport> {
     })
 }
 
-/// Six top-level NOTA values arranged by schema position. Pass 2 is
-/// just naming what came back from `parse_sequence`.
+/// Six top-level NOTA values arranged by schema position.
 ///
 /// Not `Eq` because `NotaValue` carries `f64`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Document {
+pub struct SchemaDocument {
     pub imports: NotaValue,
     pub ordinary_header: NotaValue,
     pub owner_header: NotaValue,
@@ -119,7 +123,7 @@ pub struct Document {
     pub features: NotaValue,
 }
 
-impl Document {
+impl SchemaDocument {
     pub fn from_six_values(values: Vec<NotaValue>) -> Result<Self> {
         if values.len() != 6 {
             return Err(Error::InvalidSchemaText {
@@ -156,13 +160,156 @@ impl Document {
     }
 }
 
+/// Observable candidate counts from the indexing pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MacroIndexReport {
+    pub import_candidates: usize,
+    pub header_candidates: usize,
+    pub type_candidates: usize,
+    pub feature_candidates: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaPosition {
+    Imports,
+    OrdinaryHeader,
+    OwnerHeader,
+    SemaHeader,
+    Namespace,
+    Features,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ImportCandidate<'document> {
+    binding: &'document str,
+    value: &'document NotaValue,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct HeaderCandidate<'document> {
+    position: SchemaPosition,
+    leg: Leg,
+    root_slot: usize,
+    value: &'document NotaValue,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TypeCandidate<'document> {
+    name: &'document str,
+    value: &'document NotaValue,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FeatureCandidate<'document> {
+    value: &'document NotaValue,
+}
+
+/// Source-order index of macro endpoints. This is the lazy-resolution
+/// foothold: the engine first knows where all named/imported/lowerable
+/// macro nodes live, then later passes resolve or lower them in the
+/// precedence order the schema language chooses.
+#[derive(Clone, Debug)]
+struct MacroIndex<'document> {
+    imports: Vec<ImportCandidate<'document>>,
+    ordinary_headers: Vec<HeaderCandidate<'document>>,
+    owner_headers: Vec<HeaderCandidate<'document>>,
+    sema_headers: Vec<HeaderCandidate<'document>>,
+    types: Vec<TypeCandidate<'document>>,
+    features: Vec<FeatureCandidate<'document>>,
+}
+
+impl<'document> MacroIndex<'document> {
+    fn from_document(document: &'document SchemaDocument) -> Result<Self> {
+        let imports = document
+            .imports
+            .as_map()
+            .expect("imports kind enforced by SchemaDocument::from_six_values")
+            .iter()
+            .map(|entry| ImportCandidate {
+                binding: entry.key(),
+                value: entry.value(),
+            })
+            .collect();
+        let ordinary_headers = Self::header_candidates(
+            SchemaPosition::OrdinaryHeader,
+            Leg::Ordinary,
+            &document.ordinary_header,
+        )?;
+        let owner_headers = Self::header_candidates(
+            SchemaPosition::OwnerHeader,
+            Leg::Owner,
+            &document.owner_header,
+        )?;
+        let sema_headers =
+            Self::header_candidates(SchemaPosition::SemaHeader, Leg::Sema, &document.sema_header)?;
+        let types = document
+            .namespace
+            .as_map()
+            .expect("namespace kind enforced by SchemaDocument::from_six_values")
+            .iter()
+            .map(|entry| TypeCandidate {
+                name: entry.key(),
+                value: entry.value(),
+            })
+            .collect();
+        let features = document
+            .features
+            .as_sequence()
+            .expect("features kind enforced by SchemaDocument::from_six_values")
+            .iter()
+            .map(|value| FeatureCandidate { value })
+            .collect();
+        Ok(Self {
+            imports,
+            ordinary_headers,
+            owner_headers,
+            sema_headers,
+            types,
+            features,
+        })
+    }
+
+    fn header_candidates(
+        position: SchemaPosition,
+        leg: Leg,
+        value: &'document NotaValue,
+    ) -> Result<Vec<HeaderCandidate<'document>>> {
+        let items = value
+            .as_sequence()
+            .expect("header kind enforced by SchemaDocument::from_six_values");
+        Ok(items
+            .iter()
+            .enumerate()
+            .map(|(root_slot, value)| HeaderCandidate {
+                position,
+                leg,
+                root_slot,
+                value,
+            })
+            .collect())
+    }
+
+    fn header_count(&self) -> usize {
+        self.ordinary_headers.len() + self.owner_headers.len() + self.sema_headers.len()
+    }
+
+    fn report(&self) -> MacroIndexReport {
+        MacroIndexReport {
+            import_candidates: self.imports.len(),
+            header_candidates: self.header_count(),
+            type_candidates: self.types.len(),
+            feature_candidates: self.features.len(),
+        }
+    }
+}
+
 /// Macro pipeline driver. Walks the six positions in order, dispatches
 /// each sub-value through `BuiltinMacroVariant`, and tracks firing
 /// counts. The dispatch decisions ARE the shape-logic methods on
 /// `NotaValue` — `is_tagged_record`, `record_arity`,
 /// `is_single_ident_record`, ... — never raw pattern matching.
 struct MacroPipeline<'document> {
-    document: &'document Document,
+    index: MacroIndex<'document>,
     context: LoweringContext,
     /// Imported names per binding, captured from `(Import path
     /// [names])` records so the type-macro pass can lower imported
@@ -175,16 +322,16 @@ struct MacroPipeline<'document> {
 }
 
 impl<'document> MacroPipeline<'document> {
-    fn new(document: &'document Document) -> Self {
-        Self {
-            document,
+    fn new(document: &'document SchemaDocument) -> Result<Self> {
+        Ok(Self {
+            index: MacroIndex::from_document(document)?,
             context: LoweringContext::new(),
             imported_per_binding: BTreeMap::new(),
             import_firings: 0,
             header_firings: 0,
             type_firings: 0,
             feature_firings: 0,
-        }
+        })
     }
 
     fn run(&mut self) -> Result<AssembledSchema> {
@@ -193,9 +340,9 @@ impl<'document> MacroPipeline<'document> {
         // then headers (each leg), then local types, then imported
         // types, then features.
         self.lower_imports()?;
-        self.lower_header(&self.document.ordinary_header.clone(), Leg::Ordinary)?;
-        self.lower_header(&self.document.owner_header.clone(), Leg::Owner)?;
-        self.lower_header(&self.document.sema_header.clone(), Leg::Sema)?;
+        self.lower_header(self.index.ordinary_headers.clone())?;
+        self.lower_header(self.index.owner_headers.clone())?;
+        self.lower_header(self.index.sema_headers.clone())?;
         self.lower_namespace_local_types()?;
         self.lower_imported_types()?;
         self.lower_features()?;
@@ -203,18 +350,12 @@ impl<'document> MacroPipeline<'document> {
     }
 
     fn lower_imports(&mut self) -> Result<()> {
-        let entries = self
-            .document
-            .imports
-            .as_map()
-            .expect("imports kind enforced by Document::from_six_values");
-        for entry in entries {
-            let binding = Name::new(entry.key())?;
-            let directive = entry.value();
+        for candidate in self.index.imports.clone() {
+            let binding = Name::new(candidate.binding)?;
             // Shape-logic dispatch — every match clause asks
             // NotaValue a SHAPE question, never a pattern-match
             // against the raw enum.
-            let import_input = ImportMacroRecognizer::recognize(&binding, directive)?;
+            let import_input = ImportMacroRecognizer::recognize(&binding, candidate.value)?;
             self.imported_per_binding
                 .insert(binding.clone(), import_input.names.clone());
             let names_kind = match import_input.kind {
@@ -232,11 +373,9 @@ impl<'document> MacroPipeline<'document> {
         Ok(())
     }
 
-    fn lower_header(&mut self, value: &NotaValue, leg: Leg) -> Result<()> {
-        let items = value
-            .as_sequence()
-            .expect("header kind enforced by Document::from_six_values");
-        for (root_slot, root_value) in items.iter().enumerate() {
+    fn lower_header(&mut self, candidates: Vec<HeaderCandidate<'document>>) -> Result<()> {
+        for candidate in candidates {
+            let root_value = candidate.value;
             // A header root is `(Root [SubVariant ...])` — a tagged
             // record with exactly two positions: head + sequence of
             // endpoint names. Shape-logic dispatch.
@@ -244,8 +383,9 @@ impl<'document> MacroPipeline<'document> {
                 return Err(Error::InvalidSchemaText {
                     context: "multi_pass header",
                     message: format!(
-                        "header root must be `(Root [SubVariant ...])` with two positions, got arity {:?}",
-                        root_value.record_arity()
+                        "{:?} root must be `(Root [SubVariant ...])` with two positions, got arity {:?}",
+                        candidate.position,
+                        root_value.record_arity(),
                     ),
                 });
             }
@@ -289,7 +429,10 @@ impl<'document> MacroPipeline<'document> {
             }
             self.context
                 .apply(BuiltinMacroVariant::Header(HeaderInput::new(
-                    leg, root_slot, root, endpoints,
+                    candidate.leg,
+                    candidate.root_slot,
+                    root,
+                    endpoints,
                 )))?;
             self.header_firings += 1;
         }
@@ -297,18 +440,13 @@ impl<'document> MacroPipeline<'document> {
     }
 
     fn lower_namespace_local_types(&mut self) -> Result<()> {
-        let entries = self
-            .document
-            .namespace
-            .as_map()
-            .expect("namespace kind enforced by Document::from_six_values");
-        for entry in entries {
-            let name = Name::new(entry.key())?;
+        for candidate in self.index.types.clone() {
+            let name = Name::new(candidate.name)?;
             // Each namespace value dispatches by SHAPE into one of
             // the type-macro sub-recognizers: enum / record / newtype
             // / alias. The recognizer reads `NotaValue` shape, never
             // hand-rolled pattern-matching against the enum.
-            let body = TypeMacroRecognizer::recognize(entry.value())?;
+            let body = TypeMacroRecognizer::recognize(candidate.value)?;
             self.context
                 .apply(BuiltinMacroVariant::Type(TypeInput::local(name, body)))?;
             self.type_firings += 1;
@@ -331,16 +469,11 @@ impl<'document> MacroPipeline<'document> {
     }
 
     fn lower_features(&mut self) -> Result<()> {
-        let items = self
-            .document
-            .features
-            .as_sequence()
-            .expect("features kind enforced by Document::from_six_values");
-        for value in items {
+        for candidate in self.index.features.clone() {
             // Each feature lowers based on its tagged-record head.
             // Shape-logic dispatch: ask the value WHICH tag it
             // carries, then hand it to the matching recognizer.
-            let lowered = FeatureMacroRecognizer::recognize(value)?;
+            let lowered = FeatureMacroRecognizer::recognize(candidate.value)?;
             match lowered {
                 Feature::Upgrade(upgrade) => {
                     self.context
@@ -362,15 +495,10 @@ impl<'document> MacroPipeline<'document> {
     /// canonical reader has to do the same dance — headers reference
     /// types declared in the namespace and need to find their body.
     fn snapshot_local_bodies(&self) -> Result<BTreeMap<Name, DeclarationBody>> {
-        let entries = self
-            .document
-            .namespace
-            .as_map()
-            .expect("namespace kind enforced");
         let mut bodies = BTreeMap::new();
-        for entry in entries {
-            let name = Name::new(entry.key())?;
-            let body = TypeMacroRecognizer::recognize(entry.value())?;
+        for candidate in &self.index.types {
+            let name = Name::new(candidate.name)?;
+            let body = TypeMacroRecognizer::recognize(candidate.value)?;
             bodies.insert(name, body);
         }
         Ok(bodies)
@@ -486,21 +614,15 @@ struct TypeMacroRecognizer;
 
 impl TypeMacroRecognizer {
     fn recognize(value: &NotaValue) -> Result<DeclarationBody> {
-        if value.is_sequence() {
-            return Self::recognize_enum(value);
+        match TypeMicroMacro::from_value(value)? {
+            TypeMicroMacro::Enum => Self::recognize_enum(value),
+            TypeMicroMacro::RecordOrNewtype => Self::recognize_record_or_newtype(value),
+            TypeMicroMacro::Alias => {
+                // bare ident — alias to another type / primitive
+                let expr = lower_type_expression(value)?;
+                Ok(DeclarationBody::Alias(expr))
+            }
         }
-        if value.is_record() {
-            return Self::recognize_record_or_newtype(value);
-        }
-        if value.is_identifier() {
-            // bare ident — alias to another type / primitive
-            let expr = lower_type_expression(value)?;
-            return Ok(DeclarationBody::Alias(expr));
-        }
-        Err(Error::InvalidSchemaText {
-            context: "multi_pass type",
-            message: format!("namespace value cannot be lowered: shape is unsupported ({value:?})"),
-        })
     }
 
     fn recognize_enum(value: &NotaValue) -> Result<DeclarationBody> {
@@ -553,6 +675,34 @@ impl TypeMacroRecognizer {
             }
             _ => Ok(DeclarationBody::Record(fields)),
         }
+    }
+}
+
+/// Reusable shape transformation selected inside the Type macro. These are
+/// the first "micro-macros": tiny shape recognizers that larger macros can
+/// call instead of re-encoding enum/record/alias sugar themselves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TypeMicroMacro {
+    Enum,
+    RecordOrNewtype,
+    Alias,
+}
+
+impl TypeMicroMacro {
+    fn from_value(value: &NotaValue) -> Result<Self> {
+        if value.is_sequence() {
+            return Ok(Self::Enum);
+        }
+        if value.is_record() {
+            return Ok(Self::RecordOrNewtype);
+        }
+        if value.is_identifier() {
+            return Ok(Self::Alias);
+        }
+        Err(Error::InvalidSchemaText {
+            context: "multi_pass type",
+            message: format!("namespace value cannot be lowered: shape is unsupported ({value:?})"),
+        })
     }
 }
 

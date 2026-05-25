@@ -43,20 +43,28 @@ the same namespace.
 `Schema::assemble` resolves imports and lowers the authored schema into
 `AssembledSchema`.
 
-Before typed lowering, macro-front code can parse the same authored text into
-`nota_codec::NotaDocument` / `NotaValue`. That generic tree preserves the
-shape needed for macro dispatch: ordered maps, vectors, records, record head
-tokens, PascalCase identifiers, local `./*` import paths, and block strings.
-It does not replace the typed parser; it is the reusable first-pass substrate
-for fixed-point macro expansion and for handing still-generic subobjects to
-later passes.
+Before typed lowering, `Schema::parse_str` parses authored text into
+`nota_codec::NotaValue` trees. That generic tree preserves the shape needed
+for macro dispatch: ordered maps, vectors, records, record head tokens,
+PascalCase identifiers, local `./*` import paths, and block strings.
 
-Lowering runs through the builtin schema engine. Each authored node is
+`multi_pass` is the executable macro-front proof path. It first builds a
+`SchemaDocument` from the six positional values, then builds a `MacroIndex`
+that records import, header, namespace-type, and feature macro endpoints
+before any macro fires. Later passes walk those indexed candidates in schema
+precedence order. This is the foothold for lazy resolution and forward
+references: the engine knows where a named macro endpoint lives before a
+later macro asks to invoke it.
+
+Lowering runs through the builtin schema engine. Each indexed node is
 translated into a data-carrying `BuiltinMacroVariant` at a
 `NodeDefinitionPoint`: import map values become `ImportInput`, header roots
 become `HeaderInput`, namespace values become `TypeInput`, and feature vector
-items become `FeatureInput`. The input struct is the macro variant's payload;
-the lowerer emits assembled fragments into a `LoweringContext`.
+items become `FeatureInput`. Type lowering uses a first explicit
+micro-macro selector (`TypeMicroMacro`) to split enum sugar, record/newtype
+sugar, and alias sugar before applying the transformation. The input struct
+is the macro variant's payload; the lowerer emits assembled fragments into a
+`LoweringContext`.
 
 `AssembledSchema` currently contains:
 
@@ -75,9 +83,12 @@ authored text.
 ## File Reader
 
 `Schema::parse_str` parses one authored `.schema` document through
-`nota-codec::Decoder`. `LoadedSchema::read_path` reads a file, recursively
-loads local relative imports, validates selected imports against exported
-names, resolves `ImportAll`, and assembles the result.
+`nota_codec::parse_sequence` and `shape_parser`. The old streaming
+`nota-codec::Decoder` reader remains available as
+`Schema::parse_str_with_streaming_decoder` for equivalence tests while the
+macro-front path finishes taking over. `LoadedSchema::read_path` reads a
+file, recursively loads local relative imports, validates selected imports
+against exported names, resolves `ImportAll`, and assembles the result.
 
 The reader treats imports as schema dependencies, not as comments or include
 text. Imported names enter the local namespace through the existing import
@@ -139,13 +150,18 @@ src/
 ├── import.rs       # import directives and resolved bindings
 ├── layout.rs       # fixed-root versus ordered-box planning
 ├── name.rs         # schema identifier validation
-├── parser.rs       # .schema text parser over nota-codec
+├── multi_pass.rs   # NotaValue-driven macro index + builtin macro pipeline
+├── parser.rs       # compatibility streaming parser over nota-codec
 ├── reader.rs       # file reader + recursive local imports
 ├── section.rs      # namespace map
+├── shape_parser.rs # primary Schema::parse_str NotaValue shape parser
 └── upgrade.rs      # upgrade annotations and plans
 
 tests/
 ├── document.rs     # validation, lowering, layout, upgrade behavior
+├── multi_pass.rs   # shape parser / streaming equivalence and basic pipeline
+├── multi_pass_pipeline.rs # live Spirit pipeline and macro-index assertions
+├── nota_shape.rs   # NotaValue shape-predicate checks on real fixtures
 ├── reader.rs       # .schema files, local imports, file-based upgrade
 └── fixtures/       # real .schema fixtures
 ```
@@ -179,5 +195,7 @@ resolved schema proves otherwise.
 The crate is now an MVP parser and typed model for the v13 schema-language
 shape. It is ready for macro work to depend on the six-position structure,
 uniform header routes, local import loading, `AssembledSchema`, import
-collision checks, and basic upgrade planning. It is not yet a code
-generator, runtime schema registry, or database upgrade tool.
+collision checks, basic upgrade planning, and the first NotaValue-driven
+macro index / micro-macro lowering path. It is not yet a code generator,
+runtime schema registry, user macro loader, fixed-point macro expander, or
+database upgrade tool.

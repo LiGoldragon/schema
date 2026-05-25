@@ -54,6 +54,7 @@ fn pipeline_lowers_live_spirit_schema_byte_equivalent_to_canonical_reader() {
 fn pipeline_report_counts_match_live_spirit_schema_shape() {
     let report = read_schema_with_report(LIVE_SPIRIT_TEXT).expect("multi-pass reads ok");
     let PipelineReport {
+        macro_index,
         import_firings,
         header_firings,
         type_firings,
@@ -71,9 +72,11 @@ fn pipeline_report_counts_match_live_spirit_schema_shape() {
     //   [(Reply ...) (Event ...) (Observable ...)]
     //
     // Imports fire once per binding (`Magnitude`, `SemaSet`).
+    assert_eq!(macro_index.import_candidates, 2);
     assert_eq!(import_firings, 2, "expected two import macro firings");
 
     // Headers fire once per root: 5 ordinary roots, 0 owner, 0 sema.
+    assert_eq!(macro_index.header_candidates, 5);
     assert_eq!(header_firings, 5, "expected five header macro firings");
 
     // Type firings = local namespace count + imported names.
@@ -109,12 +112,14 @@ fn pipeline_report_counts_match_live_spirit_schema_shape() {
         .filter(|t| matches!(t, AssembledType::Imported { .. }))
         .count();
     let expected_type_firings = local_types + imported_types;
+    assert_eq!(macro_index.type_candidates, local_types);
     assert_eq!(
         type_firings, expected_type_firings,
         "type firings ({type_firings}) should match locals ({local_types}) + imports ({imported_types})"
     );
 
     // Features: live Spirit has Reply + Event + Observable.
+    assert_eq!(macro_index.feature_candidates, 3);
     assert_eq!(feature_firings, 3, "expected three feature macro firings");
 
     // Sanity on the assembled output's overall shape.
