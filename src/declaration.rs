@@ -233,21 +233,18 @@ fn field_name_for_expression(expression: &TypeExpression) -> FieldName {
 
 fn field_name_text_for_expression(expression: &TypeExpression) -> String {
     match expression {
-        TypeExpression::Named(name) => lower_first(name.as_str()),
+        TypeExpression::Named(name) => pascal_to_snake(name.as_str()),
         TypeExpression::Primitive(primitive) => primitive_field_name(*primitive).into(),
         TypeExpression::Container(Container::Optional(inner)) => {
-            format!(
-                "option{}",
-                upper_first(&field_name_text_for_expression(inner))
-            )
+            format!("option_{}", field_name_text_for_expression(inner))
         }
         TypeExpression::Container(Container::Vector(inner)) => {
-            format!("vec{}", upper_first(&field_name_text_for_expression(inner)))
+            format!("vec_{}", field_name_text_for_expression(inner))
         }
         TypeExpression::Container(Container::Map { key, value }) => format!(
-            "map{}{}",
-            upper_first(&field_name_text_for_expression(key)),
-            upper_first(&field_name_text_for_expression(value))
+            "map_{}_{}",
+            field_name_text_for_expression(key),
+            field_name_text_for_expression(value)
         ),
     }
 }
@@ -266,18 +263,21 @@ fn primitive_field_name(primitive: Primitive) -> &'static str {
     }
 }
 
-fn lower_first(value: &str) -> String {
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    first.to_ascii_lowercase().to_string() + chars.as_str()
-}
-
-fn upper_first(value: &str) -> String {
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    first.to_ascii_uppercase().to_string() + chars.as_str()
+fn pascal_to_snake(value: &str) -> String {
+    let mut output = String::new();
+    let mut previous_was_lower_or_digit = false;
+    for character in value.chars() {
+        if character.is_ascii_uppercase() {
+            if previous_was_lower_or_digit {
+                output.push('_');
+            }
+            output.push(character.to_ascii_lowercase());
+            previous_was_lower_or_digit = false;
+        } else {
+            output.push(character);
+            previous_was_lower_or_digit =
+                character.is_ascii_lowercase() || character.is_ascii_digit();
+        }
+    }
+    output
 }

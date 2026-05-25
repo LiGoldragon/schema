@@ -44,7 +44,7 @@ fields: `Entry [Topic Kind Summary]`. Record and payload fields do not carry
 authored lowercase names. Field names are derived from the field type
 expression. A bare `Certainty` field, or the explicit self-named field form
 `(Certainty)`, lowers to the generated field name `certainty`; `(Vec Topic)`
-lowers to `vecTopic`.
+lowers to `vec_topic`.
 When the generated name needs to be more specific, the schema introduces a
 more specific PascalCase type such as `RecordSummaries [(Vec RecordSummary)]`
 and uses `RecordSummaries` in the field position. The direct

@@ -1,9 +1,11 @@
 use nota_codec::{Decoder, Token};
 
 use crate::{
-    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, Header, HeaderRoot,
-    ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result, Schema,
-    SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    Declaration, DeclarationBody, EffectTableEntry, EffectTableFeature, Error, EventFeature,
+    FanOutOutputDeclaration, FanOutTargetsEntry, FanOutTargetsFeature, Feature, Field, Header,
+    HeaderRoot, ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result,
+    Schema, SchemaPath, StorageDescriptorEntry, StorageDescriptorFeature, TypeExpression, Upgrade,
+    UpgradeAnnotation, Variant, Version,
 };
 
 impl Schema {
@@ -289,6 +291,9 @@ impl<'input> Parser<'input> {
             "Event" => self.parse_event_feature()?,
             "Observable" => self.parse_observable_feature()?,
             "Upgrade" => self.parse_upgrade_feature()?,
+            "EffectTable" => self.parse_effect_table_feature()?,
+            "FanOutTargets" => self.parse_fan_out_targets_feature()?,
+            "StorageDescriptor" => self.parse_storage_descriptor_feature()?,
             _ => {
                 return Err(Error::InvalidSchemaText {
                     context: "feature",
@@ -402,6 +407,86 @@ impl<'input> Parser<'input> {
         };
         self.expect_record_end("upgrade annotation")?;
         Ok(annotation)
+    }
+
+    fn parse_effect_table_feature(&mut self) -> Result<Feature> {
+        self.expect_seq_start("EffectTable rows")?;
+        let mut entries = Vec::new();
+        while !self.peek_is_seq_end("EffectTable rows")? {
+            self.expect_record_start("EffectTable entry")?;
+            let action = self.read_name("EffectTable action")?;
+            let effect = self.read_name("EffectTable effect")?;
+            self.expect_record_end("EffectTable entry")?;
+            entries.push(EffectTableEntry::new(action, effect));
+        }
+        self.expect_seq_end("EffectTable rows")?;
+        Ok(Feature::EffectTable(EffectTableFeature::new(entries)))
+    }
+
+    fn parse_fan_out_targets_feature(&mut self) -> Result<Feature> {
+        self.expect_seq_start("FanOutTargets rows")?;
+        let mut entries = Vec::new();
+        while !self.peek_is_seq_end("FanOutTargets rows")? {
+            self.expect_record_start("FanOutTargets entry")?;
+            let effect = self.read_name("FanOutTargets effect")?;
+            self.expect_seq_start("FanOutTargets outputs")?;
+            let mut outputs = Vec::new();
+            while !self.peek_is_seq_end("FanOutTargets outputs")? {
+                outputs.push(self.parse_fan_out_output()?);
+            }
+            self.expect_seq_end("FanOutTargets outputs")?;
+            self.expect_record_end("FanOutTargets entry")?;
+            entries.push(FanOutTargetsEntry::new(effect, outputs));
+        }
+        self.expect_seq_end("FanOutTargets rows")?;
+        Ok(Feature::FanOutTargets(FanOutTargetsFeature::new(entries)))
+    }
+
+    fn parse_fan_out_output(&mut self) -> Result<FanOutOutputDeclaration> {
+        self.expect_record_start("FanOutOutput")?;
+        let head = self.read_name_text("FanOutOutput")?;
+        let output = match head.as_str() {
+            "Reply" => {
+                let variant = self.read_name("Reply variant")?;
+                FanOutOutputDeclaration::Reply { variant }
+            }
+            "FanOutSubscribers" => {
+                let actor_type = self.read_name("FanOutSubscribers actor type")?;
+                let dispatch_method = self.read_name("FanOutSubscribers dispatch method")?;
+                FanOutOutputDeclaration::Subscribers {
+                    actor_type,
+                    dispatch_method,
+                }
+            }
+            other => {
+                let method_tag = Name::new(other)?;
+                let actor_type = self.read_name("fan-out output actor type")?;
+                let actor_method = self.read_name("fan-out output actor method")?;
+                FanOutOutputDeclaration::Actor {
+                    method_tag,
+                    actor_type,
+                    actor_method,
+                }
+            }
+        };
+        self.expect_record_end("FanOutOutput")?;
+        Ok(output)
+    }
+
+    fn parse_storage_descriptor_feature(&mut self) -> Result<Feature> {
+        self.expect_seq_start("StorageDescriptor rows")?;
+        let mut entries = Vec::new();
+        while !self.peek_is_seq_end("StorageDescriptor rows")? {
+            self.expect_record_start("StorageDescriptor entry")?;
+            let logical_name = self.read_name("StorageDescriptor logical name")?;
+            let table_type = self.read_name("StorageDescriptor table type")?;
+            self.expect_record_end("StorageDescriptor entry")?;
+            entries.push(StorageDescriptorEntry::new(logical_name, table_type));
+        }
+        self.expect_seq_end("StorageDescriptor rows")?;
+        Ok(Feature::StorageDescriptor(StorageDescriptorFeature::new(
+            entries,
+        )))
     }
 
     fn parse_name_vector(&mut self, context: &'static str) -> Result<Vec<Name>> {

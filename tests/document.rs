@@ -500,11 +500,11 @@ fn container_field_names_are_derived_from_container_shape() {
 
     assert_eq!(
         fields[0].derived_name(),
-        FieldName::new("optionTopic").unwrap()
+        FieldName::new("option_topic").unwrap()
     );
     assert_eq!(
         fields[1].derived_name(),
-        FieldName::new("vecTopic").unwrap()
+        FieldName::new("vec_topic").unwrap()
     );
 }
 

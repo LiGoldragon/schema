@@ -1,0 +1,45 @@
+;; recorder.schema --- minimal recorder actor fixture.
+;;
+;; Exercises the new feature variants EffectTable + FanOutTargets in
+;; combination with the universal-Unknown injection on the RESPONSE
+;; enum.
+
+;; imports --- none
+{}
+
+;; no wire headers --- internal channel
+[] [] []
+
+;; namespace
+{
+  RecorderAction (
+    RecordEntry
+    QueryStatus
+  )
+
+  RecorderResponse (
+    RecordAccepted
+    StatusReturned
+  )
+
+  RecordEntry [Topic]
+
+  Topic [String]
+
+  RecordAccepted [u64]
+  StatusReturned [u64]
+}
+
+;; features
+[
+  (EffectTable [
+    (RecordEntry RecordWriteEffect)
+  ])
+
+  (FanOutTargets [
+    (RecordWriteEffect [
+      (Store SpiritStorage InsertStampedEntry)
+      (Reply RecordAccepted)
+    ])
+  ])
+]
