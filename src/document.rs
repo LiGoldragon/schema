@@ -184,9 +184,9 @@ impl Schema {
                 DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
                     self.validate_expression(expression, imports)?
                 }
-                DeclarationBody::Record(expressions) => {
-                    for expression in expressions {
-                        self.validate_expression(expression, imports)?;
+                DeclarationBody::Record(fields) => {
+                    for field in fields {
+                        self.validate_expression(field.expression(), imports)?;
                     }
                 }
             }
@@ -205,9 +205,9 @@ impl Schema {
         match payload {
             Payload::Unit => Ok(()),
             Payload::Type(expression) => self.validate_expression(expression, imports),
-            Payload::Fields(expressions) => {
-                for expression in expressions {
-                    self.validate_expression(expression, imports)?;
+            Payload::Fields(fields) => {
+                for field in fields {
+                    self.validate_expression(field.expression(), imports)?;
                 }
                 Ok(())
             }

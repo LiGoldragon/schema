@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
-    BuiltinMacroVariant, Declaration, DeclarationBody, Engine, Error, Feature, Header,
-    HeaderEndpointInput, HeaderInput, HeaderRoot, ImportDirective, ImportResolution, Imports,
-    Layout, Leg, LoweringContext, Name, Namespace, NodeDefinitionPoint, Payload, Primitive,
-    Projection, RouteBody, Schema, SchemaPath, StandardProjection, TypeExpression, TypeInput,
-    Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
+    BuiltinMacroVariant, Declaration, DeclarationBody, Engine, Error, Feature, Field, FieldName,
+    Header, HeaderEndpointInput, HeaderInput, HeaderRoot, ImportDirective, ImportResolution,
+    Imports, Layout, Leg, LoweringContext, Name, Namespace, NodeDefinitionPoint, Payload,
+    Primitive, Projection, RouteBody, Schema, SchemaPath, StandardProjection, TypeExpression,
+    TypeInput, Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
 };
 
 fn name(value: &str) -> Name {
@@ -60,7 +60,10 @@ fn builtin_macro_variants_lower_into_assembled_schema_fragments() {
     context
         .apply(BuiltinMacroVariant::Type(TypeInput::local(
             name("Entry"),
-            DeclarationBody::Record(vec![named("Topic"), named("Kind")]),
+            DeclarationBody::Record(vec![
+                Field::inferred(named("Topic")),
+                Field::inferred(named("Kind")),
+            ]),
         )))
         .unwrap();
     context
@@ -386,6 +389,69 @@ fn migrate_annotation_allows_changed_record_projection() {
         projection,
         Projection::Annotated { name, annotation: UpgradeAnnotation::Migrate(migrated) }
             if name.as_str() == "Entry" && migrated.as_str() == "Entry"
+    )));
+}
+
+#[test]
+fn parser_accepts_bool_as_boolean_primitive_alias() {
+    let schema = Schema::parse_str("{} [] [] [] { Flag (bool) } []").unwrap();
+
+    assert_eq!(
+        schema.declaration_body(&name("Flag")),
+        Some(&DeclarationBody::Newtype(TypeExpression::Primitive(
+            Primitive::Boolean
+        )))
+    );
+}
+
+#[test]
+fn parser_accepts_explicit_field_names_without_changing_field_types() {
+    let schema = Schema::parse_str(
+        "{} [] [] [] { Magnitude [Maximum Medium] Confidence ((certainty Magnitude) (priority Magnitude)) } []",
+    )
+    .unwrap();
+
+    let Some(DeclarationBody::Record(fields)) = schema.declaration_body(&name("Confidence")) else {
+        panic!("expected record body");
+    };
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].name(),
+        Some(&FieldName::new("certainty").unwrap())
+    );
+    assert_eq!(fields[0].expression(), &named("Magnitude"));
+    assert_eq!(fields[1].name(), Some(&FieldName::new("priority").unwrap()));
+    assert_eq!(fields[1].expression(), &named("Magnitude"));
+
+    let layout = Layout::for_declaration(&schema, &name("Confidence")).unwrap();
+    assert_eq!(
+        layout.fields()[0].name(),
+        Some(&FieldName::new("certainty").unwrap())
+    );
+    assert_eq!(layout.root_positions(), vec![0, 1]);
+}
+
+#[test]
+fn field_name_only_change_does_not_require_storage_upgrade_annotation() {
+    let previous = Schema::parse_str(
+        "{} [] [] [] { Magnitude [Maximum Medium] Entry (Topic Magnitude) Topic (String) } []",
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+    let current = Schema::parse_str(
+        "{} [] [] [] { Magnitude [Maximum Medium] Entry (Topic (certainty Magnitude)) Topic (String) } []",
+    )
+    .unwrap()
+    .assemble(&[])
+    .unwrap();
+
+    let plan = current.plan_upgrade_from(&previous).unwrap();
+
+    assert!(plan.projections().iter().any(|projection| matches!(
+        projection,
+        Projection::Identity { name } if name.as_str() == "Entry"
     )));
 }
 

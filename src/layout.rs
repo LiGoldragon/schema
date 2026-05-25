@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{Container, DeclarationBody, Document, Name, Payload, Result, TypeExpression};
+use crate::{
+    Container, DeclarationBody, Document, Field, FieldName, Name, Payload, Result, TypeExpression,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
@@ -56,7 +58,7 @@ fn fields_for_body(document: &Document, body: &DeclarationBody) -> Vec<FieldLayo
                 location(document, expression),
             )]
         }
-        DeclarationBody::Record(expressions) => fields_for_expressions(document, expressions),
+        DeclarationBody::Record(fields) => fields_for_schema_fields(document, fields),
     }
 }
 
@@ -68,23 +70,22 @@ fn fields_for_payload(document: &Document, payload: &Payload) -> Vec<FieldLayout
             expression.clone(),
             location(document, expression),
         )],
-        Payload::Fields(expressions) => fields_for_expressions(document, expressions),
+        Payload::Fields(fields) => fields_for_schema_fields(document, fields),
     }
 }
 
-fn fields_for_expressions(document: &Document, expressions: &[TypeExpression]) -> Vec<FieldLayout> {
-    expressions
+fn fields_for_schema_fields(document: &Document, fields: &[Field]) -> Vec<FieldLayout> {
+    fields
         .iter()
         .enumerate()
-        .map(|(position, expression)| {
-            FieldLayout::new(position, expression.clone(), location(document, expression))
-        })
+        .map(|(position, field)| FieldLayout::from_field(position, document, field))
         .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FieldLayout {
     position: usize,
+    name: Option<FieldName>,
     expression: TypeExpression,
     location: FieldLocation,
 }
@@ -93,13 +94,27 @@ impl FieldLayout {
     pub fn new(position: usize, expression: TypeExpression, location: FieldLocation) -> Self {
         Self {
             position,
+            name: None,
             expression,
             location,
         }
     }
 
+    pub fn from_field(position: usize, document: &Document, field: &Field) -> Self {
+        Self {
+            position,
+            name: field.name().cloned(),
+            expression: field.expression().clone(),
+            location: location(document, field.expression()),
+        }
+    }
+
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    pub fn name(&self) -> Option<&FieldName> {
+        self.name.as_ref()
     }
 
     pub fn expression(&self) -> &TypeExpression {
@@ -157,16 +172,16 @@ fn is_fixed_width_declaration(
             variants.iter().all(|variant| match variant.payload() {
                 Payload::Unit => true,
                 Payload::Type(expression) => is_fixed_width(document, expression, visited),
-                Payload::Fields(expressions) => expressions
+                Payload::Fields(fields) => fields
                     .iter()
-                    .all(|expression| is_fixed_width(document, expression, visited)),
+                    .all(|field| is_fixed_width(document, field.expression(), visited)),
             })
         }
         DeclarationBody::Newtype(expression) | DeclarationBody::Alias(expression) => {
             is_fixed_width(document, expression, visited)
         }
-        DeclarationBody::Record(expressions) => expressions
+        DeclarationBody::Record(fields) => fields
             .iter()
-            .all(|expression| is_fixed_width(document, expression, visited)),
+            .all(|field| is_fixed_width(document, field.expression(), visited)),
     }
 }

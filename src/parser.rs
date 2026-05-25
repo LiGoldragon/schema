@@ -1,9 +1,9 @@
 use nota_codec::{Decoder, Token};
 
 use crate::{
-    Declaration, DeclarationBody, Error, EventFeature, Feature, Header, HeaderRoot,
-    ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result, Schema,
-    SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, FieldName, Header,
+    HeaderRoot, ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result,
+    Schema, SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
 };
 
 impl Schema {
@@ -128,7 +128,7 @@ impl<'input> Parser<'input> {
             let name = self.read_name("variant name")?;
             let mut fields = Vec::new();
             while !self.peek_is_record_end("data-carrying variant")? {
-                fields.push(self.parse_type_expression()?);
+                fields.push(self.parse_field()?);
             }
             self.expect_record_end("data-carrying variant")?;
             Ok(variant_with_fields(name, fields))
@@ -141,7 +141,7 @@ impl<'input> Parser<'input> {
         self.expect_record_start("record declaration")?;
         let mut fields = Vec::new();
         while !self.peek_is_record_end("record declaration")? {
-            fields.push(self.parse_type_expression()?);
+            fields.push(self.parse_field()?);
         }
         self.expect_record_end("record declaration")?;
 
@@ -150,9 +150,18 @@ impl<'input> Parser<'input> {
                 context: "record declaration",
                 message: "declaration record must carry at least one type expression".into(),
             }),
-            1 => Ok(DeclarationBody::Newtype(fields.remove(0))),
+            1 if fields[0].name().is_none() => Ok(DeclarationBody::Newtype(
+                fields.remove(0).expression().clone(),
+            )),
             _ => Ok(DeclarationBody::Record(fields)),
         }
+    }
+
+    fn parse_field(&mut self) -> Result<Field> {
+        if matches!(self.peek_token("field")?, Some(Token::LParen)) {
+            return self.parse_named_or_container_field();
+        }
+        self.parse_type_expression().map(Field::inferred)
     }
 
     fn parse_type_expression(&mut self) -> Result<TypeExpression> {
@@ -189,7 +198,28 @@ impl<'input> Parser<'input> {
     fn parse_container_expression(&mut self) -> Result<TypeExpression> {
         self.expect_record_start("container expression")?;
         let head = self.read_name_text("container expression")?;
-        let expression = match head.as_str() {
+        let expression = self.parse_container_expression_after_head(&head)?;
+        self.expect_record_end("container expression")?;
+        Ok(expression)
+    }
+
+    fn parse_named_or_container_field(&mut self) -> Result<Field> {
+        self.expect_record_start("field")?;
+        let head = self.read_field_or_container_head()?;
+        if is_container_head(&head) {
+            let expression = self.parse_container_expression_after_head(&head)?;
+            self.expect_record_end("field")?;
+            return Ok(Field::inferred(expression));
+        }
+
+        let name = FieldName::new(head)?;
+        let expression = self.parse_type_expression()?;
+        self.expect_record_end("field")?;
+        Ok(Field::named(name, expression))
+    }
+
+    fn parse_container_expression_after_head(&mut self, head: &str) -> Result<TypeExpression> {
+        let expression = match head {
             "Option" => {
                 let inner = self.parse_type_expression()?;
                 TypeExpression::optional(inner)
@@ -210,8 +240,20 @@ impl<'input> Parser<'input> {
                 });
             }
         };
-        self.expect_record_end("container expression")?;
         Ok(expression)
+    }
+
+    fn read_field_or_container_head(&mut self) -> Result<String> {
+        match self.peek_token("field head")? {
+            Some(Token::Ident(name)) if starts_with_uppercase(&name) => {
+                self.read_name_text("field head")
+            }
+            Some(_) => self.read_string("field head"),
+            None => Err(Error::InvalidSchemaText {
+                context: "field head",
+                message: "unexpected end of input".into(),
+            }),
+        }
     }
 
     fn parse_features(&mut self) -> Result<Vec<Feature>> {
@@ -458,11 +500,14 @@ impl<'input> Parser<'input> {
     }
 }
 
-fn variant_with_fields(name: Name, fields: Vec<TypeExpression>) -> Variant {
+fn variant_with_fields(name: Name, fields: Vec<Field>) -> Variant {
     match fields.len() {
         0 => Variant::unit(name),
-        1 => Variant::with_type(name, fields.into_iter().next().unwrap()),
-        _ => Variant::with_fields(name, fields),
+        1 if fields[0].name().is_none() => Variant::with_type(
+            name,
+            fields.into_iter().next().unwrap().expression().clone(),
+        ),
+        _ => Variant::with_field_entries(name, fields),
     }
 }
 
@@ -470,7 +515,7 @@ fn primitive(text: &str) -> Option<TypeExpression> {
     let primitive = match text {
         "String" => Primitive::String,
         "Bytes" => Primitive::Bytes,
-        "Boolean" => Primitive::Boolean,
+        "Boolean" | "bool" => Primitive::Boolean,
         "u8" => Primitive::Unsigned8,
         "u16" => Primitive::Unsigned16,
         "u32" => Primitive::Unsigned32,
@@ -480,6 +525,10 @@ fn primitive(text: &str) -> Option<TypeExpression> {
         _ => return None,
     };
     Some(TypeExpression::Primitive(primitive))
+}
+
+fn is_container_head(text: &str) -> bool {
+    matches!(text, "Option" | "Vec" | "Map")
 }
 
 fn starts_with_uppercase(text: &str) -> bool {

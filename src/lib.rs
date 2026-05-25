@@ -17,7 +17,7 @@ mod section;
 mod upgrade;
 
 pub use assembled::{AssembledSchema, AssembledType, Endpoint, Leg, Route, RouteBody};
-pub use declaration::{Declaration, DeclarationBody, Engine, Payload, Variant};
+pub use declaration::{Declaration, DeclarationBody, Engine, Field, Payload, Variant};
 pub use document::{Document, Schema};
 pub use engine::{
     AssembledFragment, BuiltinMacroVariant, FeatureInput, HeaderEndpointInput, HeaderInput,
@@ -31,7 +31,7 @@ pub use import::{
     ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, SchemaPath,
 };
 pub use layout::{FieldLayout, FieldLocation, Layout};
-pub use name::Name;
+pub use name::{FieldName, Name};
 pub use reader::LoadedSchema;
 pub use section::Namespace;
 pub use upgrade::{

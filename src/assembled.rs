@@ -70,7 +70,7 @@ impl AssembledSchema {
 
         for (name, body) in self.local_bodies() {
             if let Some(previous_body) = previous.body(name) {
-                if body == previous_body {
+                if body.storage_matches(previous_body) {
                     projections.push(Projection::Identity { name: name.clone() });
                 } else if standard_projection(previous_body, body).is_some() {
                     projections.push(Projection::Standard {
@@ -308,7 +308,7 @@ fn standard_projection(
     if current_variants
         .iter()
         .zip(previous_variants)
-        .all(|(current, previous)| current == previous)
+        .all(|(current, previous)| current.storage_matches(previous))
     {
         Some(StandardProjection::AdditiveEnumVariant)
     } else {

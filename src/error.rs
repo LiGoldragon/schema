@@ -9,6 +9,9 @@ pub enum Error {
     InvalidName {
         name: String,
     },
+    InvalidFieldName {
+        name: String,
+    },
     InvalidSchemaText {
         context: &'static str,
         message: String,
@@ -107,6 +110,9 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidName { name } => write!(formatter, "invalid schema name `{name}`"),
+            Self::InvalidFieldName { name } => {
+                write!(formatter, "invalid schema field name `{name}`")
+            }
             Self::InvalidSchemaText { context, message } => {
                 write!(
                     formatter,

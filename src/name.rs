@@ -49,6 +49,32 @@ impl nota_codec::NotaMapKey for Name {
     }
 }
 
+/// Field name used when a schema field needs a name that differs from
+/// the type-derived default.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FieldName(String);
+
+impl FieldName {
+    pub fn new(value: impl Into<String>) -> Result<Self> {
+        let value = value.into();
+        if is_field_name(&value) {
+            Ok(Self(value))
+        } else {
+            Err(Error::InvalidFieldName { name: value })
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for FieldName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 fn is_pascal_case_name(value: &str) -> bool {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -56,6 +82,18 @@ fn is_pascal_case_name(value: &str) -> bool {
     };
     first.is_ascii_uppercase()
         && chars.all(|character| character.is_ascii_alphanumeric())
+        && value
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+}
+
+fn is_field_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && chars.all(|character| character.is_ascii_alphanumeric() || character == '_')
         && value
             .chars()
             .any(|character| character.is_ascii_alphabetic())
