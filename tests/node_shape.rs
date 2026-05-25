@@ -13,7 +13,7 @@ fn parse_one(text: &str) -> NotaValue {
 #[test]
 fn namespace_shape_recognizer_splits_enum_record_newtype_and_alias() {
     let enum_value = parse_one("[Decision Principle]");
-    let record_value = parse_one("((topic Topic) (kind Kind))");
+    let record_value = parse_one("(Topic Kind)");
     let newtype_value = parse_one("(String)");
     let alias_value = parse_one("Topic");
 
@@ -47,12 +47,34 @@ fn container_namespace_value_is_a_newtype_shape() {
 }
 
 #[test]
-fn single_named_field_namespace_value_is_a_record_shape() {
+fn lowercase_record_field_sugar_is_not_a_newtype_shape() {
     let value = parse_one("((state State))");
 
     assert_eq!(
         NodeDefinitionShape::recognize(NodeDefinitionPoint::NamespaceValue, &value).unwrap(),
         NodeDefinitionShape::NamespaceValue(NamespaceValueShape::Record)
+    );
+}
+
+#[test]
+fn lowercase_field_name_syntax_is_rejected() {
+    let text = "
+{}
+[]
+[]
+[]
+{
+  State [Active Absent]
+  StateObserved ((state State))
+}
+[]
+";
+
+    let error = read_schema_six_position(text).expect_err("field names are not NOTA");
+    let message = format!("{error}");
+    assert!(
+        message.contains("positional") && message.contains("state"),
+        "expected positional-field error, got: {message}"
     );
 }
 
@@ -83,7 +105,7 @@ fn multi_pass_pipeline_accepts_all_public_namespace_shapes() {
 []
 {
   Route [(Record Record) (Alias Alias) (Newtype Newtype) (ContainerNewtype ContainerNewtype) (Enum Enum)]
-  Record ((topic Topic) (kind Kind))
+  Record (Topic Kind)
   Alias Topic
   Newtype (String)
   ContainerNewtype (Vec Topic)

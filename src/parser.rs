@@ -1,9 +1,9 @@
 use nota_codec::{Decoder, Token};
 
 use crate::{
-    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, FieldName, Header,
-    HeaderRoot, ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result,
-    Schema, SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
+    Declaration, DeclarationBody, Error, EventFeature, Feature, Field, Header, HeaderRoot,
+    ImportDirective, Imports, Name, Namespace, ObservableFeature, Primitive, Result, Schema,
+    SchemaPath, TypeExpression, Upgrade, UpgradeAnnotation, Variant, Version,
 };
 
 impl Schema {
@@ -140,6 +140,15 @@ impl<'input> Parser<'input> {
 
     fn parse_record_body(&mut self) -> Result<DeclarationBody> {
         self.expect_record_start("record declaration")?;
+        if let Some(Token::Ident(head)) = self.peek_token("record declaration")?
+            && is_container_head(&head)
+        {
+            let head = self.read_name_text("record declaration")?;
+            let expression = self.parse_container_expression_after_head(&head)?;
+            self.expect_record_end("record declaration")?;
+            return Ok(DeclarationBody::Newtype(expression));
+        }
+
         let mut fields = Vec::new();
         while !self.peek_is_record_end("record declaration")? {
             fields.push(self.parse_field()?);
@@ -151,7 +160,7 @@ impl<'input> Parser<'input> {
                 context: "record declaration",
                 message: "declaration record must carry at least one type expression".into(),
             }),
-            1 if fields[0].name().is_none() => Ok(DeclarationBody::Newtype(
+            1 => Ok(DeclarationBody::Newtype(
                 fields.remove(0).expression().clone(),
             )),
             _ => Ok(DeclarationBody::Record(fields)),
@@ -160,7 +169,7 @@ impl<'input> Parser<'input> {
 
     fn parse_field(&mut self) -> Result<Field> {
         if matches!(self.peek_token("field")?, Some(Token::LParen)) {
-            return self.parse_named_or_container_field();
+            return self.parse_container_field();
         }
         self.parse_type_expression().map(Field::inferred)
     }
@@ -204,7 +213,7 @@ impl<'input> Parser<'input> {
         Ok(expression)
     }
 
-    fn parse_named_or_container_field(&mut self) -> Result<Field> {
+    fn parse_container_field(&mut self) -> Result<Field> {
         self.expect_record_start("field")?;
         let head = self.read_field_or_container_head()?;
         if is_container_head(&head) {
@@ -213,10 +222,12 @@ impl<'input> Parser<'input> {
             return Ok(Field::inferred(expression));
         }
 
-        let name = FieldName::new(head)?;
-        let expression = self.parse_type_expression()?;
-        self.expect_record_end("field")?;
-        Ok(Field::named(name, expression))
+        Err(Error::InvalidSchemaText {
+            context: "field",
+            message: format!(
+                "record field expressions are positional; `{head}` is not a container type"
+            ),
+        })
     }
 
     fn parse_container_expression_after_head(&mut self, head: &str) -> Result<TypeExpression> {
@@ -504,7 +515,7 @@ impl<'input> Parser<'input> {
 fn variant_with_fields(name: Name, fields: Vec<Field>) -> Variant {
     match fields.len() {
         0 => Variant::unit(name),
-        1 if fields[0].name().is_none() => Variant::with_type(
+        1 => Variant::with_type(
             name,
             fields.into_iter().next().unwrap().expression().clone(),
         ),

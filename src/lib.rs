@@ -34,7 +34,7 @@ pub use import::{
     ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, SchemaPath,
 };
 pub use layout::{FieldLayout, FieldLocation, Layout};
-pub use name::{FieldName, Name};
+pub use name::Name;
 pub use node_shape::{NamespaceValueShape, NodeDefinitionShape};
 pub use reader::LoadedSchema;
 pub use section::Namespace;

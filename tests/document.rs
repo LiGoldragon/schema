@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use nota_codec::{Decoder, Encoder, NotaDecode, NotaEncode};
 use schema::{
-    BuiltinMacroVariant, Declaration, DeclarationBody, Engine, Error, Feature, Field, FieldName,
-    Header, HeaderEndpointInput, HeaderInput, HeaderRoot, ImportDirective, ImportResolution,
-    Imports, Layout, Leg, LoweringContext, Name, Namespace, NodeDefinitionPoint, Payload,
-    Primitive, Projection, RouteBody, Schema, SchemaPath, StandardProjection, TypeExpression,
-    TypeInput, Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
+    BuiltinMacroVariant, Declaration, DeclarationBody, Engine, Error, Feature, Field, Header,
+    HeaderEndpointInput, HeaderInput, HeaderRoot, ImportDirective, ImportResolution, Imports,
+    Layout, Leg, LoweringContext, Name, Namespace, NodeDefinitionPoint, Payload, Primitive,
+    Projection, RouteBody, Schema, SchemaPath, StandardProjection, TypeExpression, TypeInput,
+    Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
 };
 
 fn name(value: &str) -> Name {
@@ -405,54 +405,28 @@ fn parser_accepts_bool_as_boolean_primitive_alias() {
 }
 
 #[test]
-fn parser_accepts_explicit_field_names_without_changing_field_types() {
-    let schema = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Confidence ((certainty Magnitude) (priority Magnitude)) } []",
-    )
-    .unwrap();
+fn parser_rejects_lowercase_field_name_syntax() {
+    let error =
+        Schema::parse_str("{} [] [] [] { State [Active Absent] StateObserved ((state State)) } []")
+            .unwrap_err();
+    let message = format!("{error}");
 
-    let Some(DeclarationBody::Record(fields)) = schema.declaration_body(&name("Confidence")) else {
-        panic!("expected record body");
-    };
-
-    assert_eq!(fields.len(), 2);
-    assert_eq!(
-        fields[0].name(),
-        Some(&FieldName::new("certainty").unwrap())
+    assert!(
+        message.contains("positional") && message.contains("state"),
+        "expected positional-field error, got: {message}"
     );
-    assert_eq!(fields[0].expression(), &named("Magnitude"));
-    assert_eq!(fields[1].name(), Some(&FieldName::new("priority").unwrap()));
-    assert_eq!(fields[1].expression(), &named("Magnitude"));
-
-    let layout = Layout::for_declaration(&schema, &name("Confidence")).unwrap();
-    assert_eq!(
-        layout.fields()[0].name(),
-        Some(&FieldName::new("certainty").unwrap())
-    );
-    assert_eq!(layout.root_positions(), vec![0, 1]);
 }
 
 #[test]
-fn field_name_only_change_does_not_require_storage_upgrade_annotation() {
-    let previous = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Entry (Topic Magnitude) Topic (String) } []",
-    )
-    .unwrap()
-    .assemble(&[])
-    .unwrap();
-    let current = Schema::parse_str(
-        "{} [] [] [] { Magnitude [Maximum Medium] Entry (Topic (certainty Magnitude)) Topic (String) } []",
-    )
-    .unwrap()
-    .assemble(&[])
-    .unwrap();
+fn schema_names_single_field_meaning_with_newtypes() {
+    let schema =
+        Schema::parse_str("{} [] [] [] { State [Active Absent] StateObserved (State) } []")
+            .unwrap();
 
-    let plan = current.plan_upgrade_from(&previous).unwrap();
-
-    assert!(plan.projections().iter().any(|projection| matches!(
-        projection,
-        Projection::Identity { name } if name.as_str() == "Entry"
-    )));
+    assert_eq!(
+        schema.declaration_body(&name("StateObserved")),
+        Some(&DeclarationBody::Newtype(named("State")))
+    );
 }
 
 #[test]

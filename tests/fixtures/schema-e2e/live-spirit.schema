@@ -36,39 +36,39 @@
   RecordIdentifier (u64)
   QuestionIdentifier (String)
   QuestionText (String)
-  StateSubscriptionToken ((identifier u64))
-  RecordSubscriptionToken ((identifier u64))
+  StateSubscriptionToken (u64)
+  RecordSubscriptionToken (u64)
 
-  Entry ((topic Topic) (kind Kind) (summary Summary) (context Context) (certainty Magnitude) (quote Quote))
-  Statement ((text StatementText))
-  RecordQuery ((topic (Option Topic)) (kind (Option Kind)) (mode ObservationMode))
-  RecordObservation ((query RecordQuery))
-  RecordSubscription ((topic (Option Topic)) (mode ObservationMode))
-  RecordSummary ((identifier RecordIdentifier) (topic Topic) (kind Kind) (summary Summary) (certainty Magnitude))
-  RecordProvenance ((summary RecordSummary) (context Context) (date Date) (time Time) (quote Quote))
-  TopicCount ((topic Topic) (entries u64))
-  QuestionSummary ((identifier QuestionIdentifier) (question QuestionText))
+  Entry (Topic Kind Summary Context Magnitude Quote)
+  Statement (StatementText)
+  RecordQuery ((Option Topic) (Option Kind) ObservationMode)
+  RecordObservation (RecordQuery)
+  RecordSubscription ((Option Topic) ObservationMode)
+  RecordSummary (RecordIdentifier Topic Kind Summary Magnitude)
+  RecordProvenance (RecordSummary Context Date Time Quote)
+  TopicCount (Topic u64)
+  QuestionSummary (QuestionIdentifier QuestionText)
 
   Observation [State (Records RecordQuery) Topics Questions]
   Subscription [State (Records RecordSubscription)]
   SubscriptionToken [(State StateSubscriptionToken) (Records RecordSubscriptionToken)]
 
   RecordAccepted (RecordIdentifier)
-  StateObserved ((state State))
-  RecordsObserved ((records (Vec RecordSummary)))
-  RecordProvenancesObserved ((records (Vec RecordProvenance)))
-  TopicsObserved ((topics (Vec TopicCount)))
-  QuestionsObserved ((questions (Vec QuestionSummary)))
-  SubscriptionOpened ((token SubscriptionToken) (snapshot SubscriptionSnapshot))
-  SubscriptionRetracted ((token SubscriptionToken))
+  StateObserved (State)
+  RecordsObserved (Vec RecordSummary)
+  RecordProvenancesObserved (Vec RecordProvenance)
+  TopicsObserved (Vec TopicCount)
+  QuestionsObserved (Vec QuestionSummary)
+  SubscriptionOpened (SubscriptionToken SubscriptionSnapshot)
+  SubscriptionRetracted (SubscriptionToken)
   RequestUnimplemented (UnimplementedReason)
   SubscriptionSnapshot [(State State) (Records (Vec RecordSummary))]
 
-  StateChanged ((state State))
-  RecordCaptured ((record RecordSummary))
+  StateChanged (State)
+  RecordCaptured (RecordSummary)
   OperationKind [State Record Observe Watch Unwatch]
-  OperationReceived ((operation OperationKind))
-  EffectEmitted ((observation SemaObservation))
+  OperationReceived (OperationKind)
+  EffectEmitted (SemaObservation)
 }
 
 [

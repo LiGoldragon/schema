@@ -944,8 +944,6 @@ fn parse_field(value: &NotaValue) -> Result<Field> {
     // A field is either:
     //  - a bare identifier (positional field, name = type) — handled
     //    by lower_type_expression below;
-    //  - a `(name TypeExpression)` 2-record where the head is a
-    //    lowercase identifier (field-name override per operator/180);
     //  - a `(Container ...)` record (Option / Vec / Map) which is
     //    ITSELF the type expression.
     if value.is_record() {
@@ -964,17 +962,12 @@ fn parse_field(value: &NotaValue) -> Result<Field> {
             let expr = lower_container_expression_after_head(head_text, &items[1..])?;
             return Ok(Field::inferred(expr));
         }
-        // Field-name override: `(camelCase Type)` with a non-Pascal
-        // head identifier. Per operator/180.
-        if !starts_with_uppercase(head_text) && items.len() == 2 {
-            let field_name = crate::FieldName::new(head_text.to_string())?;
-            let type_expr = lower_type_expression(&items[1])?;
-            return Ok(Field::named(field_name, type_expr));
-        }
-        // Otherwise: treat as a positional Pascal-cased type-name
-        // record (rare; the parser would normally treat this as a
-        // newtype). Fall through to the generic type-expression
-        // path.
+        return Err(Error::InvalidSchemaText {
+            context: "multi_pass field",
+            message: format!(
+                "record field expressions are positional; `{head_text}` is not a container type"
+            ),
+        });
     }
     let expr = lower_type_expression(value)?;
     Ok(Field::inferred(expr))
@@ -1063,7 +1056,7 @@ fn primitive(text: &str) -> Option<TypeExpression> {
 fn variant_with_fields(name: Name, fields: Vec<Field>) -> Variant {
     match fields.len() {
         0 => Variant::unit(name),
-        1 if fields[0].name().is_none() => Variant::with_type(
+        1 => Variant::with_type(
             name,
             fields.into_iter().next().unwrap().expression().clone(),
         ),
@@ -1086,12 +1079,6 @@ fn identifier_or_string(value: &NotaValue) -> Result<String> {
 
 fn is_container_head(text: &str) -> bool {
     matches!(text, "Option" | "Vec" | "Map")
-}
-
-fn starts_with_uppercase(text: &str) -> bool {
-    text.as_bytes()
-        .first()
-        .is_some_and(|byte| byte.is_ascii_uppercase())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

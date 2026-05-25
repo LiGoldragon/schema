@@ -1,4 +1,4 @@
-use crate::{FieldName, Name, TypeExpression};
+use crate::{Name, TypeExpression};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declaration {
@@ -180,27 +180,12 @@ pub enum Engine {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
-    name: Option<FieldName>,
     expression: TypeExpression,
 }
 
 impl Field {
     pub fn inferred(expression: TypeExpression) -> Self {
-        Self {
-            name: None,
-            expression,
-        }
-    }
-
-    pub fn named(name: FieldName, expression: TypeExpression) -> Self {
-        Self {
-            name: Some(name),
-            expression,
-        }
-    }
-
-    pub fn name(&self) -> Option<&FieldName> {
-        self.name.as_ref()
+        Self { expression }
     }
 
     pub fn expression(&self) -> &TypeExpression {
