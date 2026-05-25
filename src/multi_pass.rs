@@ -49,9 +49,10 @@ use nota_codec::{NotaValue, parse_sequence};
 use crate::{
     AssembledSchema, BuiltinMacroVariant, DeclarationBody, Endpoint, Engine, Error, EventFeature,
     Feature, FeatureInput, Field, HeaderEndpointInput, HeaderInput, ImportBinding, ImportInput,
-    ImportedNames, Leg, LoweringContext, Name, ObservableFeature, Payload, Primitive, Result,
-    Route, RouteBody, SchemaPath, TypeExpression, TypeInput, Upgrade, UpgradeAnnotation,
-    UpgradeRuleInput, Variant, Version,
+    ImportedNames, Leg, LoweringContext, Name, NamespaceValueShape, NodeDefinitionPoint,
+    NodeDefinitionShape, ObservableFeature, Payload, Primitive, Result, Route, RouteBody,
+    SchemaPath, TypeExpression, TypeInput, Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant,
+    Version,
 };
 
 /// Run the full multi-pass pipeline against `.schema` text and
@@ -614,10 +615,16 @@ struct TypeMacroRecognizer;
 
 impl TypeMacroRecognizer {
     fn recognize(value: &NotaValue) -> Result<DeclarationBody> {
-        match TypeMicroMacro::from_value(value)? {
-            TypeMicroMacro::Enum => Self::recognize_enum(value),
-            TypeMicroMacro::RecordOrNewtype => Self::recognize_record_or_newtype(value),
-            TypeMicroMacro::Alias => {
+        let NodeDefinitionShape::NamespaceValue(shape) =
+            NodeDefinitionShape::recognize(NodeDefinitionPoint::NamespaceValue, value)?
+        else {
+            unreachable!("NamespaceValue point can only produce a NamespaceValue shape")
+        };
+        match shape {
+            NamespaceValueShape::Enum => Self::recognize_enum(value),
+            NamespaceValueShape::Record => Self::recognize_record(value),
+            NamespaceValueShape::Newtype => Self::recognize_newtype(value),
+            NamespaceValueShape::Alias => {
                 // bare ident — alias to another type / primitive
                 let expr = lower_type_expression(value)?;
                 Ok(DeclarationBody::Alias(expr))
@@ -659,51 +666,31 @@ impl TypeMacroRecognizer {
         Ok(DeclarationBody::Enum { variants })
     }
 
-    fn recognize_record_or_newtype(value: &NotaValue) -> Result<DeclarationBody> {
-        let items = value.as_record().unwrap();
-        if items.is_empty() {
-            return Err(Error::InvalidSchemaText {
-                context: "multi_pass type",
-                message: "namespace record must carry at least one type expression".into(),
-            });
-        }
-        let fields: Vec<Field> = items.iter().map(parse_field).collect::<Result<_>>()?;
-        match fields.len() {
-            1 if fields[0].name().is_none() => {
-                // (T) single-paren one-identifier — newtype.
-                Ok(DeclarationBody::Newtype(fields[0].expression().clone()))
-            }
-            _ => Ok(DeclarationBody::Record(fields)),
-        }
+    fn recognize_record(value: &NotaValue) -> Result<DeclarationBody> {
+        Ok(DeclarationBody::Record(fields_from_record(value)?))
     }
-}
 
-/// Reusable shape transformation selected inside the Type macro. These are
-/// the first "micro-macros": tiny shape recognizers that larger macros can
-/// call instead of re-encoding enum/record/alias sugar themselves.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TypeMicroMacro {
-    Enum,
-    RecordOrNewtype,
-    Alias,
-}
-
-impl TypeMicroMacro {
-    fn from_value(value: &NotaValue) -> Result<Self> {
-        if value.is_sequence() {
-            return Ok(Self::Enum);
-        }
-        if value.is_record() {
-            return Ok(Self::RecordOrNewtype);
-        }
-        if value.is_identifier() {
-            return Ok(Self::Alias);
+    fn recognize_newtype(value: &NotaValue) -> Result<DeclarationBody> {
+        let fields = fields_from_record(value)?;
+        if fields.len() == 1 && fields[0].name().is_none() {
+            return Ok(DeclarationBody::Newtype(fields[0].expression().clone()));
         }
         Err(Error::InvalidSchemaText {
             context: "multi_pass type",
-            message: format!("namespace value cannot be lowered: shape is unsupported ({value:?})"),
+            message: "newtype declaration must carry exactly one inferred type expression".into(),
         })
     }
+}
+
+fn fields_from_record(value: &NotaValue) -> Result<Vec<Field>> {
+    let items = value.as_record().unwrap();
+    if items.is_empty() {
+        return Err(Error::InvalidSchemaText {
+            context: "multi_pass type",
+            message: "namespace record must carry at least one type expression".into(),
+        });
+    }
+    items.iter().map(parse_field).collect::<Result<_>>()
 }
 
 /// Builtin Feature macro recognizer. Dispatches by record-head tag

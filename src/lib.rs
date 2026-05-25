@@ -12,6 +12,7 @@ mod import;
 mod layout;
 pub mod multi_pass;
 mod name;
+mod node_shape;
 mod parser;
 mod reader;
 mod section;
@@ -34,6 +35,7 @@ pub use import::{
 };
 pub use layout::{FieldLayout, FieldLocation, Layout};
 pub use name::{FieldName, Name};
+pub use node_shape::{NamespaceValueShape, NodeDefinitionShape};
 pub use reader::LoadedSchema;
 pub use section::Namespace;
 pub use upgrade::{

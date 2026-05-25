@@ -56,15 +56,14 @@ precedence order. This is the foothold for lazy resolution and forward
 references: the engine knows where a named macro endpoint lives before a
 later macro asks to invoke it.
 
-Lowering runs through the builtin schema engine. Each indexed node is
-translated into a data-carrying `BuiltinMacroVariant` at a
-`NodeDefinitionPoint`: import map values become `ImportInput`, header roots
-become `HeaderInput`, namespace values become `TypeInput`, and feature vector
-items become `FeatureInput`. Type lowering uses a first explicit
-micro-macro selector (`TypeMicroMacro`) to split enum sugar, record/newtype
-sugar, and alias sugar before applying the transformation. The input struct
-is the macro variant's payload; the lowerer emits assembled fragments into a
-`LoweringContext`.
+Lowering runs through the builtin schema engine. Each indexed node first
+passes through `NodeDefinitionShape::recognize`, pairing its
+`NodeDefinitionPoint` with the observed `nota_codec::NotaValue` shape.
+Import map values become `ImportInput`, header roots become `HeaderInput`,
+namespace values split into `NamespaceValueShape::{Enum, Record, Newtype,
+Alias}` before becoming `TypeInput`, and feature vector items become
+`FeatureInput`. The input struct is the macro variant's payload; the lowerer
+emits assembled fragments into a `LoweringContext`.
 
 `AssembledSchema` currently contains:
 
