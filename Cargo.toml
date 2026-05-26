@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "prototype"]
+resolver = "2"
+
 [package]
 name         = "schema"
 version      = "0.1.0"

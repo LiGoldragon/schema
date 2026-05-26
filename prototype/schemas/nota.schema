@@ -1,0 +1,146 @@
+;; nota.schema — the foundational schema describing NOTA itself.
+;;
+;; This is the schema that NOTA's own codec emits from. The kernel
+;; bootstrap reads THIS file using a small hand-authored lexer +
+;; parser; everything else (full encoder/decoder behaviour) emits
+;; from the namespace declared below.
+;;
+;; Layout follows the canonical spirit.schema shape:
+;;   1. {imports} — Specifying
+;;   2. [input header] — Input section header (variant order)
+;;   3. [input payload extras]
+;;   4. {namespace} — user-defined types
+;;   5. [output header] — Output replies/events
+;;
+;; Per /353 §3 the conceptual three-part structure groups:
+;;   PART 1 (Specifying) = block 1
+;;   PART 2 (Input)      = blocks 2 + 3
+;;   PART 3 (Output)     = block 5
+;; with the namespace (block 4) shared across them.
+;;
+;; NOTA is a grammar substrate, not an operation surface, so its
+;; Input and Output sections are empty vectors. Schemas that ARE
+;; operation surfaces (spirit.schema, persona-message.schema) bring
+;; nota.schema in via their Specifying imports.
+;;
+;; NOTA strings come exclusively from bracket forms; no `"..."` here.
+
+;; --- Block 1: Specifying (imports) ----------------------------------------
+
+{
+  ;; No imports at the foundation; nota.schema is its own root.
+}
+
+;; --- Block 2: Input header (operations) -----------------------------------
+
+[]
+
+;; --- Block 3: Input payload extras ----------------------------------------
+
+[]
+
+;; --- Block 4: Namespace ---------------------------------------------------
+
+{
+  ;; The three NOTA delimiter pairs. Order matches token-class
+  ;; dispatch in the kernel.
+  Delimiter (RecordOpen RecordClose VectorOpen VectorClose MapOpen MapClose)
+
+  ;; Lexical classes the kernel must distinguish on first char.
+  IdentifierClass (PascalCase CamelCase KebabCase)
+
+  ;; The three PascalCase usage cases (per README "PascalCase rule").
+  PascalCaseRole (DataCarryingVariantTag UnitVariant StructTag)
+
+  ;; Two sigils, fixed lexical position.
+  Sigil (LineComment ByteLiteralPrefix)
+
+  ;; Two bracket-string forms.
+  StringForm (Inline MultilineBlock)
+
+  ;; Top-level literal kinds the kernel recognises before schema
+  ;; positions add interpretation.
+  Literal
+    ( Integer
+      Float
+      BareIdentifierString
+      BracketString
+      BlockString
+      Bytes
+      Hash
+      True
+      False
+      None
+      SomeWrapped )
+
+  ;; Atomic primitive types reused throughout.
+  Text [String]
+  Byte [u8]
+  Position [u32]
+  ByteRange [Position Position]
+  Depth [u32]
+
+  ;; A lexed token: kind plus byte range.
+  TokenKind
+    ( RecordOpen
+      RecordClose
+      VectorOpen
+      VectorClose
+      MapOpen
+      MapClose
+      Identifier
+      Integer
+      Float
+      InlineString
+      BlockString
+      Bytes
+      LineComment )
+
+  Token [TokenKind ByteRange]
+
+  ;; A parsed node mirrors the delimiter family. Each variant carries
+  ;; positional children; the schema position determines how the
+  ;; node is interpreted (struct vs variant for parens; sequence
+  ;; vs string for brackets). Variant payloads wrap their type
+  ;; in the standard `(Tag Payload)` shape.
+  Node
+    ( (Record (Vec Node))
+      (Vector (Vec Node))
+      (Map (Vec MapEntry))
+      (Identifier IdentifierToken)
+      (Literal LiteralValue)
+      (String StringValue) )
+
+  MapEntry [Node Node]
+
+  IdentifierToken [IdentifierClass Text]
+
+  LiteralValue
+    ( (Integer i64)
+      (Float f64)
+      (Bool Bool)
+      (Unit UnitTag)
+      (Bytes (Vec Byte))
+      (Hash (Vec Byte)) )
+
+  Bool [bool]
+  UnitTag (None)
+
+  StringValue [StringForm Text]
+
+  ;; The kernel's exit contract: it returns a stream of Tokens for
+  ;; the body of nota.schema. The schema-emitted parser consumes the
+  ;; stream and builds Node trees.
+  TokenStream [(Vec Token)]
+  ParseResult ((Ok Node) (Err ParseError))
+  ParseError
+    ( (UnexpectedToken Token)
+      (UnclosedDelimiter Delimiter Position)
+      (UnexpectedEof Position)
+      (InvalidIdentifier Token)
+      (InvalidLiteral Token) )
+}
+
+;; --- Block 5: Output (replies / events) -----------------------------------
+
+[]

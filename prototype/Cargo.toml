@@ -1,0 +1,20 @@
+[package]
+name         = "schema-derived-nota-prototype"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.85"
+description  = "Prototype proving the schema-derived NOTA design from /353 (records 746-753)."
+publish      = false
+
+[lib]
+name = "schema_derived_nota_prototype"
+path = "src/lib.rs"
+
+[[bin]]
+name = "schema-derived-nota-demo"
+path = "src/bin/demo.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused      = { level = "warn", priority = -1 }
+dead_code   = "warn"

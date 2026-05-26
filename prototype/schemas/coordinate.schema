@@ -1,0 +1,45 @@
+;; coordinate.schema — tiny domain language demonstrating the
+;; three-part schema shape end-to-end with both Input and Output.
+;;
+;; Domain: a coordinate-translation service. Clients send a Move
+;; or Rotate operation; the service replies with the new position
+;; or an OutOfBounds error.
+
+;; --- Block 1: Specifying --------------------------------------------------
+{
+  ;; Core schema (nota.schema) is implicitly loaded; only explicit
+  ;; imports go here.
+}
+
+;; --- Block 2: Input header ------------------------------------------------
+[
+  (Move (MoveRequest))
+  (Rotate (RotateRequest))
+  (Read (ReadRequest))
+]
+
+;; --- Block 3: Input extras (empty) ----------------------------------------
+[]
+
+;; --- Block 4: Namespace ---------------------------------------------------
+{
+  Coordinate [Position Position]
+  Position [f64]
+  Angle [f64]
+
+  MoveRequest [Coordinate]
+  RotateRequest [Angle]
+  ReadRequest [unit]
+
+  unit (Unit)
+
+  PositionReply [Coordinate]
+  BoundsError ((MinX f64) (MinY f64) (MaxX f64) (MaxY f64))
+
+  Reply ((Position PositionReply) (Bounds BoundsError))
+}
+
+;; --- Block 5: Output ------------------------------------------------------
+[
+  (Replied (Reply))
+]

@@ -29,10 +29,13 @@
             let
               pathString = toString path;
               fixtureRoot = "${toString ./.}/tests/fixtures";
+              prototypeSchemasRoot = "${toString ./.}/prototype/schemas";
             in
             craneLib.filterCargoSources path type
             || pathString == fixtureRoot
-            || pkgs.lib.hasPrefix "${fixtureRoot}/" pathString;
+            || pkgs.lib.hasPrefix "${fixtureRoot}/" pathString
+            || pathString == prototypeSchemasRoot
+            || pkgs.lib.hasPrefix "${prototypeSchemasRoot}/" pathString;
           name = "source";
         };
         cargoArtifacts = craneLib.buildDepsOnly { inherit src; strictDeps = true; };
