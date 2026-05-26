@@ -16,22 +16,52 @@ pub enum MacroPosition {
     EnumVariants,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum MacroObject<'object> {
+    Block(&'object Block),
+    Pair(MacroPair<'object>),
+}
+
+impl<'object> MacroObject<'object> {
+    pub fn block(self) -> Option<&'object Block> {
+        match self {
+            Self::Block(block) => Some(block),
+            Self::Pair(_) => None,
+        }
+    }
+
+    pub fn pair(self) -> Option<MacroPair<'object>> {
+        match self {
+            Self::Block(_) => None,
+            Self::Pair(pair) => Some(pair),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MacroPair<'object> {
+    pub name: &'object Block,
+    pub definition: &'object Block,
+}
+
 pub trait SchemaMacro {
     fn name(&self) -> &'static str;
 
-    fn matches(&self, object: &Block, position: MacroPosition) -> bool;
+    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool;
 
     fn lower(
         &self,
-        object: &Block,
+        object: MacroObject<'_>,
         position: MacroPosition,
         context: &mut MacroContext,
+        registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError>;
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct MacroContext {
     positions_seen: Vec<MacroPosition>,
+    macros_applied: Vec<&'static str>,
 }
 
 impl MacroContext {
@@ -39,8 +69,16 @@ impl MacroContext {
         self.positions_seen.push(position);
     }
 
+    pub fn remember_macro(&mut self, macro_name: &'static str) {
+        self.macros_applied.push(macro_name);
+    }
+
     pub fn positions_seen(&self) -> &[MacroPosition] {
         &self.positions_seen
+    }
+
+    pub fn macros_applied(&self) -> &[&'static str] {
+        &self.macros_applied
     }
 }
 
@@ -48,10 +86,51 @@ impl MacroContext {
 pub enum MacroOutput {
     Asschema(Asschema),
     Imports(Vec<ImportDeclaration>),
+    Surfaces(Vec<RootSurface>),
+    Types(Vec<TypeDeclaration>),
     Surface(RootSurface),
     Type(TypeDeclaration),
     Fields(Vec<FieldDeclaration>),
+    Variants(Vec<crate::EnumVariant>),
     References(Vec<TypeReference>),
+}
+
+#[derive(Default)]
+pub struct MacroRegistry {
+    macros: Vec<Box<dyn SchemaMacro>>,
+}
+
+impl MacroRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register(&mut self, schema_macro: impl SchemaMacro + 'static) {
+        self.macros.push(Box::new(schema_macro));
+    }
+
+    pub fn lower(
+        &self,
+        object: MacroObject<'_>,
+        position: MacroPosition,
+        context: &mut MacroContext,
+    ) -> Result<MacroOutput, SchemaError> {
+        for schema_macro in &self.macros {
+            if schema_macro.matches(object, position) {
+                return schema_macro.lower(object, position, context, self);
+            }
+        }
+        Err(SchemaError::MacroDidNotMatch {
+            macro_name: "registered macro",
+        })
+    }
+
+    pub fn macro_names(&self) -> Vec<&'static str> {
+        self.macros
+            .iter()
+            .map(|schema_macro| schema_macro.name())
+            .collect()
+    }
 }
 
 pub(crate) fn atom_name(object: &Block) -> Result<Name, SchemaError> {

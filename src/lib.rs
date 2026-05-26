@@ -7,4 +7,6 @@ pub use asschema::{
     StructDeclaration, TypeDeclaration, TypeReference,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
-pub use macros::{MacroContext, MacroOutput, MacroPosition, SchemaMacro};
+pub use macros::{
+    MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaMacro,
+};
