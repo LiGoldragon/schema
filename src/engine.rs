@@ -10,8 +10,8 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SchemaIdentity {
-    pub component: Name,
-    pub version: String,
+    component: Name,
+    version: String,
 }
 
 impl SchemaIdentity {
@@ -20,6 +20,14 @@ impl SchemaIdentity {
             component: Name::new(component),
             version: version.into(),
         }
+    }
+
+    pub fn component(&self) -> &Name {
+        &self.component
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
     }
 }
 
@@ -89,12 +97,7 @@ impl SchemaEngine {
             &mut MacroContext::default(),
         )?;
 
-        Ok(Asschema {
-            identity,
-            imports,
-            surfaces,
-            namespace,
-        })
+        Ok(Asschema::new(identity, imports, surfaces, namespace))
     }
 
     fn lower_imports(

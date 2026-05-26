@@ -10,11 +10,11 @@ fn lowers_spirit_schema_into_ordered_asschema() {
         .lower_source(source, SchemaIdentity::new("spirit", "0.1.0"))
         .expect("schema lowers");
 
-    assert_eq!(asschema.imports.len(), 0);
-    assert_eq!(asschema.surfaces[0].name.as_str(), "Input");
-    assert_eq!(asschema.surfaces[0].variants[0].name.as_str(), "Record");
+    assert_eq!(asschema.imports().len(), 0);
+    assert_eq!(asschema.surfaces()[0].name.as_str(), "Input");
+    assert_eq!(asschema.surfaces()[0].variants[0].name.as_str(), "Record");
     assert_eq!(
-        asschema.surfaces[0].variants[0]
+        asschema.surfaces()[0].variants[0]
             .payload
             .as_ref()
             .expect("payload")
@@ -24,7 +24,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
     );
     assert_eq!(
         asschema
-            .namespace
+            .namespace()
             .iter()
             .map(|declaration| declaration.name().as_str())
             .collect::<Vec<_>>(),
@@ -49,8 +49,11 @@ fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
 
-    assert!(matches!(asschema.namespace[0], TypeDeclaration::Struct(_)));
-    assert!(matches!(asschema.namespace[1], TypeDeclaration::Enum(_)));
+    assert!(matches!(
+        asschema.namespace()[0],
+        TypeDeclaration::Struct(_)
+    ));
+    assert!(matches!(asschema.namespace()[1], TypeDeclaration::Enum(_)));
 }
 
 #[test]
@@ -95,7 +98,7 @@ fn field_names_are_derived_from_type_names() {
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
-    let TypeDeclaration::Struct(entry) = &asschema.namespace[0] else {
+    let TypeDeclaration::Struct(entry) = &asschema.namespace()[0] else {
         panic!("entry should be a struct");
     };
 

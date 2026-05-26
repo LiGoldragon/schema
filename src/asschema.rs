@@ -38,13 +38,43 @@ impl fmt::Display for Name {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Asschema {
-    pub identity: super::SchemaIdentity,
-    pub imports: Vec<ImportDeclaration>,
-    pub surfaces: Vec<RootSurface>,
-    pub namespace: Vec<TypeDeclaration>,
+    identity: super::SchemaIdentity,
+    imports: Vec<ImportDeclaration>,
+    surfaces: Vec<RootSurface>,
+    namespace: Vec<TypeDeclaration>,
 }
 
 impl Asschema {
+    pub(crate) fn new(
+        identity: super::SchemaIdentity,
+        imports: Vec<ImportDeclaration>,
+        surfaces: Vec<RootSurface>,
+        namespace: Vec<TypeDeclaration>,
+    ) -> Self {
+        Self {
+            identity,
+            imports,
+            surfaces,
+            namespace,
+        }
+    }
+
+    pub fn identity(&self) -> &super::SchemaIdentity {
+        &self.identity
+    }
+
+    pub fn imports(&self) -> &[ImportDeclaration] {
+        &self.imports
+    }
+
+    pub fn surfaces(&self) -> &[RootSurface] {
+        &self.surfaces
+    }
+
+    pub fn namespace(&self) -> &[TypeDeclaration] {
+        &self.namespace
+    }
+
     pub fn type_named(&self, name: &str) -> Option<&TypeDeclaration> {
         self.namespace
             .iter()
