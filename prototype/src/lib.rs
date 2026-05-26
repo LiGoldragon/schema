@@ -28,12 +28,14 @@
 //!   - Every function lives on an impl block; free functions are
 //!     allowed only in `#[cfg(test)]` and `fn main()` (record 729).
 
+pub mod blocks;
 pub mod emit;
 pub mod kernel;
 pub mod library;
 pub mod macros;
 pub mod schema;
 
+pub use blocks::{Block, BlockParser, DelimiterKind, SourcePosition, SourceSpan};
 pub use emit::EmittedCodec;
 pub use kernel::{Kernel, KernelError, KernelToken, KernelTokenKind, Node, NodeKind};
 pub use library::{Library, LibraryError};
