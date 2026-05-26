@@ -1,4 +1,7 @@
-use schema::{ModuleName, ObjectDelimiter, SchemaBlockObject, SchemaBlockPass};
+use schema::{
+    ModuleName, ObjectDelimiter, SchemaBlockObject, SchemaBlockPass, SchemaMacroMatcher,
+    SchemaMacroPattern, SymbolClass,
+};
 
 fn pass(text: &str) -> SchemaBlockPass {
     SchemaBlockPass::parse_text(ModuleName::new("object_block").unwrap(), text)
@@ -106,4 +109,95 @@ fn block_pass_skips_comments_outside_objects() {
         pass.root(1)
             .is_some_and(SchemaBlockObject::is_square_bracket_block)
     );
+}
+
+#[test]
+fn atoms_promote_to_qualified_symbols_without_final_type_semantics() {
+    let pass = pass("[Topic schema-name camelCase _internal]");
+    let root = pass
+        .single_root()
+        .and_then(SchemaBlockObject::as_block)
+        .expect("symbol vector");
+
+    let symbols = root
+        .objects()
+        .iter()
+        .map(SchemaBlockObject::qualified_symbol)
+        .collect::<Option<Vec<_>>>()
+        .expect("all objects qualify as raw symbols");
+
+    assert_eq!(symbols[0].text(), "Topic");
+    assert_eq!(symbols[0].class(), SymbolClass::PascalCase);
+    assert_eq!(symbols[0].demote_to_string(), "Topic");
+    assert_eq!(symbols[1].class(), SymbolClass::KebabCase);
+    assert_eq!(symbols[2].class(), SymbolClass::CamelCase);
+    assert_eq!(symbols[3].class(), SymbolClass::Other);
+}
+
+#[test]
+fn raw_nota_does_not_reject_pascal_case_in_string_like_positions() {
+    let pass = pass("[User]");
+    let root = pass
+        .single_root()
+        .and_then(SchemaBlockObject::as_block)
+        .expect("square bracket block");
+    let user = root.object(0).expect("inner atom");
+
+    assert_eq!(user.symbol_text(), Some("User"));
+    assert_eq!(user.symbol_class(), Some(SymbolClass::PascalCase));
+}
+
+#[test]
+fn macro_pattern_matches_parenthesized_symbol_and_vector_shape() {
+    let pass = pass("(State [Statement Declaration])");
+    let root = pass.single_root().expect("single root");
+    let pattern = SchemaMacroPattern::parenthesized(vec![
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::square_bracketed(vec![
+            SchemaMacroPattern::pascal_symbol(),
+            SchemaMacroPattern::pascal_symbol(),
+        ]),
+    ]);
+
+    assert!(pattern.matches(root));
+}
+
+#[test]
+fn macro_pattern_can_describe_schema_struct_field_vectors() {
+    let pass = pass("[Topics Kind Description Magnitude]");
+    let root = pass.single_root().expect("single root");
+    let struct_fields = SchemaMacroPattern::square_bracketed(vec![
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::pascal_symbol(),
+    ]);
+    let wrong_shape = SchemaMacroPattern::parenthesized(vec![
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::pascal_symbol(),
+        SchemaMacroPattern::pascal_symbol(),
+    ]);
+
+    assert!(struct_fields.matches(root));
+    assert!(!wrong_shape.matches(root));
+}
+
+#[test]
+fn macro_matcher_names_the_macro_position_that_consumes_shape() {
+    let pass = pass("(State [Statement Declaration])");
+    let root = pass.single_root().expect("single root");
+    let matcher = SchemaMacroMatcher::new(
+        "HeaderRoot",
+        SchemaMacroPattern::parenthesized(vec![
+            SchemaMacroPattern::pascal_symbol(),
+            SchemaMacroPattern::square_bracketed(vec![
+                SchemaMacroPattern::pascal_symbol(),
+                SchemaMacroPattern::pascal_symbol(),
+            ]),
+        ]),
+    );
+
+    assert_eq!(matcher.name(), "HeaderRoot");
+    assert!(matcher.matches(root));
 }

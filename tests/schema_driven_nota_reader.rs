@@ -103,6 +103,54 @@ fn reader_stack_runs_block_pass_before_object_lowering() {
 }
 
 #[test]
+fn reader_stack_uses_block_matcher_before_namespace_lowering() {
+    let result = AssembledNotaSchema::from_namespace_text(
+        ModuleName::new("spirit_intent").expect("module name"),
+        "{ [Topic Name] [String] }",
+    );
+    let error = result.expect_err("non-symbol namespace key is rejected by block matcher");
+
+    assert!(
+        error
+            .to_string()
+            .contains("nota reader namespace block matcher")
+    );
+    assert!(error.to_string().contains("key must be a symbol candidate"));
+}
+
+#[test]
+fn namespace_type_lowering_still_uses_object_value_after_block_match() {
+    let assembled = AssembledNotaSchema::from_namespace_text(
+        ModuleName::new("spirit_intent").expect("module name"),
+        "{ Topic [String] Entry [Topic Kind] Kind (Decision Correction) }",
+    )
+    .expect("namespace lowers after block matching");
+
+    let names = assembled
+        .types()
+        .iter()
+        .map(|schema_type| schema_type.name().as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, vec!["Topic", "Entry", "Kind"]);
+
+    let kind = assembled
+        .types()
+        .iter()
+        .find(|schema_type| schema_type.name().as_str() == "Kind")
+        .expect("Kind type");
+    let DeclarationBody::Enum { variants } = kind.body() else {
+        panic!("Kind should remain object-value-lowered as enum");
+    };
+    assert_eq!(
+        variants
+            .iter()
+            .map(|variant| variant.name().as_str())
+            .collect::<Vec<_>>(),
+        vec!["Decision", "Correction"]
+    );
+}
+
+#[test]
 fn compiled_generated_reader_decodes_positional_record_values() {
     let mut decoder = Decoder::new("([schema nota] Decision [schema driven reader] High)");
     let entry = spirit_intent::Entry::decode(&mut decoder).expect("entry decodes");

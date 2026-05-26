@@ -10,6 +10,7 @@ mod feature;
 mod header;
 mod import;
 mod layout;
+mod macro_pattern;
 pub mod multi_pass;
 mod name;
 mod node_shape;
@@ -42,11 +43,13 @@ pub use import::{
     ImportBinding, ImportDirective, ImportResolution, ImportedNames, Imports, SchemaPath,
 };
 pub use layout::{FieldLayout, FieldLocation, Layout};
+pub use macro_pattern::{SchemaMacroMatcher, SchemaMacroPattern};
 pub use name::{FieldName, ModuleName, Name, QualifiedName};
 pub use node_shape::{NamespaceValueShape, NodeDefinitionShape};
 pub use nota_reader::{AssembledNotaSchema, AssembledNotaType, NotaReaderRustEmitter};
 pub use object_block::{
-    SchemaAtom, SchemaBlock, SchemaBlockObject, SchemaBlockPass, SourcePosition, SourceSpan,
+    QualifiedSymbol, SchemaAtom, SchemaBlock, SchemaBlockObject, SchemaBlockPass, SourcePosition,
+    SourceSpan, SymbolClass,
 };
 pub use object_pass::{
     NamespaceObject, ObjectDelimiter, ObjectPath, ObjectPathSegment, ObjectPosition,

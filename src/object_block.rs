@@ -93,13 +93,21 @@ impl SchemaBlockObject {
     }
 
     pub fn qualifies_as_symbol(&self) -> bool {
-        self.as_atom().is_some_and(SchemaAtom::qualifies_as_symbol)
+        self.qualified_symbol().is_some()
     }
 
     pub fn symbol_text(&self) -> Option<&str> {
         self.as_atom()
-            .filter(|atom| atom.qualifies_as_symbol())
+            .filter(|atom| atom.qualified_symbol().is_some())
             .map(SchemaAtom::text)
+    }
+
+    pub fn qualified_symbol(&self) -> Option<QualifiedSymbol> {
+        self.as_atom().and_then(SchemaAtom::qualified_symbol)
+    }
+
+    pub fn symbol_class(&self) -> Option<SymbolClass> {
+        self.qualified_symbol().map(|symbol| symbol.class())
     }
 }
 
@@ -213,14 +221,61 @@ impl SchemaAtom {
     }
 
     pub fn qualifies_as_symbol(&self) -> bool {
-        let mut chars = self.text.chars();
-        let Some(first) = chars.next() else {
-            return false;
-        };
-        (first.is_ascii_alphabetic() || first == '_')
-            && chars.all(|character| {
-                character.is_ascii_alphanumeric() || character == '_' || character == '-'
-            })
+        self.qualified_symbol().is_some()
+    }
+
+    pub fn qualified_symbol(&self) -> Option<QualifiedSymbol> {
+        QualifiedSymbol::new(self.text.clone())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QualifiedSymbol {
+    text: String,
+    class: SymbolClass,
+}
+
+impl QualifiedSymbol {
+    pub fn new(text: String) -> Option<Self> {
+        if !is_symbol_safe(&text) {
+            return None;
+        }
+        let class = SymbolClass::classify(&text);
+        Some(Self { text, class })
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn class(&self) -> SymbolClass {
+        self.class
+    }
+
+    pub fn demote_to_string(&self) -> &str {
+        &self.text
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolClass {
+    PascalCase,
+    CamelCase,
+    KebabCase,
+    Other,
+}
+
+impl SymbolClass {
+    fn classify(text: &str) -> Self {
+        if is_pascal_case(text) {
+            Self::PascalCase
+        } else if is_kebab_case(text) {
+            Self::KebabCase
+        } else if is_camel_case(text) {
+            Self::CamelCase
+        } else {
+            Self::Other
+        }
     }
 }
 
@@ -228,6 +283,56 @@ impl SchemaAtom {
 pub struct SourceSpan {
     start: SourcePosition,
     end: SourcePosition,
+}
+
+fn is_symbol_safe(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|character| {
+            character.is_ascii_alphanumeric() || character == '_' || character == '-'
+        })
+}
+
+fn is_pascal_case(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_uppercase()
+        && chars.all(|character| character.is_ascii_alphanumeric())
+        && text
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+}
+
+fn is_camel_case(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && chars.all(|character| character.is_ascii_alphanumeric())
+        && text
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+}
+
+fn is_kebab_case(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && text.contains('-')
+        && chars.all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        })
+        && text
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
 }
 
 impl SourceSpan {

@@ -2,7 +2,8 @@ use nota_codec::NotaValue;
 
 use crate::{
     Container, DeclarationBody, Error, Field, ModuleName, Name, NamespaceObject, ObjectDelimiter,
-    Payload, Primitive, Result, SchemaBlockPass, SchemaObjectPass, TypeExpression, Variant,
+    Payload, Primitive, Result, SchemaBlock, SchemaBlockObject, SchemaBlockPass,
+    SchemaMacroPattern, SchemaObjectPass, TypeExpression, Variant,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,16 +30,7 @@ impl AssembledNotaSchema {
             });
         }
 
-        if !block_pass
-            .roots()
-            .iter()
-            .any(|root| root.is_curly_brace_block())
-        {
-            return Err(Error::InvalidSchemaText {
-                context: "nota reader schema",
-                message: "expected at least one curly-brace namespace block".into(),
-            });
-        }
+        NamespaceBlockMatcher::validate(block_pass, object_pass)?;
 
         Self::from_object_pass(object_pass)
     }
@@ -70,6 +62,116 @@ impl AssembledNotaSchema {
 
     pub fn types(&self) -> &[AssembledNotaType] {
         &self.types
+    }
+}
+
+struct NamespaceBlockMatcher;
+
+impl NamespaceBlockMatcher {
+    fn validate(block_pass: &SchemaBlockPass, object_pass: &SchemaObjectPass) -> Result<()> {
+        let namespace_block = block_pass
+            .roots()
+            .iter()
+            .filter_map(SchemaBlockObject::as_block)
+            .rfind(|block| block.is_curly_brace_block())
+            .ok_or_else(|| Error::InvalidSchemaText {
+                context: "nota reader namespace block matcher",
+                message: "expected at least one curly-brace namespace block".into(),
+            })?;
+
+        let namespace =
+            object_pass
+                .namespace_roots()
+                .last()
+                .ok_or_else(|| Error::InvalidSchemaText {
+                    context: "nota reader namespace block matcher",
+                    message: "expected at least one curly-brace namespace map".into(),
+                })?;
+        let entries = namespace.namespace_entries()?;
+
+        let expected_object_count = entries.len() * 2;
+        if !namespace_block.holds_object_count(expected_object_count) {
+            return Err(Error::InvalidSchemaText {
+                context: "nota reader namespace block matcher",
+                message: format!(
+                    "namespace block expected {expected_object_count} key/value objects for {} entries, got {}",
+                    entries.len(),
+                    namespace_block.object_count()
+                ),
+            });
+        }
+
+        for (entry_index, entry) in entries.iter().enumerate() {
+            Self::validate_entry(namespace_block, entry_index, entry)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_entry(
+        namespace_block: &SchemaBlock,
+        entry_index: usize,
+        entry: &NamespaceObject<'_>,
+    ) -> Result<()> {
+        let key_index = entry_index * 2;
+        let value_index = key_index + 1;
+        let key_object =
+            namespace_block
+                .object(key_index)
+                .ok_or_else(|| Error::InvalidSchemaText {
+                    context: "nota reader namespace block matcher",
+                    message: format!("missing namespace key object {key_index}"),
+                })?;
+        let value_object =
+            namespace_block
+                .object(value_index)
+                .ok_or_else(|| Error::InvalidSchemaText {
+                    context: "nota reader namespace block matcher",
+                    message: format!("missing namespace value object {value_index}"),
+                })?;
+
+        if !SchemaMacroPattern::symbol().matches(key_object) {
+            return Err(Error::InvalidSchemaText {
+                context: "nota reader namespace block matcher",
+                message: format!(
+                    "namespace entry {} key must be a symbol candidate, got {:?}",
+                    entry_index,
+                    key_object.span()
+                ),
+            });
+        }
+
+        if key_object.symbol_text() != Some(entry.name()) {
+            return Err(Error::InvalidSchemaText {
+                context: "nota reader namespace block matcher",
+                message: format!(
+                    "namespace entry {} key text `{}` did not match decoded map key `{}`",
+                    entry_index,
+                    key_object.symbol_text().unwrap_or("<non-symbol>"),
+                    entry.name()
+                ),
+            });
+        }
+
+        let pattern = match entry.delimiter() {
+            ObjectDelimiter::Parentheses => SchemaMacroPattern::parenthesized_any(),
+            ObjectDelimiter::SquareBrackets => SchemaMacroPattern::square_bracketed_any(),
+            ObjectDelimiter::CurlyBraces => SchemaMacroPattern::curly_braced_any(),
+            ObjectDelimiter::Atom => SchemaMacroPattern::Any,
+        };
+
+        if !pattern.matches(value_object) {
+            return Err(Error::InvalidSchemaText {
+                context: "nota reader namespace block matcher",
+                message: format!(
+                    "namespace entry {} value shape did not match decoded delimiter {:?}",
+                    entry_index,
+                    entry.delimiter()
+                ),
+            });
+        }
+
+        Ok(())
     }
 }
 
