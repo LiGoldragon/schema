@@ -91,6 +91,18 @@ fn rust_reader_emitter_matches_the_compiled_fixture() {
 }
 
 #[test]
+fn reader_stack_runs_block_pass_before_object_lowering() {
+    let result = AssembledNotaSchema::from_namespace_text(
+        ModuleName::new("spirit_intent").expect("module name"),
+        "{ Topic [String]\n",
+    );
+    let error = result.expect_err("unbalanced delimiter is caught by block pass");
+
+    assert!(error.to_string().contains("schema object block pass"));
+    assert!(error.to_string().contains("missing closing `}`"));
+}
+
+#[test]
 fn compiled_generated_reader_decodes_positional_record_values() {
     let mut decoder = Decoder::new("([schema nota] Decision [schema driven reader] High)");
     let entry = spirit_intent::Entry::decode(&mut decoder).expect("entry decodes");

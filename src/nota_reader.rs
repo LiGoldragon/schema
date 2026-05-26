@@ -2,7 +2,7 @@ use nota_codec::NotaValue;
 
 use crate::{
     Container, DeclarationBody, Error, Field, ModuleName, Name, NamespaceObject, ObjectDelimiter,
-    Payload, Primitive, Result, SchemaObjectPass, TypeExpression, Variant,
+    Payload, Primitive, Result, SchemaBlockPass, SchemaObjectPass, TypeExpression, Variant,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -13,8 +13,34 @@ pub struct AssembledNotaSchema {
 
 impl AssembledNotaSchema {
     pub fn from_namespace_text(module: ModuleName, text: &str) -> Result<Self> {
+        let block_pass = SchemaBlockPass::parse_text(module.clone(), text)?;
         let pass = SchemaObjectPass::parse_text(module, text)?;
-        Self::from_object_pass(&pass)
+        Self::from_block_and_object_pass(&block_pass, &pass)
+    }
+
+    pub fn from_block_and_object_pass(
+        block_pass: &SchemaBlockPass,
+        object_pass: &SchemaObjectPass,
+    ) -> Result<Self> {
+        if block_pass.namespace_prefix() != object_pass.namespace_prefix() {
+            return Err(Error::InvalidSchemaText {
+                context: "nota reader schema",
+                message: "block pass and object pass namespace prefixes differ".into(),
+            });
+        }
+
+        if !block_pass
+            .roots()
+            .iter()
+            .any(|root| root.is_curly_brace_block())
+        {
+            return Err(Error::InvalidSchemaText {
+                context: "nota reader schema",
+                message: "expected at least one curly-brace namespace block".into(),
+            });
+        }
+
+        Self::from_object_pass(object_pass)
     }
 
     pub fn from_object_pass(pass: &SchemaObjectPass) -> Result<Self> {
