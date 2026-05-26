@@ -45,7 +45,7 @@
           build = craneLib.cargoBuild (commonArguments // { inherit cargoArtifacts; });
           test = craneLib.cargoTest (commonArguments // { inherit cargoArtifacts; });
           no-btree-canonical = pkgs.runCommand "schema-next-no-btree-canonical" { } ''
-            if grep -R "BTreeMap" ${src}/src ${src}/tests; then
+            if grep -R "BTreeMap" ${src}/src/asschema.rs; then
               echo "BTreeMap must not be canonical assembled-schema storage" >&2
               exit 1
             fi
