@@ -26,14 +26,27 @@ fn constraint_774_blocks_carry_source_spans() {
 
     // First block — the (Move ...) record on line 1
     let first = &blocks[0];
-    assert_eq!(first.span.start, SourcePosition { line: 1, column: 1, byte_offset: 0 });
+    assert_eq!(
+        first.span.start,
+        SourcePosition {
+            line: 1,
+            column: 1,
+            byte_offset: 0
+        }
+    );
     assert_eq!(first.span.end.line, 1, "first block ends on line 1");
-    assert!(first.span.end.column > first.span.start.column, "end column past start");
+    assert!(
+        first.span.end.column > first.span.start.column,
+        "end column past start"
+    );
 
     // Second block — the [a b c] vector on line 2
     let second = &blocks[1];
     assert_eq!(second.span.start.line, 2, "second block starts on line 2");
-    assert_eq!(second.span.start.column, 1, "second block starts at column 1");
+    assert_eq!(
+        second.span.start.column, 1,
+        "second block starts at column 1"
+    );
 
     // Third block — the {key value} map on line 3
     let third = &blocks[2];
@@ -298,7 +311,10 @@ fn constraint_776_single_block_reemit_round_trips() {
 
     let outer = &blocks[0];
     let reemitted = outer.reemit(source);
-    assert_eq!(reemitted, "[a [b [c [d]]]]", "exact span slice — no whitespace");
+    assert_eq!(
+        reemitted, "[a [b [c [d]]]]",
+        "exact span slice — no whitespace"
+    );
 
     // And the deepest nested block also reemits exactly.
     let mut current = outer;

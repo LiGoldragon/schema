@@ -28,13 +28,16 @@
 //!   - Every function lives on an impl block; free functions are
 //!     allowed only in `#[cfg(test)]` and `fn main()` (record 729).
 
+pub mod block_query;
 pub mod blocks;
 pub mod emit;
 pub mod kernel;
 pub mod library;
 pub mod macros;
 pub mod schema;
+pub mod schema_schema;
 
+pub use block_query::{BlockKind, BlockReassembler, Classification, LiteralKind, SymbolKind};
 pub use blocks::{Block, BlockParser, DelimiterKind, SourcePosition, SourceSpan};
 pub use emit::EmittedCodec;
 pub use kernel::{Kernel, KernelError, KernelToken, KernelTokenKind, Node, NodeKind};
@@ -43,4 +46,9 @@ pub use macros::{MacroEngine, MacroShape};
 pub use schema::{
     AssembledSchema, NamespaceEntry, OperationEntry, SchemaError, SchemaSection, ThreePartSchema,
     TypeBody,
+};
+pub use schema_schema::{
+    AssembledNode, ImportEntry, ImportsSectionMacro, InputOutputStructMacro, Macro, MacroContext,
+    MacroError, NamespaceDeclaration, NamespaceSectionMacro, NamespaceTable, OperationDeclaration,
+    SchemaSchema, SchemaSchemaTextEntry,
 };
