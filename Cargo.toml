@@ -1,0 +1,21 @@
+[package]
+name         = "schema-next"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.85"
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/LiGoldragon/schema-next"
+description  = "Position-aware schema macro engine and assembled schema model."
+publish      = false
+
+[lib]
+name = "schema_next"
+path = "src/lib.rs"
+
+[dependencies]
+nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+unused      = { level = "warn", priority = -1 }
+dead_code   = "warn"
