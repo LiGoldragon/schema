@@ -3,13 +3,33 @@
 ## Role
 
 `schema` hosts the typed model for Persona's NOTA schema language. The
-crate represents the fixed six-position authored `.schema` file, validates
-imports and local namespace declarations, reads `.schema` files with local
-relative imports, lowers route headers into `AssembledSchema`, and derives
+crate reads `.schema` files as NOTA-delimited object trees, preserves the
+schema file's namespace prefix, validates imports and local namespace
+declarations, lowers route headers into `AssembledSchema`, and derives
 metadata used by macro code for layout and version projection.
 
 The crate is the schema-language substrate, not the eventual schema daemon.
 It is consumed by macros and later by the runtime registry.
+
+## Object Pass
+
+The first pass is delimiter-first. `SchemaObjectPass` parses a file as ordered
+top-level `nota_codec::NotaValue` objects, derives a namespace prefix from the
+schema file stem, and records each object's delimiter:
+
+- parentheses — enum / variant / macro-record object;
+- square brackets — sequence object, used by headers, struct fields, and
+  identifier vectors before later semantic lowering;
+- curly braces — ordered name-value namespace map;
+- atom — identifier, string, number, date, time, or bytes.
+
+This pass does not decide final schema semantics. It exposes the object facts
+that later macro passes need: root order, recursive object paths, record heads,
+identifier vectors, and ordered namespace entries. The target of all later
+passes is `AssembledSchema`.
+
+The existing six-position reader now starts through this object pass before it
+adapts to the current compatibility document shape.
 
 ## Authored Shape
 
@@ -21,7 +41,7 @@ parser mode already supply the type. The six fields are positional:
 3. owner signal header
 4. sema header
 5. namespace map
-6. features vector
+6. compatibility metadata vector
 
 Imports are a NOTA map from a local provenance binding to an import
 directive. The supported MVP directives are `Import` and `ImportAll`.
@@ -66,21 +86,22 @@ Before typed lowering, `Schema::parse_str` parses authored text into
 for macro dispatch: ordered maps, vectors, records, record head tokens,
 PascalCase identifiers, local `./*` import paths, and block strings.
 
-`multi_pass` is the executable macro-front proof path. It first builds a
-`SchemaDocument` from the six positional values, then builds a `MacroIndex`
-that records import, header, namespace-type, and feature macro endpoints
-before any macro fires. Later passes walk those indexed candidates in schema
-precedence order. This is the foothold for lazy resolution and forward
-references: the engine knows where a named macro endpoint lives before a
-later macro asks to invoke it.
+`multi_pass` is the executable macro-front proof path. It starts with
+`SchemaObjectPass`, adapts the object roots into the current compatibility
+`SchemaDocument`, then builds a `MacroIndex` that records import, header,
+namespace-type, and compatibility metadata macro endpoints before any macro
+fires. Later passes walk those indexed candidates in schema precedence order.
+This is the foothold for lazy resolution and forward references: the engine
+knows where a named macro endpoint lives before a later macro asks to invoke
+it.
 
 Lowering runs through the builtin schema engine. Each indexed node first
 passes through `NodeDefinitionShape::recognize`, pairing its
 `NodeDefinitionPoint` with the observed `nota_codec::NotaValue` shape.
 Import map values become `ImportInput`, header roots become `HeaderInput`,
 namespace values split into `NamespaceValueShape::{Enum, Record, Newtype,
-Alias}` before becoming `TypeInput`, and feature vector items become
-`FeatureInput`. The input struct is the macro variant's payload; the lowerer
+Alias}` before becoming `TypeInput`, and compatibility metadata items become
+lowering inputs. The input struct is the macro variant's payload; the lowerer
 emits assembled fragments into a `LoweringContext`.
 
 `AssembledSchema` currently contains:
@@ -90,7 +111,7 @@ emits assembled fragments into a `LoweringContext`.
 - explicit routes with leg, root slot, root name, endpoint slot, endpoint
   name, body, and optional Sema engine class;
 - local and imported type entries;
-- feature metadata copied from the authored schema.
+- compatibility metadata copied from the authored schema.
 
 Generated-code names are schema-context names. `LoadedSchema::read_path`
 derives a Rust module name from the `.schema` file stem (hyphens become
@@ -110,9 +131,12 @@ authored text.
 
 ## File Reader
 
-`Schema::parse_str` parses one authored `.schema` document through
-`nota_codec::parse_sequence` and `shape_parser`. The old streaming
-`nota-codec::Decoder` reader remains available as
+`SchemaObjectPass` is the first reader for schema macro work. It parses one
+authored `.schema` document through `nota_codec::parse_sequence`, preserves
+ordered root objects, and exposes delimiter/object facts before any semantic
+lowering. `Schema::parse_str` remains the typed compatibility parser over the
+same NOTA object substrate. The old streaming `nota-codec::Decoder` reader
+remains available as
 `Schema::parse_str_with_streaming_decoder` for equivalence tests while the
 macro-front path finishes taking over. `LoadedSchema::read_path` reads a
 file, recursively loads local relative imports, validates selected imports
@@ -179,6 +203,7 @@ src/
 ├── layout.rs       # fixed-root versus ordered-box planning
 ├── name.rs         # schema identifier validation
 ├── multi_pass.rs   # NotaValue-driven macro index + builtin macro pipeline
+├── object_pass.rs  # delimiter-first root-object pass over NOTA values
 ├── parser.rs       # compatibility streaming parser over nota-codec
 ├── reader.rs       # file reader + recursive local imports
 ├── section.rs      # namespace map
@@ -190,6 +215,7 @@ tests/
 ├── multi_pass.rs   # shape parser / streaming equivalence and basic pipeline
 ├── multi_pass_pipeline.rs # live Spirit pipeline and macro-index assertions
 ├── nota_shape.rs   # NotaValue shape-predicate checks on real fixtures
+├── object_pass.rs  # delimiter/root-object pass constraints
 ├── reader.rs       # .schema files, local imports, file-based upgrade
 └── fixtures/       # real .schema fixtures
 ```
@@ -220,10 +246,11 @@ resolved schema proves otherwise.
 
 ## Status
 
-The crate is now an MVP parser and typed model for the v13 schema-language
-shape. It is ready for macro work to depend on the six-position structure,
-uniform header routes, local import loading, `AssembledSchema`, import
-collision checks, basic upgrade planning, and the first NotaValue-driven
-macro index / micro-macro lowering path. It is not yet a code generator,
-runtime schema registry, user macro loader, fixed-point macro expander, or
-database upgrade tool.
+The crate is now an MVP parser and typed model for the schema-language shape.
+Macro work can depend on the delimiter-first object pass, namespace-prefix
+derivation, ordered namespace maps, uniform header routes, local import
+loading, `AssembledSchema`, import collision checks, basic upgrade planning,
+and the first NotaValue-driven macro index / micro-macro lowering path. The
+six-position reader remains a compatibility adapter. The crate is not yet a
+code generator, runtime schema registry, user macro loader, fixed-point macro
+expander, or database upgrade tool.

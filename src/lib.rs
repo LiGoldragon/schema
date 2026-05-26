@@ -13,6 +13,7 @@ mod layout;
 pub mod multi_pass;
 mod name;
 mod node_shape;
+mod object_pass;
 mod parser;
 mod reader;
 mod section;
@@ -41,6 +42,10 @@ pub use import::{
 pub use layout::{FieldLayout, FieldLocation, Layout};
 pub use name::{FieldName, ModuleName, Name, QualifiedName};
 pub use node_shape::{NamespaceValueShape, NodeDefinitionShape};
+pub use object_pass::{
+    NamespaceObject, ObjectDelimiter, ObjectPath, ObjectPathSegment, ObjectPosition,
+    SchemaObjectNode, SchemaObjectPass, SchemaRootObject, identifier_vector,
+};
 pub use reader::LoadedSchema;
 pub use section::Namespace;
 pub use upgrade::{

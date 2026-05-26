@@ -44,16 +44,17 @@
 
 use std::collections::BTreeMap;
 
-use nota_codec::{NotaValue, parse_sequence};
+use nota_codec::NotaValue;
 
 use crate::{
     AssembledSchema, BuiltinMacroVariant, DeclarationBody, EffectTableEntry, EffectTableFeature,
     Endpoint, Engine, Error, EventFeature, FanOutOutputDeclaration, FanOutTargetsEntry,
     FanOutTargetsFeature, Feature, FeatureInput, Field, HeaderEndpointInput, HeaderInput,
-    ImportBinding, ImportInput, ImportedNames, Leg, LoweringContext, Name, NamespaceValueShape,
-    NodeDefinitionPoint, NodeDefinitionShape, ObservableFeature, Payload, Primitive, Result, Route,
-    RouteBody, SchemaPath, StorageDescriptorEntry, StorageDescriptorFeature, TypeExpression,
-    TypeInput, Upgrade, UpgradeAnnotation, UpgradeRuleInput, Variant, Version,
+    ImportBinding, ImportInput, ImportedNames, Leg, LoweringContext, ModuleName, Name,
+    NamespaceValueShape, NodeDefinitionPoint, NodeDefinitionShape, ObservableFeature, Payload,
+    Primitive, Result, Route, RouteBody, SchemaObjectPass, SchemaPath, StorageDescriptorEntry,
+    StorageDescriptorFeature, TypeExpression, TypeInput, Upgrade, UpgradeAnnotation,
+    UpgradeRuleInput, Variant, Version,
 };
 
 /// Run the full multi-pass pipeline against `.schema` text and
@@ -67,11 +68,8 @@ use crate::{
 /// `Schema::parse_str(...).assemble(&[])` would produce for the SAME
 /// schema text (where the resolution list is empty).
 pub fn read_schema_six_position(text: &str) -> Result<AssembledSchema> {
-    let raw_values = parse_sequence(text).map_err(|error| Error::InvalidSchemaText {
-        context: "multi_pass parse_sequence",
-        message: error.to_string(),
-    })?;
-    let document = SchemaDocument::from_six_values(raw_values)?;
+    let object_pass = SchemaObjectPass::parse_text(ModuleName::new("schema")?, text)?;
+    let document = SchemaDocument::from_object_pass(&object_pass)?;
     let mut pipeline = MacroPipeline::new(&document)?;
     pipeline.run()
 }
@@ -94,11 +92,8 @@ pub struct PipelineReport {
 /// firing counts so the end-to-end test can prove each builtin ran
 /// the expected number of times.
 pub fn read_schema_with_report(text: &str) -> Result<PipelineReport> {
-    let raw_values = parse_sequence(text).map_err(|error| Error::InvalidSchemaText {
-        context: "multi_pass parse_sequence",
-        message: error.to_string(),
-    })?;
-    let document = SchemaDocument::from_six_values(raw_values)?;
+    let object_pass = SchemaObjectPass::parse_text(ModuleName::new("schema")?, text)?;
+    let document = SchemaDocument::from_object_pass(&object_pass)?;
     let mut pipeline = MacroPipeline::new(&document)?;
     let assembled = pipeline.run()?;
     let macro_index = pipeline.index.report();
@@ -126,6 +121,15 @@ pub struct SchemaDocument {
 }
 
 impl SchemaDocument {
+    pub fn from_object_pass(pass: &SchemaObjectPass) -> Result<Self> {
+        Self::from_six_values(
+            pass.roots()
+                .iter()
+                .map(|root| root.value().clone())
+                .collect(),
+        )
+    }
+
     pub fn from_six_values(values: Vec<NotaValue>) -> Result<Self> {
         if values.len() != 6 {
             return Err(Error::InvalidSchemaText {
