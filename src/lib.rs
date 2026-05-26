@@ -13,6 +13,7 @@ mod layout;
 pub mod multi_pass;
 mod name;
 mod node_shape;
+mod nota_reader;
 mod object_pass;
 mod parser;
 mod reader;
@@ -42,6 +43,7 @@ pub use import::{
 pub use layout::{FieldLayout, FieldLocation, Layout};
 pub use name::{FieldName, ModuleName, Name, QualifiedName};
 pub use node_shape::{NamespaceValueShape, NodeDefinitionShape};
+pub use nota_reader::{AssembledNotaSchema, AssembledNotaType, NotaReaderRustEmitter};
 pub use object_pass::{
     NamespaceObject, ObjectDelimiter, ObjectPath, ObjectPathSegment, ObjectPosition,
     SchemaObjectNode, SchemaObjectPass, SchemaRootObject, identifier_vector,
