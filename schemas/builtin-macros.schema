@@ -1,0 +1,15 @@
+(SchemaMacro SchemaStructDefinition NamespaceDeclaration
+  ($Name [$*Fields])
+  (Type (Struct $Name [$*Fields])))
+
+(SchemaMacro SchemaEnumDefinition NamespaceDeclaration
+  ($Name ($*Variants))
+  (Type (Enum $Name ($*Variants))))
+
+(SchemaMacro SchemaStructFields StructFields
+  [$*Fields]
+  (Fields $*Fields))
+
+(SchemaMacro SchemaEnumVariants EnumVariants
+  ($*Variants)
+  (Variants $*Variants))

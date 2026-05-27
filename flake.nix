@@ -63,11 +63,22 @@
             grep -R "SchemaEngine::with_registry" ${src}/tests/lowering.rs >/dev/null
             grep -R "lower_source_with_context" ${src}/tests/lowering.rs >/dev/null
             grep -R "default_engine_dispatches_through_registered_macros" ${src}/tests/lowering.rs >/dev/null
-            grep -R '"StructFields"' ${src}/tests/lowering.rs >/dev/null
-            grep -R '"EnumVariants"' ${src}/tests/lowering.rs >/dev/null
+            grep -R '"SchemaStructFields"' ${src}/tests/lowering.rs >/dev/null
+            grep -R '"SchemaEnumVariants"' ${src}/tests/lowering.rs >/dev/null
             ! grep -R "type_declaration_macro:" ${src}/src/engine.rs
             ! grep -R "surface_macro:" ${src}/src/engine.rs
             ! grep -R "matches_pair" ${src}/src/engine.rs
+            touch $out
+          '';
+          declarative-schema-macros = pkgs.runCommand "schema-next-declarative-schema-macros" { } ''
+            grep -R "DeclarativeMacroLibrary::builtin" ${src}/src/engine.rs >/dev/null
+            grep -R "SchemaStructDefinition" ${src}/schemas/builtin-macros.schema >/dev/null
+            grep -R '\$Name' ${src}/schemas/builtin-macros.schema >/dev/null
+            grep -R '\$\*Fields' ${src}/schemas/builtin-macros.schema >/dev/null
+            grep -R "expanded_templates" ${src}/tests/lowering.rs >/dev/null
+            ! grep -R "struct TypeDeclarationMacro" ${src}/src
+            ! grep -R "struct StructFieldsMacro" ${src}/src
+            ! grep -R "struct EnumVariantsMacro" ${src}/src
             touch $out
           '';
           no-production-free-functions = pkgs.runCommand "schema-next-no-production-free-functions" { } ''

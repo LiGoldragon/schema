@@ -16,6 +16,35 @@ pub enum MacroPosition {
     EnumVariants,
 }
 
+impl MacroPosition {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::RootImports => "RootImports",
+            Self::RootInput => "RootInput",
+            Self::RootOutput => "RootOutput",
+            Self::RootNamespace => "RootNamespace",
+            Self::NamespaceDeclaration => "NamespaceDeclaration",
+            Self::StructFields => "StructFields",
+            Self::EnumVariants => "EnumVariants",
+        }
+    }
+
+    pub(crate) fn from_name(name: &Name) -> Result<Self, SchemaError> {
+        match name.as_str() {
+            "RootImports" => Ok(Self::RootImports),
+            "RootInput" => Ok(Self::RootInput),
+            "RootOutput" => Ok(Self::RootOutput),
+            "RootNamespace" => Ok(Self::RootNamespace),
+            "NamespaceDeclaration" => Ok(Self::NamespaceDeclaration),
+            "StructFields" => Ok(Self::StructFields),
+            "EnumVariants" => Ok(Self::EnumVariants),
+            found => Err(SchemaError::UnknownMacroPosition {
+                found: found.to_owned(),
+            }),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum MacroObject<'object> {
     Block(&'object Block),
@@ -45,7 +74,7 @@ pub struct MacroPair<'object> {
 }
 
 pub trait SchemaMacro {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool;
 
@@ -61,7 +90,9 @@ pub trait SchemaMacro {
 #[derive(Clone, Debug, Default)]
 pub struct MacroContext {
     positions_seen: Vec<MacroPosition>,
-    macros_applied: Vec<&'static str>,
+    macros_applied: Vec<String>,
+    bindings_seen: Vec<String>,
+    expanded_templates: Vec<String>,
 }
 
 impl MacroContext {
@@ -69,16 +100,41 @@ impl MacroContext {
         self.positions_seen.push(position);
     }
 
-    pub fn remember_macro(&mut self, macro_name: &'static str) {
-        self.macros_applied.push(macro_name);
+    pub fn remember_macro(&mut self, macro_name: impl Into<String>) {
+        self.macros_applied.push(macro_name.into());
+    }
+
+    pub fn remember_binding(&mut self, macro_name: impl AsRef<str>, binding_name: impl AsRef<str>) {
+        self.bindings_seen.push(format!(
+            "{}::{}",
+            macro_name.as_ref(),
+            binding_name.as_ref()
+        ));
+    }
+
+    pub fn remember_expanded_template(
+        &mut self,
+        macro_name: impl AsRef<str>,
+        template: impl AsRef<str>,
+    ) {
+        self.expanded_templates
+            .push(format!("{} -> {}", macro_name.as_ref(), template.as_ref()));
     }
 
     pub fn positions_seen(&self) -> &[MacroPosition] {
         &self.positions_seen
     }
 
-    pub fn macros_applied(&self) -> &[&'static str] {
+    pub fn macros_applied(&self) -> &[String] {
         &self.macros_applied
+    }
+
+    pub fn bindings_seen(&self) -> &[String] {
+        &self.bindings_seen
+    }
+
+    pub fn expanded_templates(&self) -> &[String] {
+        &self.expanded_templates
     }
 }
 
@@ -108,6 +164,10 @@ impl MacroRegistry {
         self.macros.push(Box::new(schema_macro));
     }
 
+    pub fn register_box(&mut self, schema_macro: Box<dyn SchemaMacro>) {
+        self.macros.push(schema_macro);
+    }
+
     pub fn lower(
         &self,
         object: MacroObject<'_>,
@@ -120,14 +180,14 @@ impl MacroRegistry {
             }
         }
         Err(SchemaError::MacroDidNotMatch {
-            macro_name: "registered macro",
+            macro_name: "registered macro".to_owned(),
         })
     }
 
-    pub fn macro_names(&self) -> Vec<&'static str> {
+    pub fn macro_names(&self) -> Vec<String> {
         self.macros
             .iter()
-            .map(|schema_macro| schema_macro.name())
+            .map(|schema_macro| schema_macro.name().to_owned())
             .collect()
     }
 }

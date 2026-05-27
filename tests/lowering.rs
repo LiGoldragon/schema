@@ -1,6 +1,6 @@
 use schema_next::{
-    MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, Name, SchemaEngine,
-    SchemaIdentity, SchemaMacro, TypeDeclaration,
+    DeclarativeMacroLibrary, MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry,
+    Name, SchemaEngine, SchemaIdentity, SchemaMacro, TypeDeclaration,
 };
 
 #[test]
@@ -131,6 +131,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
             "BuiltinMacroPositions",
             "BuiltinMacroShapes",
             "BuiltinMacroOutputs",
+            "BuiltinMacroDefinitions",
         ]
     );
 
@@ -159,11 +160,44 @@ fn core_schema_describes_default_builtin_macro_positions() {
 }
 
 #[test]
+fn builtin_macro_file_defines_visible_dollar_captures() {
+    let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
+    let names = library
+        .definitions()
+        .iter()
+        .map(|definition| definition.name().as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "SchemaStructDefinition",
+            "SchemaEnumDefinition",
+            "SchemaStructFields",
+            "SchemaEnumVariants",
+        ]
+    );
+
+    let struct_definition = library
+        .definitions()
+        .iter()
+        .find(|definition| definition.name().as_str() == "SchemaStructDefinition")
+        .expect("struct macro definition");
+    assert_eq!(struct_definition.capture_names(), vec!["$Name", "$*Fields"]);
+
+    let enum_definition = library
+        .definitions()
+        .iter()
+        .find(|definition| definition.name().as_str() == "SchemaEnumDefinition")
+        .expect("enum macro definition");
+    assert_eq!(enum_definition.capture_names(), vec!["$Name", "$*Variants"]);
+}
+
+#[test]
 fn macro_lowering_receives_macro_position() {
     struct ProbeMacro;
 
     impl SchemaMacro for ProbeMacro {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "Probe"
         }
 
@@ -199,7 +233,14 @@ fn macro_lowering_receives_macro_position() {
         )
         .expect("probe lower");
     assert_eq!(context.positions_seen(), &[MacroPosition::RootInput]);
-    assert_eq!(context.macros_applied(), &["Probe"]);
+    assert_eq!(
+        context
+            .macros_applied()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["Probe"]
+    );
 }
 
 #[test]
@@ -226,34 +267,57 @@ fn default_engine_dispatches_through_registered_macros() {
         .expect("schema lowers through macros");
 
     assert_eq!(
-        context.macros_applied(),
-        &[
+        context
+            .macros_applied()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
             "RootImports",
             "RootInput",
-            "EnumVariants",
+            "SchemaEnumVariants",
             "RootOutput",
-            "EnumVariants",
+            "SchemaEnumVariants",
             "RootNamespace",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "StructFields",
-            "TypeDeclaration",
-            "EnumVariants",
-            "TypeDeclaration",
-            "EnumVariants",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaStructDefinition",
+            "SchemaStructFields",
+            "SchemaEnumDefinition",
+            "SchemaEnumVariants",
+            "SchemaEnumDefinition",
+            "SchemaEnumVariants",
         ]
     );
+    assert!(
+        context
+            .bindings_seen()
+            .iter()
+            .any(|binding| binding == "SchemaStructDefinition::Name")
+    );
+    assert!(
+        context
+            .bindings_seen()
+            .iter()
+            .any(|binding| binding == "SchemaStructDefinition::*Fields")
+    );
+    assert!(context.expanded_templates().iter().any(|template| {
+        template
+            == "SchemaStructDefinition -> (Type (Struct Entry [Topics Kind Description Magnitude]))"
+    }));
+    assert!(context.expanded_templates().iter().any(|template| {
+        template == "SchemaEnumDefinition -> (Type (Enum Kind (Decision Principle Correction Clarification Constraint)))"
+    }));
     assert_eq!(
         context.positions_seen(),
         &[
@@ -308,7 +372,7 @@ fn schema_engine_can_be_built_from_a_macro_registry() {
 struct RejectingRootImports;
 
 impl SchemaMacro for RejectingRootImports {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "RejectingRootImports"
     }
 
