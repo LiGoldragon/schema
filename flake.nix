@@ -44,6 +44,14 @@
         checks = {
           build = craneLib.cargoBuild (commonArguments // { inherit cargoArtifacts; });
           test = craneLib.cargoTest (commonArguments // { inherit cargoArtifacts; });
+          design-examples = pkgs.runCommand "schema-next-design-examples" { } ''
+            grep -R "design_example_schema_document_has_exactly_four_root_objects" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_namespace_brace_is_pair_style_key_value_map" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_macro_captures_use_dollar_and_dollar_star_sigils" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
+            touch $out
+          '';
           no-btree-canonical = pkgs.runCommand "schema-next-no-btree-canonical" { } ''
             if grep -R "BTreeMap" ${src}/src/asschema.rs; then
               echo "BTreeMap must not be canonical assembled-schema storage" >&2
