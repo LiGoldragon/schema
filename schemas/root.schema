@@ -2,18 +2,18 @@
 (Input ())
 (Output ())
 {
-  (Schema [Imports Input Output Namespace])
-  (Imports [ImportDeclaration])
-  (Namespace [TypeDeclaration])
-  (ImportDeclaration [Name TypeReference])
-  (TypeDeclaration ((Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration)))
-  (StructDeclaration [Name Fields])
-  (Fields [FieldDeclaration])
-  (FieldDeclaration [Name TypeReference])
-  (EnumDeclaration [Name Variants])
-  (Variants [VariantDeclaration])
-  (VariantDeclaration [Name Payload])
-  (Payload (Unit (Carries TypeReference)))
-  (TypeReference [Name])
-  (Name [Text])
+  Schema [Imports Input Output Namespace]
+  Imports [ImportDeclaration]
+  Namespace [TypeDeclaration]
+  ImportDeclaration [Name TypeReference]
+  TypeDeclaration ((Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration))
+  StructDeclaration [Name Fields]
+  Fields [FieldDeclaration]
+  FieldDeclaration [Name TypeReference]
+  EnumDeclaration [Name Variants]
+  Variants [VariantDeclaration]
+  VariantDeclaration [Name Payload]
+  Payload (Unit (Carries TypeReference))
+  TypeReference [Name]
+  Name [Text]
 }

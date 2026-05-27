@@ -2,17 +2,17 @@
 (Input ())
 (Output ())
 {
-  (CoreSchema [BuiltinMacroPositions BuiltinMacroShapes BuiltinMacroOutputs BuiltinMacroDefinitions])
-  (BuiltinMacroPositions [MacroPosition])
-  (BuiltinMacroShapes [MacroShape])
-  (BuiltinMacroOutputs [MacroOutputKind])
-  (BuiltinMacroDefinitions [SchemaMacro])
-  (SchemaMacro [MacroName MacroPosition MacroPattern MacroTemplate])
-  (MacroName [Text])
-  (MacroPattern [Text])
-  (MacroTemplate [Text])
-  (MacroBinding (SingleCapture RestCapture))
-  (MacroPosition (RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants))
-  (MacroShape (BraceMap ParenthesisEnum SquareStruct NamedTypeDefinition VariantDefinition Symbol))
-  (MacroOutputKind (Imports RootEnum Types Type Fields Variants References AssembledSchema))
+  CoreSchema [BuiltinMacroPositions BuiltinMacroShapes BuiltinMacroOutputs BuiltinMacroDefinitions]
+  BuiltinMacroPositions [MacroPosition]
+  BuiltinMacroShapes [MacroShape]
+  BuiltinMacroOutputs [MacroOutputKind]
+  BuiltinMacroDefinitions [SchemaMacro]
+  SchemaMacro [MacroName MacroPosition MacroPattern MacroTemplate]
+  MacroName [Text]
+  MacroPattern [Text]
+  MacroTemplate [Text]
+  MacroBinding (SingleCapture RestCapture)
+  MacroPosition (RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants)
+  MacroShape (BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol)
+  MacroOutputKind (Imports RootEnum Types Type Fields Variants References AssembledSchema)
 }

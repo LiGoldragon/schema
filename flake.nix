@@ -81,6 +81,12 @@
             ! grep -R "struct EnumVariantsMacro" ${src}/src
             touch $out
           '';
+          namespace-braces-are-key-value = pkgs.runCommand "schema-next-namespace-braces-are-key-value" { } ''
+            grep -R "brace_namespace_rejects_parenthesized_named_objects" ${src}/tests/lowering.rs >/dev/null
+            ! grep -R "NamedTypeDefinition" ${src}/src ${src}/schemas ${src}/tests
+            ! grep -R -n -E '^  \([A-Z][A-Za-z0-9]* [\[\(]' ${src}/schemas/root.schema ${src}/schemas/core.schema ${src}/schemas/spirit-min.schema
+            touch $out
+          '';
           no-production-free-functions = pkgs.runCommand "schema-next-no-production-free-functions" { } ''
             if grep -R -n -E '^(pub(\([^)]*\))? )?fn ' ${src}/src; then
               echo "production Rust must not use module-level free functions" >&2

@@ -2,13 +2,13 @@
 (Input ((Record Entry) (Observe Query)))
 (Output ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)))
 {
-  (Topic [Text])
-  (Topics [Topic])
-  (Description [Text])
-  (RecordIdentifier [Integer])
-  (Entry [Topics Kind Description Magnitude])
-  (Query [Topic Kind])
-  (RecordSet [Entry])
-  (Kind (Decision Principle Correction Clarification Constraint))
-  (Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum))
+  Topic [Text]
+  Topics [Topic]
+  Description [Text]
+  RecordIdentifier [Integer]
+  Entry [Topics Kind Description Magnitude]
+  Query [Topic Kind]
+  RecordSet [Entry]
+  Kind (Decision Principle Correction Clarification Constraint)
+  Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
 }

@@ -44,7 +44,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 
 #[test]
 fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
-    let source = "{} (Input ()) (Output ()) { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
+    let source = "{} (Input ()) (Output ()) { Entry [Topic Kind] Kind (Decision Constraint) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -54,6 +54,19 @@ fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
         TypeDeclaration::Struct(_)
     ));
     assert!(matches!(asschema.namespace()[1], TypeDeclaration::Enum(_)));
+}
+
+#[test]
+fn brace_namespace_rejects_parenthesized_named_objects() {
+    let source = "{} (Input ()) (Output ()) { (Entry [Topic Kind]) }";
+    let error = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("brace namespaces are key-value maps only");
+
+    assert_eq!(
+        error,
+        schema_next::SchemaError::ExpectedEvenMapEntries { found: 1 }
+    );
 }
 
 #[test]
@@ -245,7 +258,7 @@ fn macro_lowering_receives_macro_position() {
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source = "{} (Input ()) (Output ()) { (Entry [RecordIdentifier Description]) }";
+    let source = "{} (Input ()) (Output ()) { Entry [RecordIdentifier Description] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");

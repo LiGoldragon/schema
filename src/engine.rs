@@ -397,58 +397,34 @@ impl<'schema> NamespaceBlock<'schema> {
         Self { object }
     }
 
-    fn uses_named_objects(&self) -> bool {
-        self.object.holds_root_objects() == 0
-            || (0..self.object.holds_root_objects()).all(|index| {
-                self.object
-                    .root_object_at(index)
-                    .is_some_and(|child| NamedTypeDefinition::new(child).matches())
-            })
-    }
-
     fn lower_declarations(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<TypeDeclaration>, SchemaError> {
         let mut declarations = Vec::new();
-        if self.uses_named_objects() {
-            for index in 0..self.object.holds_root_objects() {
-                let declaration = self
+        if self.object.holds_root_objects() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: self.object.holds_root_objects(),
+            });
+        }
+        for index in (0..self.object.holds_root_objects()).step_by(2) {
+            let pair = MacroPair {
+                name: self
                     .object
                     .root_object_at(index)
-                    .expect("index within namespace object count");
-                self.push_declaration(
-                    MacroObject::Block(declaration),
-                    registry,
-                    context,
-                    &mut declarations,
-                )?;
-            }
-        } else {
-            if self.object.holds_root_objects() % 2 != 0 {
-                return Err(SchemaError::ExpectedEvenMapEntries {
-                    found: self.object.holds_root_objects(),
-                });
-            }
-            for index in (0..self.object.holds_root_objects()).step_by(2) {
-                let pair = MacroPair {
-                    name: self
-                        .object
-                        .root_object_at(index)
-                        .expect("index within namespace object count"),
-                    definition: self
-                        .object
-                        .root_object_at(index + 1)
-                        .expect("index within namespace object count"),
-                };
-                self.push_declaration(
-                    MacroObject::Pair(pair),
-                    registry,
-                    context,
-                    &mut declarations,
-                )?;
-            }
+                    .expect("index within namespace object count"),
+                definition: self
+                    .object
+                    .root_object_at(index + 1)
+                    .expect("index within namespace object count"),
+            };
+            self.push_declaration(
+                MacroObject::Pair(pair),
+                registry,
+                context,
+                &mut declarations,
+            )?;
         }
         Ok(declarations)
     }
@@ -637,27 +613,5 @@ impl<'schema> SchemaVariant<'schema> {
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct NamedTypeDefinition<'schema> {
-    object: &'schema Block,
-}
-
-impl<'schema> NamedTypeDefinition<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
-    }
-
-    fn matches(&self) -> bool {
-        let object = self.object;
-        if !object.is_parenthesis() || object.holds_root_objects() != 2 {
-            return false;
-        }
-        let name = object.root_object_at(0).expect("definition shape checked");
-        let body = object.root_object_at(1).expect("definition shape checked");
-        name.qualifies_as_pascal_case_symbol()
-            && (body.is_square_bracket() || body.is_parenthesis())
     }
 }
