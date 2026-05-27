@@ -7,7 +7,7 @@ use crate::{
     },
     macros::{
         MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry,
-        SchemaMacro, atom_name,
+        SchemaBlockExt, SchemaMacro,
     },
 };
 
@@ -81,7 +81,7 @@ pub struct SchemaEngine {
 impl Default for SchemaEngine {
     fn default() -> Self {
         Self {
-            registry: default_registry(),
+            registry: MacroRegistry::with_schema_defaults(),
         }
     }
 }
@@ -202,28 +202,74 @@ impl SchemaEngine {
     }
 }
 
-fn default_registry() -> MacroRegistry {
-    let mut registry = MacroRegistry::new();
-    registry.register(RootImportsMacro);
-    registry.register(RootSurfacesMacro);
-    registry.register(RootNamespaceMacro);
-    registry.register(SurfaceMacro);
-    registry.register(TypeDeclarationMacro);
-    registry.register(StructFieldsMacro);
-    registry.register(EnumVariantsMacro);
-    registry
+impl MacroRegistry {
+    pub(crate) fn with_schema_defaults() -> Self {
+        let mut registry = Self::new();
+        registry.register(RootImportsMacro::new());
+        registry.register(RootSurfacesMacro::new());
+        registry.register(RootNamespaceMacro::new());
+        registry.register(SurfaceMacro::new());
+        registry.register(TypeDeclarationMacro::new());
+        registry.register(StructFieldsMacro::new());
+        registry.register(EnumVariantsMacro::new());
+        registry
+    }
 }
 
-#[derive(Clone, Debug, Default)]
-struct RootImportsMacro;
+#[derive(Clone, Copy, Debug)]
+struct MacroSignature {
+    name: &'static str,
+    position: MacroPosition,
+    expected_delimiter: &'static str,
+}
+
+impl MacroSignature {
+    fn new(name: &'static str, position: MacroPosition, expected_delimiter: &'static str) -> Self {
+        Self {
+            name,
+            position,
+            expected_delimiter,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn expected_delimiter(&self) -> &'static str {
+        self.expected_delimiter
+    }
+
+    fn accepts_position(&self, position: MacroPosition) -> bool {
+        position == self.position
+    }
+
+    fn remember(&self, position: MacroPosition, context: &mut MacroContext) {
+        context.remember_macro(self.name);
+        context.remember_position(position);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RootImportsMacro {
+    signature: MacroSignature,
+}
+
+impl RootImportsMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("RootImports", MacroPosition::RootImports, "{ }"),
+        }
+    }
+}
 
 impl SchemaMacro for RootImportsMacro {
     fn name(&self) -> &'static str {
-        "RootImports"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::RootImports
+        self.signature.accepts_position(position)
             && object.block().is_some_and(|block| block.is_brace())
     }
 
@@ -234,13 +280,14 @@ impl SchemaMacro for RootImportsMacro {
         context: &mut MacroContext,
         _registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let object = object
-            .block()
-            .ok_or(SchemaError::ExpectedDelimiter { expected: "{ }" })?;
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
         if !object.is_brace() {
-            return Err(SchemaError::ExpectedDelimiter { expected: "{ }" });
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: self.signature.expected_delimiter(),
+            });
         }
         if object.holds_root_objects() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
@@ -250,16 +297,14 @@ impl SchemaMacro for RootImportsMacro {
 
         let mut imports = Vec::new();
         for index in (0..object.holds_root_objects()).step_by(2) {
-            let local_name = atom_name(
-                object
-                    .root_object_at(index)
-                    .expect("index within map object count"),
-            )?;
-            let source = atom_name(
-                object
-                    .root_object_at(index + 1)
-                    .expect("index within map object count"),
-            )?;
+            let local_name = object
+                .root_object_at(index)
+                .expect("index within map object count")
+                .schema_name()?;
+            let source = object
+                .root_object_at(index + 1)
+                .expect("index within map object count")
+                .schema_name()?;
             imports.push(ImportDeclaration {
                 local_name,
                 source: TypeReference { name: source },
@@ -269,16 +314,26 @@ impl SchemaMacro for RootImportsMacro {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct RootSurfacesMacro;
+#[derive(Clone, Debug)]
+struct RootSurfacesMacro {
+    signature: MacroSignature,
+}
+
+impl RootSurfacesMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("RootSurfaces", MacroPosition::RootSurfaces, "[ ]"),
+        }
+    }
+}
 
 impl SchemaMacro for RootSurfacesMacro {
     fn name(&self) -> &'static str {
-        "RootSurfaces"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::RootSurfaces
+        self.signature.accepts_position(position)
             && object
                 .block()
                 .is_some_and(|block| block.is_square_bracket())
@@ -291,13 +346,14 @@ impl SchemaMacro for RootSurfacesMacro {
         context: &mut MacroContext,
         registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let object = object
-            .block()
-            .ok_or(SchemaError::ExpectedDelimiter { expected: "[ ]" })?;
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
         if !object.is_square_bracket() {
-            return Err(SchemaError::ExpectedDelimiter { expected: "[ ]" });
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: self.signature.expected_delimiter(),
+            });
         }
 
         let mut surfaces = Vec::new();
@@ -319,16 +375,26 @@ impl SchemaMacro for RootSurfacesMacro {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct RootNamespaceMacro;
+#[derive(Clone, Debug)]
+struct RootNamespaceMacro {
+    signature: MacroSignature,
+}
+
+impl RootNamespaceMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("RootNamespace", MacroPosition::RootNamespace, "{ }"),
+        }
+    }
+}
 
 impl SchemaMacro for RootNamespaceMacro {
     fn name(&self) -> &'static str {
-        "RootNamespace"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::RootNamespace
+        self.signature.accepts_position(position)
             && object.block().is_some_and(|block| block.is_brace())
     }
 
@@ -339,58 +405,127 @@ impl SchemaMacro for RootNamespaceMacro {
         context: &mut MacroContext,
         registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let object = object
-            .block()
-            .ok_or(SchemaError::ExpectedDelimiter { expected: "{ }" })?;
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
         if !object.is_brace() {
-            return Err(SchemaError::ExpectedDelimiter { expected: "{ }" });
-        }
-        if object.holds_root_objects() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: object.holds_root_objects(),
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: self.signature.expected_delimiter(),
             });
         }
-
-        let mut declarations = Vec::new();
-        for index in (0..object.holds_root_objects()).step_by(2) {
-            let pair = MacroPair {
-                name: object
-                    .root_object_at(index)
-                    .expect("index within namespace object count"),
-                definition: object
-                    .root_object_at(index + 1)
-                    .expect("index within namespace object count"),
-            };
-            match registry.lower(
-                MacroObject::Pair(pair),
-                MacroPosition::NamespaceDeclaration,
-                context,
-            )? {
-                MacroOutput::Type(declaration) => declarations.push(declaration),
-                _ => {
-                    return Err(SchemaError::UnexpectedMacroOutput {
-                        macro_name: "TypeDeclaration",
-                        expected: "type",
-                    });
-                }
-            }
-        }
-        Ok(MacroOutput::Types(declarations))
+        Ok(MacroOutput::Types(
+            NamespaceBlock::new(object).lower_declarations(registry, context)?,
+        ))
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct SurfaceMacro;
+#[derive(Clone, Copy, Debug)]
+struct NamespaceBlock<'schema> {
+    object: &'schema Block,
+}
+
+impl<'schema> NamespaceBlock<'schema> {
+    fn new(object: &'schema Block) -> Self {
+        Self { object }
+    }
+
+    fn uses_named_objects(&self) -> bool {
+        self.object.holds_root_objects() == 0
+            || (0..self.object.holds_root_objects()).all(|index| {
+                self.object
+                    .root_object_at(index)
+                    .is_some_and(|child| NamedTypeDefinition::new(child).is_some())
+            })
+    }
+
+    fn lower_declarations(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<TypeDeclaration>, SchemaError> {
+        let mut declarations = Vec::new();
+        if self.uses_named_objects() {
+            for index in 0..self.object.holds_root_objects() {
+                let declaration = self
+                    .object
+                    .root_object_at(index)
+                    .expect("index within namespace object count");
+                self.push_declaration(
+                    MacroObject::Block(declaration),
+                    registry,
+                    context,
+                    &mut declarations,
+                )?;
+            }
+        } else {
+            if self.object.holds_root_objects() % 2 != 0 {
+                return Err(SchemaError::ExpectedEvenMapEntries {
+                    found: self.object.holds_root_objects(),
+                });
+            }
+            for index in (0..self.object.holds_root_objects()).step_by(2) {
+                let pair = MacroPair {
+                    name: self
+                        .object
+                        .root_object_at(index)
+                        .expect("index within namespace object count"),
+                    definition: self
+                        .object
+                        .root_object_at(index + 1)
+                        .expect("index within namespace object count"),
+                };
+                self.push_declaration(
+                    MacroObject::Pair(pair),
+                    registry,
+                    context,
+                    &mut declarations,
+                )?;
+            }
+        }
+        Ok(declarations)
+    }
+
+    fn push_declaration(
+        &self,
+        object: MacroObject<'schema>,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+        declarations: &mut Vec<TypeDeclaration>,
+    ) -> Result<(), SchemaError> {
+        match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
+            MacroOutput::Type(declaration) => declarations.push(declaration),
+            _ => {
+                return Err(SchemaError::UnexpectedMacroOutput {
+                    macro_name: "TypeDeclaration",
+                    expected: "type",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SurfaceMacro {
+    signature: MacroSignature,
+}
+
+impl SurfaceMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("Surface", MacroPosition::Surface, "( )"),
+        }
+    }
+}
 
 impl SchemaMacro for SurfaceMacro {
     fn name(&self) -> &'static str {
-        "Surface"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::Surface
+        self.signature.accepts_position(position)
             && object.block().is_some_and(|object| {
                 object.is_parenthesis()
                     && object.holds_root_objects() >= 1
@@ -405,69 +540,166 @@ impl SchemaMacro for SurfaceMacro {
         object: MacroObject<'_>,
         position: MacroPosition,
         context: &mut MacroContext,
-        _registry: &MacroRegistry,
+        registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let object = object
-            .block()
-            .ok_or(SchemaError::ExpectedDelimiter { expected: "( )" })?;
-        let name = atom_name(
-            object
-                .root_object_at(0)
-                .expect("surface match checked first object"),
-        )?;
-        let mut variants = Vec::new();
-        for index in 1..object.holds_root_objects() {
-            variants.push(lower_variant(
-                object
-                    .root_object_at(index)
-                    .expect("index within surface object count"),
-            )?);
-        }
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
+        let surface = SurfaceBlock::new(object);
+        let name = surface.name()?;
+        let variants = surface.variants(registry, context)?;
         Ok(MacroOutput::Surface(RootSurface { name, variants }))
     }
 }
 
-fn lower_variant(object: &Block) -> Result<EnumVariant, SchemaError> {
-    if object.is_parenthesis() {
-        match object.holds_root_objects() {
+#[derive(Clone, Copy, Debug)]
+struct SurfaceBlock<'schema> {
+    object: &'schema Block,
+}
+
+impl<'schema> SurfaceBlock<'schema> {
+    fn new(object: &'schema Block) -> Self {
+        Self { object }
+    }
+
+    fn name(&self) -> Result<Name, SchemaError> {
+        self.object
+            .root_object_at(0)
+            .expect("surface match checked first object")
+            .schema_name()
+    }
+
+    fn variants(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<EnumVariant>, SchemaError> {
+        if self.object.holds_root_objects() == 2
+            && self
+                .object
+                .root_object_at(1)
+                .is_some_and(Block::is_parenthesis)
+        {
+            return self.variants_from_nested_enum(registry, context);
+        }
+
+        let mut variants = Vec::new();
+        for index in 1..self.object.holds_root_objects() {
+            variants.push(
+                SchemaVariant::new(
+                    self.object
+                        .root_object_at(index)
+                        .expect("index within surface object count"),
+                )
+                .lower()?,
+            );
+        }
+        Ok(variants)
+    }
+
+    fn variants_from_nested_enum(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<EnumVariant>, SchemaError> {
+        match registry.lower(
+            MacroObject::Block(
+                self.object
+                    .root_object_at(1)
+                    .expect("surface match checked variant object"),
+            ),
+            MacroPosition::EnumVariants,
+            context,
+        )? {
+            MacroOutput::Variants(variants) => Ok(variants),
+            _ => Err(SchemaError::UnexpectedMacroOutput {
+                macro_name: "EnumVariants",
+                expected: "variants",
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SchemaVariant<'schema> {
+    object: &'schema Block,
+}
+
+impl<'schema> SchemaVariant<'schema> {
+    fn new(object: &'schema Block) -> Self {
+        Self { object }
+    }
+
+    fn lower(&self) -> Result<EnumVariant, SchemaError> {
+        if self.object.is_parenthesis() {
+            self.lower_parenthesis()
+        } else if self.object.qualifies_as_pascal_case_symbol() {
+            Ok(EnumVariant {
+                name: self.object.schema_name()?,
+                payload: None,
+            })
+        } else {
+            Err(SchemaError::ExpectedSurfaceVariant)
+        }
+    }
+
+    fn lower_parenthesis(&self) -> Result<EnumVariant, SchemaError> {
+        match self.object.holds_root_objects() {
             1 => Ok(EnumVariant {
-                name: atom_name(object.root_object_at(0).expect("count checked"))?,
+                name: self
+                    .object
+                    .root_object_at(0)
+                    .expect("count checked")
+                    .schema_name()?,
                 payload: None,
             }),
             2 => Ok(EnumVariant {
-                name: atom_name(object.root_object_at(0).expect("count checked"))?,
+                name: self
+                    .object
+                    .root_object_at(0)
+                    .expect("count checked")
+                    .schema_name()?,
                 payload: Some(TypeReference {
-                    name: atom_name(object.root_object_at(1).expect("count checked"))?,
+                    name: self
+                        .object
+                        .root_object_at(1)
+                        .expect("count checked")
+                        .schema_name()?,
                 }),
             }),
             _ => Err(SchemaError::ExpectedSurfaceVariant),
         }
-    } else if object.qualifies_as_pascal_case_symbol() {
-        Ok(EnumVariant {
-            name: atom_name(object)?,
-            payload: None,
-        })
-    } else {
-        Err(SchemaError::ExpectedSurfaceVariant)
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct TypeDeclarationMacro;
+#[derive(Clone, Debug)]
+struct TypeDeclarationMacro {
+    signature: MacroSignature,
+}
+
+impl TypeDeclarationMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new(
+                "TypeDeclaration",
+                MacroPosition::NamespaceDeclaration,
+                "named type definition",
+            ),
+        }
+    }
+}
 
 impl SchemaMacro for TypeDeclarationMacro {
     fn name(&self) -> &'static str {
-        "TypeDeclaration"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::NamespaceDeclaration
-            && object.pair().is_some_and(|pair| {
-                pair.name.qualifies_as_pascal_case_symbol()
-                    && (pair.definition.is_square_bracket() || pair.definition.is_parenthesis())
-            })
+        if !self.signature.accepts_position(position) {
+            return false;
+        }
+        NamedTypeDefinition::from_macro_object(object).is_some()
     }
 
     fn lower(
@@ -477,15 +709,16 @@ impl SchemaMacro for TypeDeclarationMacro {
         context: &mut MacroContext,
         registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let pair = object.pair().ok_or(SchemaError::ExpectedDelimiter {
-            expected: "namespace pair",
-        })?;
-        let name = atom_name(pair.name)?;
-        if pair.definition.is_square_bracket() {
+        self.signature.remember(position, context);
+        let definition = NamedTypeDefinition::from_macro_object(object).ok_or(
+            SchemaError::ExpectedDelimiter {
+                expected: self.signature.expected_delimiter(),
+            },
+        )?;
+        let name = definition.name()?;
+        if definition.body().is_square_bracket() {
             let fields = match registry.lower(
-                MacroObject::Block(pair.definition),
+                MacroObject::Block(definition.body()),
                 MacroPosition::StructFields,
                 context,
             )? {
@@ -503,9 +736,9 @@ impl SchemaMacro for TypeDeclarationMacro {
             } else {
                 Ok(MacroOutput::Type(TypeDeclaration::Struct(declaration)))
             }
-        } else if pair.definition.is_parenthesis() {
+        } else if definition.body().is_parenthesis() {
             let variants = match registry.lower(
-                MacroObject::Block(pair.definition),
+                MacroObject::Block(definition.body()),
                 MacroPosition::EnumVariants,
                 context,
             )? {
@@ -529,16 +762,68 @@ impl SchemaMacro for TypeDeclarationMacro {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct StructFieldsMacro;
+#[derive(Clone, Copy, Debug)]
+struct NamedTypeDefinition<'schema> {
+    name: &'schema Block,
+    body: &'schema Block,
+}
+
+impl<'schema> NamedTypeDefinition<'schema> {
+    fn new(object: &'schema Block) -> Option<Self> {
+        if !object.is_parenthesis() || object.holds_root_objects() != 2 {
+            return None;
+        }
+        let name = object.root_object_at(0).expect("definition shape checked");
+        let body = object.root_object_at(1).expect("definition shape checked");
+        Self::from_parts(name, body)
+    }
+
+    fn from_macro_object(object: MacroObject<'schema>) -> Option<Self> {
+        if let Some(pair) = object.pair() {
+            return Self::from_parts(pair.name, pair.definition);
+        }
+        Self::new(object.block()?)
+    }
+
+    fn from_parts(name: &'schema Block, body: &'schema Block) -> Option<Self> {
+        if name.qualifies_as_pascal_case_symbol()
+            && (body.is_square_bracket() || body.is_parenthesis())
+        {
+            Some(Self { name, body })
+        } else {
+            None
+        }
+    }
+
+    fn name(&self) -> Result<Name, SchemaError> {
+        self.name.schema_name()
+    }
+
+    fn body(&self) -> &'schema Block {
+        self.body
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StructFieldsMacro {
+    signature: MacroSignature,
+}
+
+impl StructFieldsMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("StructFields", MacroPosition::StructFields, "[ ]"),
+        }
+    }
+}
 
 impl SchemaMacro for StructFieldsMacro {
     fn name(&self) -> &'static str {
-        "StructFields"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::StructFields
+        self.signature.accepts_position(position)
             && object
                 .block()
                 .is_some_and(|object| object.is_square_bracket())
@@ -551,14 +836,16 @@ impl SchemaMacro for StructFieldsMacro {
         context: &mut MacroContext,
         _registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let object = object
-            .block()
-            .ok_or(SchemaError::ExpectedDelimiter { expected: "[ ]" })?;
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
         let mut fields = Vec::new();
         for index in 0..object.holds_root_objects() {
-            let name = atom_name(object.root_object_at(index).expect("field index in bounds"))?;
+            let name = object
+                .root_object_at(index)
+                .expect("field index in bounds")
+                .schema_name()?;
             fields.push(FieldDeclaration {
                 name: Name::new(name.field_name()),
                 reference: TypeReference { name },
@@ -568,16 +855,26 @@ impl SchemaMacro for StructFieldsMacro {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct EnumVariantsMacro;
+#[derive(Clone, Debug)]
+struct EnumVariantsMacro {
+    signature: MacroSignature,
+}
+
+impl EnumVariantsMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("EnumVariants", MacroPosition::EnumVariants, "( )"),
+        }
+    }
+}
 
 impl SchemaMacro for EnumVariantsMacro {
     fn name(&self) -> &'static str {
-        "EnumVariants"
+        self.signature.name()
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::EnumVariants
+        self.signature.accepts_position(position)
             && object.block().is_some_and(|object| object.is_parenthesis())
     }
 
@@ -588,24 +885,16 @@ impl SchemaMacro for EnumVariantsMacro {
         context: &mut MacroContext,
         _registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        let object = object
-            .block()
-            .ok_or(SchemaError::ExpectedDelimiter { expected: "( )" })?;
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
         let mut variants = Vec::new();
         for index in 0..object.holds_root_objects() {
             let child = object
                 .root_object_at(index)
                 .expect("variant index in bounds");
-            variants.push(if child.is_parenthesis() {
-                lower_variant(child)?
-            } else {
-                EnumVariant {
-                    name: atom_name(child)?,
-                    payload: None,
-                }
-            });
+            variants.push(SchemaVariant::new(child).lower()?);
         }
         Ok(MacroOutput::Variants(variants))
     }

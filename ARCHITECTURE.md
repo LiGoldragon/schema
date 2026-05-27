@@ -23,7 +23,12 @@
 - `Asschema` stores declarations in `Vec` order; lookup maps are derived.
 - The root schema is positional. Current MVP shape:
   - field 1: imports/exports map `{ }`
-  - field 2: root surfaces `[ ]`
+  - field 2: root input/output enum definitions `[ ]`
   - field 3: namespace map `{ }`
-- Parentheses define enums and variants.
-- Square brackets define structs and their fields.
+- Parentheses define enums and variants. A named enum definition is
+  `(Name (Variant ...))`.
+- Square brackets define structs and their fields. A named struct definition
+  is `(Name [FieldType ...])`; the one-field form is a newtype struct.
+- The root `Schema` name is implicit when reading a `.schema` file. Nested
+  enum, struct, and newtype definitions still carry their own names.
+- `schemas/root.schema` describes that known root `Schema` type.

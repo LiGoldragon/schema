@@ -44,7 +44,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 
 #[test]
 fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
-    let source = "{} [] { Entry [Topic Kind] Kind (Decision Constraint) }";
+    let source = "{} [] { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -54,6 +54,55 @@ fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
         TypeDeclaration::Struct(_)
     ));
     assert!(matches!(asschema.namespace()[1], TypeDeclaration::Enum(_)));
+}
+
+#[test]
+fn root_schema_describes_the_schema_root_type() {
+    let source = include_str!("../schemas/root.schema");
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("schema", "0.1.0"))
+        .expect("root schema lowers");
+
+    let TypeDeclaration::Struct(schema) = asschema
+        .type_named("Schema")
+        .expect("schema type declaration")
+    else {
+        panic!("Schema should be a struct");
+    };
+
+    assert_eq!(
+        schema
+            .fields
+            .iter()
+            .map(|field| field.reference.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Imports", "Input", "Output", "Namespace"]
+    );
+
+    let TypeDeclaration::Enum(type_declaration) = asschema
+        .type_named("TypeDeclaration")
+        .expect("type declaration enum")
+    else {
+        panic!("TypeDeclaration should be an enum");
+    };
+    assert_eq!(
+        type_declaration
+            .variants
+            .iter()
+            .map(|variant| (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| payload.name.as_str())
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Struct", Some("StructDeclaration")),
+            ("Enum", Some("EnumDeclaration")),
+            ("Newtype", Some("StructDeclaration")),
+        ]
+    );
 }
 
 #[test]
@@ -129,7 +178,9 @@ fn default_engine_dispatches_through_registered_macros() {
             "RootImports",
             "RootSurfaces",
             "Surface",
+            "EnumVariants",
             "Surface",
+            "EnumVariants",
             "RootNamespace",
             "TypeDeclaration",
             "StructFields",
@@ -157,7 +208,9 @@ fn default_engine_dispatches_through_registered_macros() {
             MacroPosition::RootImports,
             MacroPosition::RootSurfaces,
             MacroPosition::Surface,
+            MacroPosition::EnumVariants,
             MacroPosition::Surface,
+            MacroPosition::EnumVariants,
             MacroPosition::RootNamespace,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,

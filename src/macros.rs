@@ -133,18 +133,12 @@ impl MacroRegistry {
     }
 }
 
-pub(crate) fn atom_name(object: &Block) -> Result<Name, SchemaError> {
-    object
-        .atom()
-        .filter(|atom| atom.qualifies_as_symbol())
-        .map(|atom| Name::new(atom.text()))
-        .ok_or_else(|| SchemaError::ExpectedSymbol {
-            found: object.reemit_fallback(),
-        })
-}
-
 pub(crate) trait BlockDebug {
     fn reemit_fallback(&self) -> String;
+}
+
+pub(crate) trait SchemaBlockExt {
+    fn schema_name(&self) -> Result<Name, SchemaError>;
 }
 
 impl BlockDebug for Block {
@@ -152,5 +146,16 @@ impl BlockDebug for Block {
         self.demote_to_string()
             .map(str::to_owned)
             .unwrap_or_else(|| format!("{self:?}"))
+    }
+}
+
+impl SchemaBlockExt for Block {
+    fn schema_name(&self) -> Result<Name, SchemaError> {
+        self.atom()
+            .filter(|atom| atom.qualifies_as_symbol())
+            .map(|atom| Name::new(atom.text()))
+            .ok_or_else(|| SchemaError::ExpectedSymbol {
+                found: self.reemit_fallback(),
+            })
     }
 }

@@ -70,6 +70,20 @@
             ! grep -R "matches_pair" ${src}/src/engine.rs
             touch $out
           '';
+          no-production-free-functions = pkgs.runCommand "schema-next-no-production-free-functions" { } ''
+            if grep -R -n -E '^(pub(\([^)]*\))? )?fn ' ${src}/src; then
+              echo "production Rust must not use module-level free functions" >&2
+              exit 1
+            fi
+            touch $out
+          '';
+          no-production-unit-structs = pkgs.runCommand "schema-next-no-production-unit-structs" { } ''
+            if grep -R -n -E '^struct [A-Za-z][A-Za-z0-9_]*;' ${src}/src; then
+              echo "production Rust must not use unit structs as namespace/method holders" >&2
+              exit 1
+            fi
+            touch $out
+          '';
           doc = craneLib.cargoDoc (commonArguments // {
             inherit cargoArtifacts;
             RUSTDOCFLAGS = "-D warnings";

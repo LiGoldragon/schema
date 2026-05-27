@@ -1,0 +1,20 @@
+{}
+[]
+{
+  (Schema [Imports Input Output Namespace])
+  (Imports [ImportDeclaration])
+  (Input [EnumDeclaration])
+  (Output [EnumDeclaration])
+  (Namespace [TypeDeclaration])
+  (ImportDeclaration [Name TypeReference])
+  (TypeDeclaration ((Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration)))
+  (StructDeclaration [Name Fields])
+  (Fields [FieldDeclaration])
+  (FieldDeclaration [Name TypeReference])
+  (EnumDeclaration [Name Variants])
+  (Variants [VariantDeclaration])
+  (VariantDeclaration [Name Payload])
+  (Payload (Unit (Carries TypeReference)))
+  (TypeReference [Name])
+  (Name [Text])
+}
