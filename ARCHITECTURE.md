@@ -47,6 +47,9 @@ files in a predictable folder.
   the variants a component can receive and emit; the Rust emission
   layer turns those variants into executor methods and signal-frame
   route headers.
+- The same root shape is used for Signal, Nexus, and SEMA schema files:
+  imports/exports, input, output, and namespace. The macro engine lowers
+  all three planes uniformly; the runtime meaning differs after lowering.
 - Parentheses define enums and variants. A named enum definition is
   `(Name (Variant ...))`.
 - Brace pair bodies are enum sugar only at enum-variant positions. The body
@@ -69,3 +72,6 @@ files in a predictable folder.
   mail state between Signal ingress and SEMA replies. If runtime code needs a
   new verb or event, the schema gets the data type first; Rust implements
   behavior on the generated object.
+- Imports and exports are schema objects too. Their paths use the workspace's
+  single-colon namespace (`crate:module:Type`) so assembled schema can mirror
+  the Rust module tree without inheriting Rust's `::` syntax.

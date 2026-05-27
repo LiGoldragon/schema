@@ -41,10 +41,21 @@ nouns. Nexus is the execution-IO schema plane for internal effects, external
 calls, and UI surfaces; it replaces the older executor wording in the runtime
 triad.*
 
+*Signal, Nexus, and SEMA schemas are symmetric at the authored-schema level:
+each has imports/exports, input, output, and namespace. Import/export paths use
+the single-colon namespace that mirrors Rust modules. Schema-next lowers the
+same structural shape for all three; later runtime layers decide whether the
+plane communicates, executes, or owns durable state.*
+
 *Nexus owns in-flight mail state. Signal schemas describe what crosses the
 wire, SEMA schemas describe durable state commands and replies, and Nexus
 schemas describe the execution action that holds mail while it is being
 processed between those two planes.*
+
+*Async mail is actor-object flow. Schema-next's job is to preserve the objects
+that later code will act on: sent message events, Nexus mail, SEMA work, SEMA
+replies, and processed message events. A schema lowering that collapses those
+objects into untyped procedural steps has lost intent.*
 
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.
