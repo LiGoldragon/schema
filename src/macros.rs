@@ -1,16 +1,16 @@
 use nota_next::Block;
 
 use crate::{
-    Asschema, FieldDeclaration, ImportDeclaration, Name, RootSurface, SchemaError, TypeDeclaration,
-    TypeReference,
+    Asschema, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, SchemaError,
+    TypeDeclaration, TypeReference,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacroPosition {
     RootImports,
-    RootSurfaces,
+    RootInput,
+    RootOutput,
     RootNamespace,
-    Surface,
     NamespaceDeclaration,
     StructFields,
     EnumVariants,
@@ -86,9 +86,8 @@ impl MacroContext {
 pub enum MacroOutput {
     Asschema(Asschema),
     Imports(Vec<ImportDeclaration>),
-    Surfaces(Vec<RootSurface>),
+    RootEnum(EnumDeclaration),
     Types(Vec<TypeDeclaration>),
-    Surface(RootSurface),
     Type(TypeDeclaration),
     Fields(Vec<FieldDeclaration>),
     Variants(Vec<crate::EnumVariant>),

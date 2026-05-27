@@ -1,10 +1,9 @@
 {}
-[]
+(Input ())
+(Output ())
 {
   (Schema [Imports Input Output Namespace])
   (Imports [ImportDeclaration])
-  (Input [EnumDeclaration])
-  (Output [EnumDeclaration])
   (Namespace [TypeDeclaration])
   (ImportDeclaration [Name TypeReference])
   (TypeDeclaration ((Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration)))

@@ -40,7 +40,8 @@ impl fmt::Display for Name {
 pub struct Asschema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
-    surfaces: Vec<RootSurface>,
+    input: EnumDeclaration,
+    output: EnumDeclaration,
     namespace: Vec<TypeDeclaration>,
 }
 
@@ -48,13 +49,15 @@ impl Asschema {
     pub(crate) fn new(
         identity: super::SchemaIdentity,
         imports: Vec<ImportDeclaration>,
-        surfaces: Vec<RootSurface>,
+        input: EnumDeclaration,
+        output: EnumDeclaration,
         namespace: Vec<TypeDeclaration>,
     ) -> Self {
         Self {
             identity,
             imports,
-            surfaces,
+            input,
+            output,
             namespace,
         }
     }
@@ -67,8 +70,16 @@ impl Asschema {
         &self.imports
     }
 
-    pub fn surfaces(&self) -> &[RootSurface] {
-        &self.surfaces
+    pub fn input(&self) -> &EnumDeclaration {
+        &self.input
+    }
+
+    pub fn output(&self) -> &EnumDeclaration {
+        &self.output
+    }
+
+    pub fn input_and_output(&self) -> [&EnumDeclaration; 2] {
+        [&self.input, &self.output]
     }
 
     pub fn namespace(&self) -> &[TypeDeclaration] {
@@ -86,12 +97,6 @@ impl Asschema {
 pub struct ImportDeclaration {
     pub local_name: Name,
     pub source: TypeReference,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RootSurface {
-    pub name: Name,
-    pub variants: Vec<EnumVariant>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

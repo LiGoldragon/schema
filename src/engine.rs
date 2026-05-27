@@ -3,7 +3,7 @@ use nota_next::{Block, Document};
 use crate::{
     asschema::{
         Asschema, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
-        RootSurface, StructDeclaration, TypeDeclaration, TypeReference,
+        StructDeclaration, TypeDeclaration, TypeReference,
     },
     macros::{
         MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry,
@@ -50,7 +50,7 @@ pub enum SchemaError {
     ExpectedSymbol {
         found: String,
     },
-    ExpectedSurfaceVariant,
+    ExpectedEnumVariant,
     MacroDidNotMatch {
         macro_name: &'static str,
     },
@@ -124,9 +124,9 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
     ) -> Result<Asschema, SchemaError> {
-        if document.holds_root_objects() != 3 {
+        if document.holds_root_objects() != 4 {
             return Err(SchemaError::ExpectedRootObjectCount {
-                expected: 3,
+                expected: 4,
                 found: document.holds_root_objects(),
             });
         }
@@ -135,16 +135,22 @@ impl SchemaEngine {
             document.root_object_at(0).expect("checked root count"),
             context,
         )?;
-        let surfaces = self.lower_surfaces(
+        let input = self.lower_root_enum(
             document.root_object_at(1).expect("checked root count"),
+            MacroPosition::RootInput,
+            context,
+        )?;
+        let output = self.lower_root_enum(
+            document.root_object_at(2).expect("checked root count"),
+            MacroPosition::RootOutput,
             context,
         )?;
         let namespace = self.lower_namespace(
-            document.root_object_at(2).expect("checked root count"),
+            document.root_object_at(3).expect("checked root count"),
             context,
         )?;
 
-        Ok(Asschema::new(identity, imports, surfaces, namespace))
+        Ok(Asschema::new(identity, imports, input, output, namespace))
     }
 
     fn lower_imports(
@@ -165,20 +171,20 @@ impl SchemaEngine {
         }
     }
 
-    fn lower_surfaces(
+    fn lower_root_enum(
         &self,
         object: &Block,
+        position: MacroPosition,
         context: &mut MacroContext,
-    ) -> Result<Vec<RootSurface>, SchemaError> {
-        match self.registry.lower(
-            MacroObject::Block(object),
-            MacroPosition::RootSurfaces,
-            context,
-        )? {
-            MacroOutput::Surfaces(surfaces) => Ok(surfaces),
+    ) -> Result<EnumDeclaration, SchemaError> {
+        match self
+            .registry
+            .lower(MacroObject::Block(object), position, context)?
+        {
+            MacroOutput::RootEnum(declaration) => Ok(declaration),
             _ => Err(SchemaError::UnexpectedMacroOutput {
-                macro_name: "RootSurfaces",
-                expected: "surfaces",
+                macro_name: "RootEnum",
+                expected: "root enum",
             }),
         }
     }
@@ -206,9 +212,9 @@ impl MacroRegistry {
     pub(crate) fn with_schema_defaults() -> Self {
         let mut registry = Self::new();
         registry.register(RootImportsMacro::new());
-        registry.register(RootSurfacesMacro::new());
+        registry.register(RootEnumMacro::new("RootInput", MacroPosition::RootInput));
+        registry.register(RootEnumMacro::new("RootOutput", MacroPosition::RootOutput));
         registry.register(RootNamespaceMacro::new());
-        registry.register(SurfaceMacro::new());
         registry.register(TypeDeclarationMacro::new());
         registry.register(StructFieldsMacro::new());
         registry.register(EnumVariantsMacro::new());
@@ -311,67 +317,6 @@ impl SchemaMacro for RootImportsMacro {
             });
         }
         Ok(MacroOutput::Imports(imports))
-    }
-}
-
-#[derive(Clone, Debug)]
-struct RootSurfacesMacro {
-    signature: MacroSignature,
-}
-
-impl RootSurfacesMacro {
-    fn new() -> Self {
-        Self {
-            signature: MacroSignature::new("RootSurfaces", MacroPosition::RootSurfaces, "[ ]"),
-        }
-    }
-}
-
-impl SchemaMacro for RootSurfacesMacro {
-    fn name(&self) -> &'static str {
-        self.signature.name()
-    }
-
-    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        self.signature.accepts_position(position)
-            && object
-                .block()
-                .is_some_and(|block| block.is_square_bracket())
-    }
-
-    fn lower(
-        &self,
-        object: MacroObject<'_>,
-        position: MacroPosition,
-        context: &mut MacroContext,
-        registry: &MacroRegistry,
-    ) -> Result<MacroOutput, SchemaError> {
-        self.signature.remember(position, context);
-        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
-            expected: self.signature.expected_delimiter(),
-        })?;
-        if !object.is_square_bracket() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: self.signature.expected_delimiter(),
-            });
-        }
-
-        let mut surfaces = Vec::new();
-        for index in 0..object.holds_root_objects() {
-            let child = object
-                .root_object_at(index)
-                .expect("index within surface count");
-            match registry.lower(MacroObject::Block(child), MacroPosition::Surface, context)? {
-                MacroOutput::Surface(surface) => surfaces.push(surface),
-                _ => {
-                    return Err(SchemaError::UnexpectedMacroOutput {
-                        macro_name: "Surface",
-                        expected: "surface",
-                    });
-                }
-            }
-        }
-        Ok(MacroOutput::Surfaces(surfaces))
     }
 }
 
@@ -507,19 +452,19 @@ impl<'schema> NamespaceBlock<'schema> {
 }
 
 #[derive(Clone, Debug)]
-struct SurfaceMacro {
+struct RootEnumMacro {
     signature: MacroSignature,
 }
 
-impl SurfaceMacro {
-    fn new() -> Self {
+impl RootEnumMacro {
+    fn new(name: &'static str, position: MacroPosition) -> Self {
         Self {
-            signature: MacroSignature::new("Surface", MacroPosition::Surface, "( )"),
+            signature: MacroSignature::new(name, position, "( )"),
         }
     }
 }
 
-impl SchemaMacro for SurfaceMacro {
+impl SchemaMacro for RootEnumMacro {
     fn name(&self) -> &'static str {
         self.signature.name()
     }
@@ -546,19 +491,19 @@ impl SchemaMacro for SurfaceMacro {
         let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
             expected: self.signature.expected_delimiter(),
         })?;
-        let surface = SurfaceBlock::new(object);
-        let name = surface.name()?;
-        let variants = surface.variants(registry, context)?;
-        Ok(MacroOutput::Surface(RootSurface { name, variants }))
+        let root_enum = RootEnumBlock::new(object);
+        let name = root_enum.name()?;
+        let variants = root_enum.variants(registry, context)?;
+        Ok(MacroOutput::RootEnum(EnumDeclaration { name, variants }))
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SurfaceBlock<'schema> {
+struct RootEnumBlock<'schema> {
     object: &'schema Block,
 }
 
-impl<'schema> SurfaceBlock<'schema> {
+impl<'schema> RootEnumBlock<'schema> {
     fn new(object: &'schema Block) -> Self {
         Self { object }
     }
@@ -566,7 +511,7 @@ impl<'schema> SurfaceBlock<'schema> {
     fn name(&self) -> Result<Name, SchemaError> {
         self.object
             .root_object_at(0)
-            .expect("surface match checked first object")
+            .expect("root enum match checked first object")
             .schema_name()
     }
 
@@ -590,7 +535,7 @@ impl<'schema> SurfaceBlock<'schema> {
                 SchemaVariant::new(
                     self.object
                         .root_object_at(index)
-                        .expect("index within surface object count"),
+                        .expect("index within root enum object count"),
                 )
                 .lower()?,
             );
@@ -607,7 +552,7 @@ impl<'schema> SurfaceBlock<'schema> {
             MacroObject::Block(
                 self.object
                     .root_object_at(1)
-                    .expect("surface match checked variant object"),
+                    .expect("root enum match checked variant object"),
             ),
             MacroPosition::EnumVariants,
             context,
@@ -640,7 +585,7 @@ impl<'schema> SchemaVariant<'schema> {
                 payload: None,
             })
         } else {
-            Err(SchemaError::ExpectedSurfaceVariant)
+            Err(SchemaError::ExpectedEnumVariant)
         }
     }
 
@@ -668,7 +613,7 @@ impl<'schema> SchemaVariant<'schema> {
                         .schema_name()?,
                 }),
             }),
-            _ => Err(SchemaError::ExpectedSurfaceVariant),
+            _ => Err(SchemaError::ExpectedEnumVariant),
         }
     }
 }

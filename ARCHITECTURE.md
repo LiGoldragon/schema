@@ -6,8 +6,8 @@
 
 1. `nota-next::Document` parses source into blocks.
 2. `SchemaEngine` validates the root object count.
-3. `MacroRegistry` dispatches position-aware macros for imports, root
-   surfaces, namespace declarations, struct fields, and enum variants.
+3. `MacroRegistry` dispatches position-aware macros for imports, input enum,
+   output enum, namespace declarations, struct fields, and enum variants.
 4. `Asschema` is emitted as the ordered macro-free endpoint.
 
 ## Constraints
@@ -23,8 +23,9 @@
 - `Asschema` stores declarations in `Vec` order; lookup maps are derived.
 - The root schema is positional. Current MVP shape:
   - field 1: imports/exports map `{ }`
-  - field 2: root input/output enum definitions `[ ]`
-  - field 3: namespace map `{ }`
+  - field 2: input enum definition `(Input (...))`
+  - field 3: output enum definition `(Output (...))`
+  - field 4: namespace map `{ }`
 - Parentheses define enums and variants. A named enum definition is
   `(Name (Variant ...))`.
 - Square brackets define structs and their fields. A named struct definition

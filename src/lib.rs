@@ -3,7 +3,7 @@ mod engine;
 mod macros;
 
 pub use asschema::{
-    Asschema, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name, RootSurface,
+    Asschema, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
     StructDeclaration, TypeDeclaration, TypeReference,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};

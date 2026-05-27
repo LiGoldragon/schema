@@ -11,10 +11,10 @@ fn lowers_spirit_schema_into_ordered_asschema() {
         .expect("schema lowers");
 
     assert_eq!(asschema.imports().len(), 0);
-    assert_eq!(asschema.surfaces()[0].name.as_str(), "Input");
-    assert_eq!(asschema.surfaces()[0].variants[0].name.as_str(), "Record");
+    assert_eq!(asschema.input().name.as_str(), "Input");
+    assert_eq!(asschema.input().variants[0].name.as_str(), "Record");
     assert_eq!(
-        asschema.surfaces()[0].variants[0]
+        asschema.input().variants[0]
             .payload
             .as_ref()
             .expect("payload")
@@ -44,7 +44,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 
 #[test]
 fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
-    let source = "{} [] { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
+    let source = "{} (Input ()) (Output ()) { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -62,6 +62,9 @@ fn root_schema_describes_the_schema_root_type() {
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema", "0.1.0"))
         .expect("root schema lowers");
+
+    assert_eq!(asschema.input().name.as_str(), "Input");
+    assert_eq!(asschema.output().name.as_str(), "Output");
 
     let TypeDeclaration::Struct(schema) = asschema
         .type_named("Schema")
@@ -115,7 +118,7 @@ fn macro_lowering_receives_macro_position() {
         }
 
         fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-            position == MacroPosition::Surface && object.block().is_some()
+            position == MacroPosition::RootInput && object.block().is_some()
         }
 
         fn lower(
@@ -136,22 +139,22 @@ fn macro_lowering_receives_macro_position() {
     let object = document.root_object_at(0).expect("root object");
     let probe = ProbeMacro;
 
-    assert!(probe.matches(MacroObject::Block(object), MacroPosition::Surface));
+    assert!(probe.matches(MacroObject::Block(object), MacroPosition::RootInput));
     probe
         .lower(
             MacroObject::Block(object),
-            MacroPosition::Surface,
+            MacroPosition::RootInput,
             &mut context,
             &MacroRegistry::new(),
         )
         .expect("probe lower");
-    assert_eq!(context.positions_seen(), &[MacroPosition::Surface]);
+    assert_eq!(context.positions_seen(), &[MacroPosition::RootInput]);
     assert_eq!(context.macros_applied(), &["Probe"]);
 }
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source = "{} [] { Entry [RecordIdentifier Description] }";
+    let source = "{} (Input ()) (Output ()) { (Entry [RecordIdentifier Description]) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -176,10 +179,9 @@ fn default_engine_dispatches_through_registered_macros() {
         context.macros_applied(),
         &[
             "RootImports",
-            "RootSurfaces",
-            "Surface",
+            "RootInput",
             "EnumVariants",
-            "Surface",
+            "RootOutput",
             "EnumVariants",
             "RootNamespace",
             "TypeDeclaration",
@@ -206,10 +208,9 @@ fn default_engine_dispatches_through_registered_macros() {
         context.positions_seen(),
         &[
             MacroPosition::RootImports,
-            MacroPosition::RootSurfaces,
-            MacroPosition::Surface,
+            MacroPosition::RootInput,
             MacroPosition::EnumVariants,
-            MacroPosition::Surface,
+            MacroPosition::RootOutput,
             MacroPosition::EnumVariants,
             MacroPosition::RootNamespace,
             MacroPosition::NamespaceDeclaration,
@@ -240,7 +241,10 @@ fn schema_engine_can_be_built_from_a_macro_registry() {
     registry.register(RejectingRootImports);
     let engine = SchemaEngine::with_registry(registry);
     let error = engine
-        .lower_source("{} [] {}", SchemaIdentity::new("example", "0.1.0"))
+        .lower_source(
+            "{} (Input ()) (Output ()) {}",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
         .expect_err("custom registry should reject");
 
     assert_eq!(
