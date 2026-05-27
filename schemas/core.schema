@@ -1,0 +1,12 @@
+{}
+(Input ())
+(Output ())
+{
+  (CoreSchema [BuiltinMacroPositions BuiltinMacroShapes BuiltinMacroOutputs])
+  (BuiltinMacroPositions [MacroPosition])
+  (BuiltinMacroShapes [MacroShape])
+  (BuiltinMacroOutputs [MacroOutputKind])
+  (MacroPosition (RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants))
+  (MacroShape (BraceMap ParenthesisEnum SquareStruct NamedTypeDefinition VariantDefinition Symbol))
+  (MacroOutputKind (Imports RootEnum Types Type Fields Variants References AssembledSchema))
+}

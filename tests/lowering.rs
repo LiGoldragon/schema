@@ -109,6 +109,56 @@ fn root_schema_describes_the_schema_root_type() {
 }
 
 #[test]
+fn core_schema_describes_default_builtin_macro_positions() {
+    let source = include_str!("../schemas/core.schema");
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("schema-core", "0.1.0"))
+        .expect("core schema lowers");
+
+    let TypeDeclaration::Struct(core_schema) = asschema
+        .type_named("CoreSchema")
+        .expect("core schema declaration")
+    else {
+        panic!("CoreSchema should be a struct");
+    };
+    assert_eq!(
+        core_schema
+            .fields
+            .iter()
+            .map(|field| field.reference.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "BuiltinMacroPositions",
+            "BuiltinMacroShapes",
+            "BuiltinMacroOutputs",
+        ]
+    );
+
+    let TypeDeclaration::Enum(macro_position) = asschema
+        .type_named("MacroPosition")
+        .expect("macro position enum")
+    else {
+        panic!("MacroPosition should be an enum");
+    };
+    assert_eq!(
+        macro_position
+            .variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "RootImports",
+            "RootInput",
+            "RootOutput",
+            "RootNamespace",
+            "NamespaceDeclaration",
+            "StructFields",
+            "EnumVariants",
+        ]
+    );
+}
+
+#[test]
 fn macro_lowering_receives_macro_position() {
     struct ProbeMacro;
 
