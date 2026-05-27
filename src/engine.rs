@@ -150,6 +150,8 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
     ) -> Result<Asschema, SchemaError> {
+        context.remember_structure_header(document.structure_header());
+
         if document.holds_root_objects() != 4 {
             return Err(SchemaError::ExpectedRootObjectCount {
                 expected: 4,

@@ -5,10 +5,12 @@
 ## Pipeline
 
 1. `nota-next::Document` parses source into blocks.
-2. `SchemaEngine` validates the root object count.
-3. `MacroRegistry` dispatches position-aware macros for imports, input enum,
+2. `SchemaEngine` records the document's `StructureHeader`: a compact
+   first-two-level witness emitted by the NOTA delimiter pass.
+3. `SchemaEngine` validates the root object count.
+4. `MacroRegistry` dispatches position-aware macros for imports, input enum,
    output enum, namespace declarations, struct fields, and enum variants.
-4. `Asschema` is emitted as the ordered macro-free endpoint.
+5. `Asschema` is emitted as the ordered macro-free endpoint.
 
 ## Schema Package Entry
 
@@ -33,14 +35,23 @@ files in a predictable folder.
   are not the design.
 - `MacroContext` records positions and applied macro names so tests can prove
   lowering used the macro path.
+- `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
+  lowering consumed the source's first-pass structural shape.
 - `Asschema` stores declarations in `Vec` order; lookup maps are derived.
 - The root schema is positional. Current MVP shape:
   - field 1: imports/exports map `{ }`
   - field 2: input enum definition `(Input (...))`
   - field 3: output enum definition `(Output (...))`
   - field 4: namespace map `{ }`
+- Input and output roots are actor reaction languages. They declare
+  the variants a component can receive and emit; the Rust emission
+  layer turns those variants into executor methods and signal-frame
+  route headers.
 - Parentheses define enums and variants. A named enum definition is
   `(Name (Variant ...))`.
+- Brace pair bodies are enum sugar only at enum-variant positions. The body
+  `{Variant Payload Variant Payload}` lowers through a macro to payload-carrying
+  enum variants; odd brace counts are rejected rather than guessed.
 - Square brackets define structs and their fields. A named struct definition
   is `(Name [FieldType ...])`; the one-field form is a newtype struct.
 - The root `Schema` name is implicit when reading a `.schema` file. Nested
@@ -51,3 +62,10 @@ files in a predictable folder.
   global disambiguation and future import resolution.
 - Root namespace braces are key/value maps only. Authored declarations use
   `Name Body`; parenthesized `(Name Body)` entries inside braces are rejected.
+- Schema objects are the shared language for Signal, Nexus, SEMA,
+  upgrade, and mail-event surfaces. Signal is the wire/message plane,
+  Nexus is the execution-IO plane for internal effects, external calls, and
+  UI panels, and SEMA is the durable-state plane. Nexus also owns in-flight
+  mail state between Signal ingress and SEMA replies. If runtime code needs a
+  new verb or event, the schema gets the data type first; Rust implements
+  behavior on the generated object.

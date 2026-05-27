@@ -50,6 +50,10 @@
             grep -R "design_example_macro_captures_use_dollar_and_dollar_star_sigils" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_schema_lowering_records_source_structure_header" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_brace_macro_dispatch_depends_on_position_and_pair_shape" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_root_enum_accepts_direct_and_nested_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
             touch $out
           '';
           no-btree-canonical = pkgs.runCommand "schema-next-no-btree-canonical" { } ''

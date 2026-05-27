@@ -9,6 +9,7 @@
 //! a design report cites a test, the test in this file should be the
 //! canonical example.
 
+use nota_next::StructureShape;
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroPosition, Name, SchemaEngine, SchemaError,
     SchemaIdentity, TypeDeclaration,
@@ -232,6 +233,162 @@ fn design_example_default_engine_has_two_macro_layers() {
         assert!(
             applied.contains(&root_macro),
             "root macro {root_macro} fires on a minimal schema; applied = {applied:?}",
+        );
+    }
+}
+
+/// Illustrates: the schema engine consumes the NOTA first-pass
+/// structure header. The header is recorded before semantic macro
+/// lowering so macro dispatch can be tested against the same compact
+/// first-two-level shape witness that will later feed signal-style
+/// triage.
+#[test]
+fn design_example_schema_lowering_records_source_structure_header() {
+    let source = "{} (Input ((Record Entry))) (Output (Accepted)) { Entry [Description] }";
+    let mut context = MacroContext::default();
+    SchemaEngine::default()
+        .lower_source_with_context(
+            source,
+            SchemaIdentity::new("example", "0.1.0"),
+            &mut context,
+        )
+        .expect("schema lowers");
+
+    let header = context
+        .structure_headers()
+        .first()
+        .expect("schema lowering records the source structure header");
+    let observed: Vec<(StructureShape, u8)> = header
+        .slots()
+        .iter()
+        .map(|slot| (slot.shape(), slot.child_count()))
+        .collect();
+
+    assert_eq!(
+        observed,
+        vec![
+            (StructureShape::Document, 4),
+            (StructureShape::Brace, 0),
+            (StructureShape::Parenthesis, 2),
+            (StructureShape::Atom, 0),
+            (StructureShape::Parenthesis, 1),
+            (StructureShape::Parenthesis, 2),
+            (StructureShape::Atom, 0),
+            (StructureShape::Parenthesis, 1),
+        ],
+    );
+    assert_ne!(header.packed_word(), 0, "header packs into a u64 word");
+}
+
+/// Illustrates: brace-enum sugar is still a macro dispatch, not a
+/// special ad-hoc parser branch. It fires only at enum-variant
+/// positions with an even pair shape; malformed brace bodies produce
+/// the typed brace-pair error.
+#[test]
+fn design_example_brace_macro_dispatch_depends_on_position_and_pair_shape() {
+    let source = "{} (Input {Record Entry Observe Query}) (Output ()) {}";
+    let mut context = MacroContext::default();
+    let asschema = SchemaEngine::default()
+        .lower_source_with_context(
+            source,
+            SchemaIdentity::new("example", "0.1.0"),
+            &mut context,
+        )
+        .expect("brace enum sugar lowers in root input position");
+
+    let variants: Vec<(&str, Option<&str>)> = asschema
+        .input()
+        .variants
+        .iter()
+        .map(|variant| {
+            (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| payload.name.as_str()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        variants,
+        vec![("Record", Some("Entry")), ("Observe", Some("Query"))],
+    );
+    assert!(
+        context
+            .macros_applied()
+            .iter()
+            .any(|name| name == "BraceEnumVariants"),
+        "brace enum sugar is witnessed through macro context",
+    );
+
+    let malformed = "{} (Input {Record Entry Observe}) (Output ()) {}";
+    let error = SchemaEngine::default()
+        .lower_source(malformed, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("odd brace count is not a valid enum-pair macro input");
+    assert_eq!(error, SchemaError::ExpectedEvenBraceEnumPairs { found: 3 });
+}
+
+/// Illustrates: root enum payloads can be written in direct variant
+/// form or in nested enum-body form. Both lower to the same assembled
+/// schema, which keeps the authored shorthand separate from the
+/// macro-free endpoint.
+#[test]
+fn design_example_root_enum_accepts_direct_and_nested_variant_shapes() {
+    let direct = "{} (Input (Record Entry) Drop) (Output ()) {}";
+    let nested = "{} (Input ((Record Entry) Drop)) (Output ()) {}";
+
+    let direct_schema = SchemaEngine::default()
+        .lower_source(direct, SchemaIdentity::new("example", "0.1.0"))
+        .expect("direct variants lower");
+    let nested_schema = SchemaEngine::default()
+        .lower_source(nested, SchemaIdentity::new("example", "0.1.0"))
+        .expect("nested enum body lowers");
+
+    assert_eq!(direct_schema.input(), nested_schema.input());
+}
+
+/// Illustrates: the same schema language names the three runtime
+/// planes. Signal roots remain the schema's Input/Output, while
+/// Nexus and SEMA vocabularies are ordinary schema objects in the
+/// namespace until the plane-specific file split lands.
+///
+/// Intent records 964 and 965 rename the execution plane to Nexus
+/// and classify Signal, Nexus, and SEMA as schema-driven planes.
+#[test]
+fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
+    let source = "
+        {}
+        (Input {Record Entry Observe Query})
+        (Output {RecordAccepted RecordIdentifier RecordsObserved RecordSet})
+        {
+          NexusAction {Record Entry Observe Query}
+          NexusResult {Accepted RecordIdentifier Observed RecordSet}
+          SemaCommand {Record Entry Observe Query}
+          SemaResponse {Recorded RecordIdentifier Observed RecordSet}
+          Topic [Text]
+          RecordIdentifier [Integer]
+          Entry [Topic]
+          Query [Topic]
+          RecordSet [Entry]
+        }
+    ";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("spirit-next:lib", "0.1.0"))
+        .expect("schema planes lower");
+
+    assert_eq!(asschema.input().name.as_str(), "Input");
+    assert_eq!(asschema.output().name.as_str(), "Output");
+
+    let names: Vec<&str> = asschema
+        .namespace()
+        .iter()
+        .map(|declaration| declaration.name().as_str())
+        .collect();
+    for plane_type in ["NexusAction", "NexusResult", "SemaCommand", "SemaResponse"] {
+        assert!(
+            names.contains(&plane_type),
+            "{plane_type} is declared as schema data, not a hidden runtime enum",
         );
     }
 }

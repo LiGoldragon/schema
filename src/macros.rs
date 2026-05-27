@@ -1,4 +1,4 @@
-use nota_next::Block;
+use nota_next::{Block, StructureHeader};
 
 use crate::{
     Asschema, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, SchemaError,
@@ -93,6 +93,7 @@ pub struct MacroContext {
     macros_applied: Vec<String>,
     bindings_seen: Vec<String>,
     expanded_templates: Vec<String>,
+    structure_headers: Vec<StructureHeader>,
 }
 
 impl MacroContext {
@@ -121,6 +122,10 @@ impl MacroContext {
             .push(format!("{} -> {}", macro_name.as_ref(), template.as_ref()));
     }
 
+    pub fn remember_structure_header(&mut self, header: StructureHeader) {
+        self.structure_headers.push(header);
+    }
+
     pub fn positions_seen(&self) -> &[MacroPosition] {
         &self.positions_seen
     }
@@ -135,6 +140,10 @@ impl MacroContext {
 
     pub fn expanded_templates(&self) -> &[String] {
         &self.expanded_templates
+    }
+
+    pub fn structure_headers(&self) -> &[StructureHeader] {
+        &self.structure_headers
     }
 }
 

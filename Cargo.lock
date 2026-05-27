@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "nota-next"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#1c11876b7c90fec53b4c9aafe941543cbdeddeaa"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#5e063042fffe5c58e0345ccadbadf863b07859c1"
 
 [[package]]
 name = "schema-next"
