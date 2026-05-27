@@ -56,6 +56,9 @@ pub enum SchemaError {
         found: String,
     },
     ExpectedEnumVariant,
+    ExpectedEvenBraceEnumPairs {
+        found: usize,
+    },
     MacroDidNotMatch {
         macro_name: String,
     },
@@ -238,6 +241,7 @@ impl MacroRegistry {
         registry.register(RootEnumMacro::new("RootInput", MacroPosition::RootInput));
         registry.register(RootEnumMacro::new("RootOutput", MacroPosition::RootOutput));
         registry.register(RootNamespaceMacro::new());
+        registry.register(BraceEnumVariantsMacro::new());
         for schema_macro in DeclarativeMacroLibrary::builtin()
             .expect("builtin schema macros parse")
             .into_macros()
@@ -530,7 +534,7 @@ impl<'schema> RootEnumBlock<'schema> {
             && self
                 .object
                 .root_object_at(1)
-                .is_some_and(Block::is_parenthesis)
+                .is_some_and(|object| object.is_parenthesis() || object.is_brace())
         {
             return self.variants_from_nested_enum(registry, context);
         }
@@ -569,6 +573,95 @@ impl<'schema> RootEnumBlock<'schema> {
                 expected: "variants",
             }),
         }
+    }
+}
+
+/// Rust macro for the brace-form payload-carrying enum body.
+///
+/// Pairs up the children of a brace into `(Name Payload)` variants —
+/// `{Variant1 Payload1 Variant2 Payload2}` lowers to
+/// `[(Variant1, Payload1), (Variant2, Payload2)]`. Unit-variant brace
+/// input (odd count, or any pair whose payload isn't a PascalCase
+/// symbol the schema can read as a type reference) errors loud rather
+/// than silently producing the wrong shape.
+#[derive(Clone, Debug)]
+struct BraceEnumVariantsMacro {
+    signature: MacroSignature,
+}
+
+impl BraceEnumVariantsMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new("BraceEnumVariants", MacroPosition::EnumVariants, "{ }"),
+        }
+    }
+}
+
+impl SchemaMacro for BraceEnumVariantsMacro {
+    fn name(&self) -> &str {
+        self.signature.name()
+    }
+
+    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
+        self.signature.accepts_position(position)
+            && object.block().is_some_and(|block| block.is_brace())
+    }
+
+    fn lower(
+        &self,
+        object: MacroObject<'_>,
+        position: MacroPosition,
+        context: &mut MacroContext,
+        _registry: &MacroRegistry,
+    ) -> Result<MacroOutput, SchemaError> {
+        self.signature.remember(position, context);
+        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
+        if !object.is_brace() {
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: self.signature.expected_delimiter(),
+            });
+        }
+        BraceEnumVariantsBody::new(object).lower_variants()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BraceEnumVariantsBody<'schema> {
+    object: &'schema Block,
+}
+
+impl<'schema> BraceEnumVariantsBody<'schema> {
+    fn new(object: &'schema Block) -> Self {
+        Self { object }
+    }
+
+    fn lower_variants(&self) -> Result<MacroOutput, SchemaError> {
+        let count = self.object.holds_root_objects();
+        if count % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenBraceEnumPairs { found: count });
+        }
+        let mut variants = Vec::with_capacity(count / 2);
+        for index in (0..count).step_by(2) {
+            let name = self
+                .object
+                .root_object_at(index)
+                .expect("index within brace enum object count")
+                .schema_name()?;
+            let payload = TypeReference {
+                name: self
+                    .object
+                    .root_object_at(index + 1)
+                    .expect("index within brace enum object count")
+                    .schema_name()?,
+            };
+            variants.push(EnumVariant {
+                name,
+                payload: Some(payload),
+            });
+        }
+        Ok(MacroOutput::Variants(variants))
     }
 }
 

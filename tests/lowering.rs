@@ -245,6 +245,7 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
         vec![
             "SchemaStructDefinition",
             "SchemaEnumDefinition",
+            "SchemaEnumDefinitionBrace",
             "SchemaStructFields",
             "SchemaEnumVariants",
         ]
@@ -466,4 +467,122 @@ impl SchemaMacro for RejectingRootImports {
             expected: "rejecting test macro",
         })
     }
+}
+
+// ---------------------------------------------------------------
+// Brace-enum sugar (records 894 / 932). The brace body form
+// `Foo {Variant Payload Other Payload}` is a macro expansion of
+// the canonical paren form `Foo ((Variant Payload) (Other Payload))`.
+// Both shapes produce the same Asschema; only the surface differs.
+// ---------------------------------------------------------------
+
+#[test]
+fn brace_enum_namespace_lowers_to_same_asschema_as_paren_form() {
+    let paren_source =
+        "{} (Input ()) (Output ()) { Routing ((ToInbox Address) (ToOutbox Address)) }";
+    let brace_source = "{} (Input ()) (Output ()) { Routing {ToInbox Address ToOutbox Address} }";
+    let paren = SchemaEngine::default()
+        .lower_source(paren_source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("paren form lowers");
+    let brace = SchemaEngine::default()
+        .lower_source(brace_source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("brace sugar lowers");
+
+    assert_eq!(paren.namespace(), brace.namespace());
+    let TypeDeclaration::Enum(routing) = &brace.namespace()[0] else {
+        panic!("Routing should be an enum");
+    };
+    let pairs: Vec<(&str, Option<&str>)> = routing
+        .variants
+        .iter()
+        .map(|variant| {
+            (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| payload.name.as_str()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![("ToInbox", Some("Address")), ("ToOutbox", Some("Address"))],
+    );
+}
+
+#[test]
+fn brace_enum_at_root_position_lowers_to_same_asschema_as_paren_form() {
+    let paren_source = "{} (Input ((Record Entry) (Observe Query))) (Output ()) {}";
+    let brace_source = "{} (Input {Record Entry Observe Query}) (Output ()) {}";
+    let paren = SchemaEngine::default()
+        .lower_source(paren_source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("paren form lowers");
+    let brace = SchemaEngine::default()
+        .lower_source(brace_source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("brace sugar lowers at root");
+
+    assert_eq!(paren.input(), brace.input());
+    let pairs: Vec<(&str, Option<&str>)> = brace
+        .input()
+        .variants
+        .iter()
+        .map(|variant| {
+            (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| payload.name.as_str()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![("Record", Some("Entry")), ("Observe", Some("Query"))],
+    );
+}
+
+#[test]
+fn brace_enum_rejects_odd_count_as_unit_variant_ambiguity() {
+    // Unit-variant brace input is structurally ambiguous (no payload to pair
+    // each name with); the engine errors loud rather than guessing.
+    let source = "{} (Input ()) (Output ()) { Kind {Decision Principle Correction} }";
+    let error = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("odd brace count should fail");
+    assert_eq!(
+        error,
+        schema_next::SchemaError::ExpectedEvenBraceEnumPairs { found: 3 },
+    );
+}
+
+#[test]
+fn brace_enum_definition_macro_captures_pair_payload_names() {
+    // The declarative SchemaEnumDefinitionBrace macro fires alongside
+    // the paren-form macro; the macros_applied trace shows the brace
+    // version on brace input.
+    let source = "{} (Input ()) (Output ()) { Routing {ToInbox Address ToOutbox Address} }";
+    let mut context = MacroContext::default();
+    SchemaEngine::default()
+        .lower_source_with_context(
+            source,
+            SchemaIdentity::new("example", "0.1.0"),
+            &mut context,
+        )
+        .expect("brace sugar lowers through declarative macro");
+
+    let applied: Vec<&str> = context
+        .macros_applied()
+        .iter()
+        .map(String::as_str)
+        .collect();
+    assert!(
+        applied.contains(&"SchemaEnumDefinitionBrace"),
+        "brace-form namespace macro applies; trace = {applied:?}",
+    );
+    assert!(
+        applied.contains(&"BraceEnumVariants"),
+        "brace-form variant-pairing macro applies; trace = {applied:?}",
+    );
 }

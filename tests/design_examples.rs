@@ -185,10 +185,11 @@ fn design_example_default_engine_has_two_macro_layers() {
         vec![
             "SchemaStructDefinition",
             "SchemaEnumDefinition",
+            "SchemaEnumDefinitionBrace",
             "SchemaStructFields",
             "SchemaEnumVariants",
         ],
-        "four declarative macros loaded from builtin-macros.schema",
+        "five declarative macros loaded from builtin-macros.schema (paren + brace enum forms)",
     );
 
     let positions: Vec<MacroPosition> = library
@@ -199,6 +200,7 @@ fn design_example_default_engine_has_two_macro_layers() {
     assert_eq!(
         positions,
         vec![
+            MacroPosition::NamespaceDeclaration,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,
