@@ -10,6 +10,19 @@
    output enum, namespace declarations, struct fields, and enum variants.
 4. `Asschema` is emitted as the ordered macro-free endpoint.
 
+## Schema Package Entry
+
+`SchemaPackage` is the first crate-local module loader. It expects a crate root
+with a `schema/` directory and loads `schema/lib.schema` as the entrypoint.
+Additional module schemas are addressed by name through
+`schema/<module>.schema`; colon-qualified module names map to nested paths.
+The loaded module receives an identity such as `spirit-next:lib`.
+
+This is intentionally a small loader, not full cross-crate import resolution.
+It proves the convention that schema lives beside the crate source, that the
+crate name is the first namespace segment, and that schema modules are ordinary
+files in a predictable folder.
+
 ## Constraints
 
 - `MacroPosition` is passed into both `matches` and `lower`.
@@ -33,3 +46,8 @@
 - The root `Schema` name is implicit when reading a `.schema` file. Nested
   enum, struct, and newtype definitions still carry their own names.
 - `schemas/root.schema` describes that known root `Schema` type.
+- Schema names may be qualified with single colons (`crate:module:Type`). The
+  local part drives derived field names; the full name remains available for
+  global disambiguation and future import resolution.
+- Root namespace braces are key/value maps only. Authored declarations use
+  `Name Body`; parenthesized `(Name Body)` entries inside braces are rejected.

@@ -48,6 +48,10 @@ pub enum SchemaError {
     ExpectedEvenMapEntries {
         found: usize,
     },
+    Io {
+        path: String,
+        reason: String,
+    },
     ExpectedSymbol {
         found: String,
     },
@@ -409,6 +413,10 @@ impl<'schema> NamespaceBlock<'schema> {
             });
         }
         for index in (0..self.object.holds_root_objects()).step_by(2) {
+            self.object
+                .root_object_at(index)
+                .expect("index within namespace object count")
+                .schema_name()?;
             let pair = MacroPair {
                 name: self
                     .object

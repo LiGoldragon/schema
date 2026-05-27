@@ -12,9 +12,20 @@ impl Name {
         &self.0
     }
 
+    pub fn namespace_segments(&self) -> Vec<&str> {
+        self.0.split(':').collect()
+    }
+
+    pub fn local_part(&self) -> &str {
+        self.namespace_segments()
+            .into_iter()
+            .last()
+            .expect("split always yields at least one segment")
+    }
+
     pub fn field_name(&self) -> String {
         let mut output = String::new();
-        for (index, character) in self.0.chars().enumerate() {
+        for (index, character) in self.local_part().chars().enumerate() {
             if character.is_ascii_uppercase() {
                 if index > 0 {
                     output.push('_');

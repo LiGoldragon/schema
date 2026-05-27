@@ -26,7 +26,7 @@
         schemaFilter = path: type:
           type == "regular" && pkgs.lib.hasSuffix ".schema" path;
         sourceFilter = path: type:
-          (craneLib.filterCargoSources path type) || (schemaFilter path type);
+          type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
           filter = sourceFilter;
@@ -83,8 +83,17 @@
           '';
           namespace-braces-are-key-value = pkgs.runCommand "schema-next-namespace-braces-are-key-value" { } ''
             grep -R "brace_namespace_rejects_parenthesized_named_objects" ${src}/tests/lowering.rs >/dev/null
+            grep -R "brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even" ${src}/tests/lowering.rs >/dev/null
             ! grep -R "NamedTypeDefinition" ${src}/src ${src}/schemas ${src}/tests
             ! grep -R -n -E '^  \([A-Z][A-Za-z0-9]* [\[\(]' ${src}/schemas/root.schema ${src}/schemas/core.schema ${src}/schemas/spirit-min.schema
+            touch $out
+          '';
+          schema-module-entrypoint = pkgs.runCommand "schema-next-schema-module-entrypoint" { } ''
+            grep -R "pub struct SchemaPackage" ${src}/src/module.rs >/dev/null
+            grep -R "lib.schema" ${src}/src/module.rs >/dev/null
+            grep -R "package_loader_reads_schema_lib_entrypoint" ${src}/tests/lowering.rs >/dev/null
+            test -f ${src}/tests/fixtures/spirit-crate/schema/lib.schema
+            grep -R "colon_qualified_names_lower_as_schema_names" ${src}/tests/lowering.rs >/dev/null
             touch $out
           '';
           no-production-free-functions = pkgs.runCommand "schema-next-no-production-free-functions" { } ''

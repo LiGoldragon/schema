@@ -1,6 +1,6 @@
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry,
-    Name, SchemaEngine, SchemaIdentity, SchemaMacro, TypeDeclaration,
+    Name, SchemaEngine, SchemaIdentity, SchemaMacro, SchemaPackage, TypeDeclaration,
 };
 
 #[test]
@@ -67,6 +67,66 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
         error,
         schema_next::SchemaError::ExpectedEvenMapEntries { found: 1 }
     );
+}
+
+#[test]
+fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even() {
+    let source = "{} (Input ()) (Output ()) { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
+    let error = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("brace namespace keys must be symbols");
+
+    assert!(matches!(
+        error,
+        schema_next::SchemaError::ExpectedSymbol { .. }
+    ));
+}
+
+#[test]
+fn colon_qualified_names_lower_as_schema_names() {
+    let source = "{} (Input ((Record schema:spirit:Entry))) (Output ()) { schema:spirit:Topic [Text] schema:spirit:Entry [schema:spirit:Topic] }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
+        .expect("schema lowers");
+
+    assert_eq!(
+        asschema.input().variants[0]
+            .payload
+            .as_ref()
+            .expect("record payload")
+            .name
+            .as_str(),
+        "schema:spirit:Entry"
+    );
+    assert_eq!(
+        asschema.namespace()[1].name().namespace_segments(),
+        vec!["schema", "spirit", "Entry"]
+    );
+    let TypeDeclaration::Newtype(topic) = &asschema.namespace()[0] else {
+        panic!("topic should be a newtype");
+    };
+    assert_eq!(topic.name.local_part(), "Topic");
+    let TypeDeclaration::Newtype(entry) = &asschema.namespace()[1] else {
+        panic!("single-field entry should be a newtype");
+    };
+    assert_eq!(entry.fields[0].name, Name::new("topic"));
+}
+
+#[test]
+fn package_loader_reads_schema_lib_entrypoint() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("spirit-crate");
+    let package = SchemaPackage::new(root, "spirit-next", "0.1.0");
+    let source = package.load_lib().expect("load lib.schema");
+    let asschema = source
+        .lower(&SchemaEngine::default())
+        .expect("schema lowers");
+
+    assert_eq!(source.path(), package.lib_schema_path());
+    assert_eq!(asschema.identity().component().as_str(), "spirit-next:lib");
+    assert!(asschema.type_named("Entry").is_some());
 }
 
 #[test]
