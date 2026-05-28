@@ -60,7 +60,7 @@ pub enum SchemaError {
     RootEnumLabelForbidden {
         label: String,
     },
-    ExpectedMacroMarker {
+    MalformedSchemaNode {
         found: String,
     },
     MacroDidNotMatch {
@@ -341,7 +341,7 @@ impl MacroRegistry {
         ));
         registry.register_node_definition(MacroNodeDefinition::new(
             MacroPosition::TypeReference,
-            MacroDispatch::NamedInvocation,
+            MacroDispatch::TaggedInvocation,
         ));
         registry.register(RootImportsMacro::new());
         registry.register(RootEnumMacro::new(

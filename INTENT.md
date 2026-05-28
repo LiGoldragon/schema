@@ -26,6 +26,13 @@ schema without repeating that name in the authored source.*
 supplies the root type name and field positions; inner variable vectors contain
 macro objects that expand by position into assembled schema.*
 
+*A macro invocation is itself data: a tagged/data-carrying schema node at a
+known macro position. A parenthesized node such as `(Vec [Topic])` has a tag
+(`Vec`) and a data payload (`[Topic]`). Macro definitions and macro calls should
+be represented as data-bearing structs and enum variants before execution so
+the macro table can be serialized, deserialized, tested, and eventually
+pre-assembled.*
+
 *The NOTA delimiter pass emits a compact first-two-level structure header.
 Schema lowering records that header before macro dispatch so textual schema
 triage and binary signal-header triage follow the same structural idea.*
@@ -58,16 +65,16 @@ replies, and processed message events. A schema lowering that collapses those
 objects into untyped procedural steps has lost intent.*
 
 *A type at a reference position may be a collection or option, not only a
-bare name. The surface forms are explicit macro invocations —
-`(@Vec (T))`, `(@KeyValue (K V))`, `(@Option (T))` — lowering to a
+bare name. The surface forms are no-sigil tagged macro invocations —
+`(Vec [T])`, `(KeyValue [K V])`, `(Option [T])` — lowering to a
 `TypeReference` that is `Plain`, `Vector`, `Map`, or `Optional`. The
-`@` head is a macro marker atom, not a symbol candidate. The remaining
-positions are element types, recursing so `(@Vec ((@Option (Topic))))`
-and `(@KeyValue (NodeName (@Vec (Service))))` nest. Collection
-references appear at every reference position: struct fields,
-enum-variant payloads, root input/output variant payloads, and import
-sources. A schema that uses no collection lowers byte-identically to the
-pre-collection engine.*
+first object is the macro tag; the second object is the macro input data.
+The remaining positions are element types, recursing so
+`(Vec [(Option [Topic])])` and `(KeyValue [NodeName (Vec [Service])])`
+nest. Collection references appear at every reference position: struct
+fields, enum-variant payloads, root input/output variant payloads, and
+import sources. A schema that uses no collection lowers byte-identically
+to the pre-collection engine.*
 
 *Cross-crate schema imports are resolved through Cargo-exposed dependency
 schema directories, not duplicated locally. A schema import source uses the
@@ -80,9 +87,10 @@ is macro-free NOTA data with a known root vector typed as `Asschema`; square
 brackets remain NOTA vectors whose field meaning comes from that known type.
 Collection and declaration forms in assembled schema are final variants
 (`Struct`, `Enum`, `Newtype`, `Plain`, `Vector`, `Optional`, `Map`,
-`Carries`), not macro invocations. `@Vec`, `@Option`, `@KeyValue`, `$Name`,
-and other macro/capture syntax belong only to authored `.schema` and macro
-definition inputs before lowering.*
+`Carries`), not macro invocations. `$Name` and other capture syntax belong
+only to macro definition inputs before lowering. No-sigil macro calls belong
+only to authored `.schema`; they must be assembled into final data before
+Rust emission.*
 
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.

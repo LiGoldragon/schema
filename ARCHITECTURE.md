@@ -106,17 +106,22 @@ module schema and checking that the imported type is declared there.
 - `TypeReference` at a reference position is an enum: `Plain(Name)`,
   `Vector(Box<TypeReference>)`, `Map(Box, Box)`, `Optional(Box<TypeReference>)`.
   `TypeReference::from_block` lowers a bare PascalCase symbol to `Plain` and a
-  parenthesised explicit macro-marker form to a collection — `(@Vec (T))` →
-  `Vector`, `(@KeyValue (K V))` → `Map`, `(@Option (T))` → `Optional`. The
-  `@` head is a macro marker atom, not a schema symbol; the inner positions
-  recurse, so collections nest. An unknown head or wrong argument count is a typed
-  `SchemaError::UnknownTypeReferenceForm`; an empty parenthesis is
+  parenthesised tagged macro form to a collection — `(Vec [T])` →
+  `Vector`, `(KeyValue [K V])` → `Map`, `(Option [T])` → `Optional`. The
+  first object is the macro tag; the second object is the macro input data. The
+  inner positions recurse, so collections nest. An unknown head or wrong
+  argument count is a typed `SchemaError::UnknownTypeReferenceForm`; an empty
+  parenthesis is
   `SchemaError::EmptyTypeReference`. Lowering is pure semantics over nota-next's
   already-parsed blocks — not a hand-rolled text parser.
 - Collection references reach every reference position. Struct fields accept an
   explicit pair `(fieldName TypeReference)` for a directly-typed collection
-  field (`(services (@Vec (Service)))`); a bare PascalCase field stays the legacy
+  field (`(services (Vec [Service]))`); a bare PascalCase field stays the legacy
   plain shape with its name derived from the type. Enum-variant payloads, root
   input/output variant payloads, and import sources all lower their type through
   `TypeReference::from_block`. A schema with no collection lowers
   byte-identically to the pre-collection engine.
+- `SchemaNode` is the data model for macro calls before execution. It reads a
+  parenthesized object as a tagged/data-carrying node: first object is the tag,
+  second object is the data. This prevents macro invocation from being a hidden
+  parser branch; macro calls can be inspected and represented as assembled data.

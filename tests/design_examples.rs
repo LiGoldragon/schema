@@ -9,10 +9,11 @@
 //! a design report cites a test, the test in this file should be the
 //! canonical example.
 
-use nota_next::StructureShape;
+use nota_next::{Document, StructureShape};
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroDispatch, MacroPosition, MacroRegistry, Name,
-    SchemaEngine, SchemaError, SchemaIdentity, TypeDeclaration, TypeReference,
+    SchemaEngine, SchemaError, SchemaIdentity, SchemaNode, SchemaNodeData, SchemaNodeValue,
+    TypeDeclaration, TypeReference,
 };
 
 /// Illustrates: a schema document is positional. The common no-import
@@ -168,7 +169,7 @@ fn design_example_colon_qualified_name_decomposes_into_segments() {
 }
 
 /// Illustrates: the default `SchemaEngine` registers macro layers:
-/// Rust-hand-coded for the root positions and type-reference markers
+/// Rust-hand-coded for the root positions and type-reference tagged calls
 /// (RootImports, RootInput, RootOutput, RootNamespace) plus
 /// declarative-from-`builtin-macros.schema` for the inner structural
 /// positions (NamespaceDeclaration / StructFields / EnumVariants —
@@ -284,10 +285,10 @@ fn design_example_schema_lowering_records_source_structure_header() {
 }
 
 /// Illustrates: macro expectations live on node definitions. Structural
-/// macros are expected at namespace/fields/variants positions; explicit
-/// marker macros are expected at type-reference positions.
+/// macros are expected at namespace/fields/variants positions; tagged
+/// macro invocations are expected at type-reference positions.
 #[test]
-fn design_example_macro_node_definitions_separate_structural_from_named_invocation() {
+fn design_example_macro_node_definitions_separate_structural_from_tagged_invocation() {
     let registry = MacroRegistry::with_schema_defaults();
     let dispatches: Vec<(MacroPosition, MacroDispatch)> = registry
         .node_definitions()
@@ -307,8 +308,28 @@ fn design_example_macro_node_definitions_separate_structural_from_named_invocati
             ),
             (MacroPosition::StructFields, MacroDispatch::Structural),
             (MacroPosition::EnumVariants, MacroDispatch::Structural),
-            (MacroPosition::TypeReference, MacroDispatch::NamedInvocation),
+            (
+                MacroPosition::TypeReference,
+                MacroDispatch::TaggedInvocation
+            ),
         ],
+    );
+}
+
+/// Illustrates: a schema-node macro call is data. `(Vec [Topic])`
+/// parses as a tagged node named `Vec` carrying a vector data payload
+/// containing the symbol `Topic`. No sigil is needed because this is
+/// read at a known schema-node position.
+#[test]
+fn design_example_schema_node_macro_call_is_tagged_data() {
+    let document = Document::parse("(Vec [Topic])").expect("nota parses");
+    let node = SchemaNode::from_block(document.root_object_at(0).expect("macro node"))
+        .expect("schema node parses");
+
+    assert_eq!(node.tag().as_str(), "Vec");
+    assert_eq!(
+        node.data(),
+        &SchemaNodeData::Vector(vec![SchemaNodeValue::Symbol(Name::new("Topic"))])
     );
 }
 
@@ -373,10 +394,10 @@ fn design_example_same_name_payload_variant_uses_star_suffix() {
     );
 }
 
-/// Illustrates: user-declared structural macros and named-invocation
-/// macros are both real registry entries. The first has no `@` because
-/// the node position expects structural definitions. The second uses
-/// `@` because the reference position expects named macro invocation.
+/// Illustrates: user-declared structural macros and tagged-invocation
+/// macros are both real registry entries. Neither uses `@`: the node
+/// position says whether the object is a structural definition or a
+/// tagged macro call.
 #[test]
 fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let user_macros = DeclarativeMacroLibrary::from_source(
@@ -385,7 +406,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
           ($Name TextNewtype)
           (Type (Struct $Name [Text])))
         (SchemaMacro Bag TypeReference
-          (@Bag ($Type))
+          (Bag [$Type])
           (Reference (Vector $Type)))
         ",
     )
@@ -397,7 +418,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let asschema = engine
         .lower_source(
-            "() () { Topic TextNewtype Topics [(items (@Bag (Topic)))] }",
+            "() () { Topic TextNewtype Topics [(items (Bag [Topic]))] }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");

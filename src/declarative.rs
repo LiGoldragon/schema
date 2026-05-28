@@ -803,9 +803,9 @@ impl<'template> AssembledFields<'template> {
 /// is the explicit form that collection fields need — the field name
 /// is stated directly and the type position lowers through
 /// `TypeReference::from_block_with_registry`, so
-/// `(nodes (@KeyValue (NodeName NodeProposal)))`,
-/// `(users (@Vec (UserProposal)))`, and `(cache (@Option
-/// (BinaryCache)))` all express a directly-typed collection field.
+/// `(nodes (KeyValue [NodeName NodeProposal]))`,
+/// `(users (Vec [UserProposal]))`, and `(cache (Option
+/// [BinaryCache]))` all express a directly-typed collection field.
 /// The bare form stays byte-identical; the pair form is purely
 /// additive.
 #[derive(Clone, Copy, Debug)]
@@ -1037,19 +1037,23 @@ impl DelimitedNotation {
         format!("{}{}{}", self.opening(), children.join(" "), self.closing())
     }
 
-    fn opening(&self) -> char {
+    fn opening(&self) -> &'static str {
         match self.delimiter {
-            Delimiter::Parenthesis => '(',
-            Delimiter::SquareBracket => '[',
-            Delimiter::Brace => '{',
+            Delimiter::Parenthesis => "(",
+            Delimiter::SquareBracket => "[",
+            Delimiter::Brace => "{",
+            Delimiter::PipeParenthesis => "(|",
+            Delimiter::PipeBrace => "{|",
         }
     }
 
-    fn closing(&self) -> char {
+    fn closing(&self) -> &'static str {
         match self.delimiter {
-            Delimiter::Parenthesis => ')',
-            Delimiter::SquareBracket => ']',
-            Delimiter::Brace => '}',
+            Delimiter::Parenthesis => ")",
+            Delimiter::SquareBracket => "]",
+            Delimiter::Brace => "}",
+            Delimiter::PipeParenthesis => "|)",
+            Delimiter::PipeBrace => "|}",
         }
     }
 }

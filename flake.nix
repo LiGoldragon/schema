@@ -55,7 +55,8 @@
             grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_schema_lowering_records_source_structure_header" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_macro_node_definitions_separate_structural_from_named_invocation" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_macro_node_definitions_separate_structural_from_tagged_invocation" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_schema_node_macro_call_is_tagged_data" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_user_declared_macros_extend_structural_and_named_slots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
@@ -66,8 +67,8 @@
               echo "schema examples must not reintroduce labeled Input/Output root enums" >&2
               exit 1
             fi
-            if grep -R -n -E '\((Vec|Option|KeyValue) ' ${src}/schemas ${src}/tests; then
-              echo "schema examples must use @ macro markers for collection references" >&2
+            if grep -R -n -E '@(Vec|Option|KeyValue|Bag|HashSet)' ${src}/schemas ${src}/tests ${src}/src; then
+              echo "schema examples must use no-sigil tagged macro invocation" >&2
               exit 1
             fi
             if grep -R -n -E 'SchemaEnumDefinitionBrace|BraceEnum|ExpectedEvenBraceEnumPairs' ${src}/src ${src}/schemas ${src}/tests; then

@@ -11,13 +11,13 @@
  Rejected*)
 {
   Topic [Text]
-  Topics [(items (@Vec (Topic)))]
+  Topics [(items (Vec [Topic]))]
   Description [Text]
   AgentName [Text]
   RecordIdentifier [Integer]
   Rejection [Description]
   Entry [Topics Description AgentName DatabaseMarker]
-  Query [Topics (limit (@Option (Integer)))]
+  Query [Topics (limit (Option [Integer]))]
   RecordReceipt [RecordIdentifier DatabaseMarker CommitSequence]
-  RecordSet [(records (@Vec (Entry))) (byTopic (@KeyValue (Topic RecordIdentifier)))]
+  RecordSet [(records (Vec [Entry])) (byTopic (KeyValue [Topic RecordIdentifier]))]
 }

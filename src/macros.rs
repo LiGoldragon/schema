@@ -247,10 +247,10 @@ impl MacroNodeDefinition {
         self.dispatch
     }
 
-    pub fn accepts_named_invocation(&self) -> bool {
+    pub fn accepts_tagged_invocation(&self) -> bool {
         matches!(
             self.dispatch,
-            MacroDispatch::NamedInvocation | MacroDispatch::StructuralOrNamedInvocation
+            MacroDispatch::TaggedInvocation | MacroDispatch::StructuralOrTaggedInvocation
         )
     }
 }
@@ -259,8 +259,8 @@ impl MacroNodeDefinition {
 pub enum MacroDispatch {
     RootPositional,
     Structural,
-    NamedInvocation,
-    StructuralOrNamedInvocation,
+    TaggedInvocation,
+    StructuralOrTaggedInvocation,
 }
 
 pub(crate) trait BlockDebug {

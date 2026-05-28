@@ -74,6 +74,37 @@ fn asschema_schema_is_final_macro_free_data() {
             ("Map", Some("TypeReferencePair")),
         ]
     );
+
+    let TypeDeclaration::Struct(schema_node) = asschema
+        .type_named("SchemaNode")
+        .expect("SchemaNode declaration")
+    else {
+        panic!("SchemaNode must be a struct declaration");
+    };
+    assert_eq!(
+        schema_node
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["tag", "data"],
+        "macro calls are represented as tagged data nodes in assembled schema",
+    );
+
+    let TypeDeclaration::Enum(schema_node_data) = asschema
+        .type_named("SchemaNodeData")
+        .expect("SchemaNodeData declaration")
+    else {
+        panic!("SchemaNodeData must be an enum declaration");
+    };
+    assert_eq!(
+        schema_node_data
+            .variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Unit", "Value", "Vector", "Map"],
+    );
 }
 
 #[test]
@@ -82,9 +113,9 @@ fn lowered_asschema_uses_final_collection_variants_not_macro_sugar() {
         () ()
         {
           Topic [Text]
-          Topics [(items (@Vec (Topic)))]
-          Query [(limit (@Option (Integer)))]
-          RecordSet [(byTopic (@KeyValue (Topic Integer)))]
+          Topics [(items (Vec [Topic]))]
+          Query [(limit (Option [Integer]))]
+          RecordSet [(byTopic (KeyValue [Topic Integer]))]
         }
     ";
 

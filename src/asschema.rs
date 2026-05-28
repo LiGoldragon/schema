@@ -1,6 +1,6 @@
 use std::fmt;
 
-use nota_next::{Block, Document};
+use nota_next::{Block, Delimiter, Document};
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
@@ -187,11 +187,11 @@ pub struct EnumVariant {
 /// `Magnitude`); `Vector`, `Map`, and `Optional` carry inner
 /// references so the schema can express a vector of proposals, an
 /// ordered key-value map of node to config, and an optional config at
-/// the positions that previously only held a name. The macro surface
-/// forms have an explicit marker head and one grouped input object:
-/// `(@Vec (T))`, `(@KeyValue (K V))`, `(@Option (T))`. `@Vec` is a
-/// macro marker atom, not a symbol candidate or type name. `Map` is
-/// the schema-level ordered key-value collection; the concrete Rust
+/// the positions that previously only held a name. The authored macro
+/// surface is a tagged/data-carrying variant: `(Vec [T])`,
+/// `(KeyValue [K V])`, `(Option [T])`. The first object is the macro
+/// tag; the second object is the macro input data. `Map` is the
+/// schema-level ordered key-value collection; the concrete Rust
 /// container is the emitter's concern, not this model's.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeReference {
@@ -243,15 +243,13 @@ impl TypeReference {
     /// a `TypeReference`.
     ///
     /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. A parenthesised macro marker form lowers to
-    /// a collection: `(@Vec (T))` → `Vector`, `(@KeyValue (K V))` →
-    /// `Map`, `(@Option (T))` → `Optional`. The inner positions
-    /// recurse, so `(@Vec ((@Option (Topic))))` and
-    /// `(@KeyValue (NodeName (@Vec (Service))))` nest. The collection
-    /// head is explicitly marked with `@`, so it is not interpreted
-    /// through `schema_name()` and cannot collide with user types.
-    /// nota-next did the structural parse; this is pure semantic
-    /// lowering over its `Block`s, not a hand-rolled text parser.
+    /// lowers to `Plain`. A parenthesised tagged macro form lowers to
+    /// a collection: `(Vec [T])` → `Vector`, `(KeyValue [K V])` →
+    /// `Map`, `(Option [T])` → `Optional`. The inner positions
+    /// recurse, so `(Vec [(Option [Topic])])` and
+    /// `(KeyValue [NodeName (Vec [Service])])` nest. nota-next did
+    /// the structural parse; this is pure semantic lowering over its
+    /// `Block`s, not a hand-rolled text parser.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let mut context = MacroContext::default();
         Self::from_block_with_registry(block, &MacroRegistry::with_schema_defaults(), &mut context)
@@ -276,7 +274,7 @@ impl TypeReference {
         let invocation = TypeReferenceMacroInvocation::from_block(block)?;
         if !registry
             .node_definition(MacroPosition::TypeReference)
-            .is_some_and(|definition| definition.accepts_named_invocation())
+            .is_some_and(|definition| definition.accepts_tagged_invocation())
         {
             return Err(SchemaError::MacroDidNotMatch {
                 macro_name: invocation.name().to_owned(),
@@ -304,39 +302,16 @@ impl TypeReference {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct MacroMarker(String);
-
-impl MacroMarker {
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        let found = block
-            .demote_to_string()
-            .map(str::to_owned)
-            .unwrap_or_else(|| format!("{block:?}"));
-        let Some(name) = found.strip_prefix('@') else {
-            return Err(SchemaError::ExpectedMacroMarker { found });
-        };
-        if name.is_empty() {
-            return Err(SchemaError::ExpectedMacroMarker { found });
-        }
-        Ok(Self(name.to_owned()))
-    }
-
-    fn name(&self) -> &str {
-        &self.0
-    }
-}
-
-#[derive(Clone, Debug)]
 struct TypeReferenceMacroInvocation<'schema> {
-    marker: MacroMarker,
-    arguments: &'schema Block,
+    name: Name,
+    data: MacroInvocationData<'schema>,
 }
 
 impl<'schema> TypeReferenceMacroInvocation<'schema> {
     fn from_block(block: &'schema Block) -> Result<Self, SchemaError> {
         if !block.is_parenthesis() {
             return Err(SchemaError::ExpectedDelimiter {
-                expected: "(@Macro (...))",
+                expected: "(Macro [input])",
             });
         }
         if block.holds_root_objects() != 2 {
@@ -345,36 +320,58 @@ impl<'schema> TypeReferenceMacroInvocation<'schema> {
                 .and_then(Block::demote_to_string)
                 .unwrap_or("<missing>");
             return Err(SchemaError::UnknownTypeReferenceForm {
-                head: head.trim_start_matches('@').to_owned(),
+                head: head.to_owned(),
                 argument_count: block.holds_root_objects().saturating_sub(1),
             });
         }
-        let marker = MacroMarker::from_block(
-            block
-                .root_object_at(0)
-                .ok_or(SchemaError::EmptyTypeReference)?,
-        )?;
-        let arguments = block.root_object_at(1).expect("root count checked");
-        if !arguments.is_parenthesis() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: "( ) grouped macro input",
-            });
-        }
-        Ok(Self { marker, arguments })
+        let name = block
+            .root_object_at(0)
+            .ok_or(SchemaError::EmptyTypeReference)?
+            .schema_name()?;
+        let data = MacroInvocationData::from_block(block.root_object_at(1).expect("count checked"));
+        Ok(Self { name, data })
     }
 
     fn name(&self) -> &str {
-        self.marker.name()
+        self.name.as_str()
     }
 
     fn argument_count(&self) -> usize {
-        self.arguments.holds_root_objects()
+        self.data.argument_count()
     }
 
     fn argument_at(&self, index: usize) -> &Block {
-        self.arguments
-            .root_object_at(index)
-            .expect("argument count checked")
+        self.data.argument_at(index)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MacroInvocationData<'schema> {
+    Delimited(&'schema [Block]),
+    Single(&'schema Block),
+}
+
+impl<'schema> MacroInvocationData<'schema> {
+    fn from_block(block: &'schema Block) -> Self {
+        match block {
+            Block::Delimited { root_objects, .. } => Self::Delimited(root_objects),
+            Block::PipeText(_) | Block::Atom(_) => Self::Single(block),
+        }
+    }
+
+    fn argument_count(&self) -> usize {
+        match self {
+            Self::Delimited(objects) => objects.len(),
+            Self::Single(_) => 1,
+        }
+    }
+
+    fn argument_at(&self, index: usize) -> &'schema Block {
+        match self {
+            Self::Delimited(objects) => objects.get(index).expect("argument count checked"),
+            Self::Single(object) if index == 0 => object,
+            Self::Single(_) => panic!("argument count checked"),
+        }
     }
 }
 
@@ -383,6 +380,265 @@ enum TypeReferenceMacroKind {
     Vector,
     Map,
     Optional,
+}
+
+/// Data representation of a schema-node object before macro execution.
+///
+/// A parenthesized schema node is a tagged/data-carrying variant:
+/// `(Vec [Topic])` has tag `Vec` and data `[Topic]`. This type exists
+/// so macro calls can be inspected, serialized through assembled
+/// schema, and tested as data rather than disappearing into parser
+/// control flow.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchemaNode {
+    tag: Name,
+    data: SchemaNodeData,
+}
+
+impl SchemaNode {
+    pub fn new(tag: Name, data: SchemaNodeData) -> Self {
+        Self { tag, data }
+    }
+
+    pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let children = match block {
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                root_objects,
+                ..
+            } => root_objects,
+            _ => {
+                return Err(SchemaError::MalformedSchemaNode {
+                    found: SchemaNodeNotation::new(block).compact(),
+                });
+            }
+        };
+        let tag = children
+            .first()
+            .ok_or_else(|| SchemaError::MalformedSchemaNode {
+                found: SchemaNodeNotation::new(block).compact(),
+            })?
+            .schema_name()?;
+        let data = match children.len() {
+            1 => SchemaNodeData::Unit,
+            2 => SchemaNodeData::from_block(&children[1])?,
+            _ => {
+                return Err(SchemaError::MalformedSchemaNode {
+                    found: SchemaNodeNotation::new(block).compact(),
+                });
+            }
+        };
+        Ok(Self { tag, data })
+    }
+
+    pub fn tag(&self) -> &Name {
+        &self.tag
+    }
+
+    pub fn data(&self) -> &SchemaNodeData {
+        &self.data
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SchemaNodeData {
+    Unit,
+    Value(SchemaNodeValue),
+    Vector(Vec<SchemaNodeValue>),
+    Map(Vec<SchemaNodePair>),
+}
+
+impl SchemaNodeData {
+    pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        match block {
+            Block::Delimited {
+                delimiter: Delimiter::SquareBracket,
+                root_objects,
+                ..
+            } => Ok(Self::Vector(SchemaNodeValues::new(root_objects).read()?)),
+            Block::Delimited {
+                delimiter: Delimiter::Brace,
+                root_objects,
+                ..
+            } => Ok(Self::Map(SchemaNodeMapEntries::new(root_objects).read()?)),
+            _ => Ok(Self::Value(SchemaNodeValue::from_block(block)?)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SchemaNodeValue {
+    Symbol(Name),
+    Text(String),
+    Node(Box<SchemaNode>),
+    Vector(Vec<SchemaNodeValue>),
+    Map(Vec<SchemaNodePair>),
+}
+
+impl SchemaNodeValue {
+    pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        match block {
+            Block::Atom(_) => block.schema_name().map(Self::Symbol),
+            Block::PipeText(text) => Ok(Self::Text(text.text.clone())),
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            } => Ok(Self::Node(Box::new(SchemaNode::from_block(block)?))),
+            Block::Delimited {
+                delimiter: Delimiter::SquareBracket,
+                root_objects,
+                ..
+            } => Ok(Self::Vector(SchemaNodeValues::new(root_objects).read()?)),
+            Block::Delimited {
+                delimiter: Delimiter::Brace,
+                root_objects,
+                ..
+            } => Ok(Self::Map(SchemaNodeMapEntries::new(root_objects).read()?)),
+            Block::Delimited {
+                delimiter: Delimiter::PipeParenthesis,
+                ..
+            }
+            | Block::Delimited {
+                delimiter: Delimiter::PipeBrace,
+                ..
+            } => Err(SchemaError::MalformedSchemaNode {
+                found: SchemaNodeNotation::new(block).compact(),
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchemaNodePair {
+    key: Name,
+    value: SchemaNodeValue,
+}
+
+impl SchemaNodePair {
+    pub fn new(key: Name, value: SchemaNodeValue) -> Self {
+        Self { key, value }
+    }
+
+    pub fn key(&self) -> &Name {
+        &self.key
+    }
+
+    pub fn value(&self) -> &SchemaNodeValue {
+        &self.value
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SchemaNodeValues<'schema> {
+    objects: &'schema [Block],
+}
+
+impl<'schema> SchemaNodeValues<'schema> {
+    fn new(objects: &'schema [Block]) -> Self {
+        Self { objects }
+    }
+
+    fn read(&self) -> Result<Vec<SchemaNodeValue>, SchemaError> {
+        let mut values = Vec::new();
+        for object in self.objects {
+            values.push(SchemaNodeValue::from_block(object)?);
+        }
+        Ok(values)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SchemaNodeMapEntries<'schema> {
+    objects: &'schema [Block],
+}
+
+impl<'schema> SchemaNodeMapEntries<'schema> {
+    fn new(objects: &'schema [Block]) -> Self {
+        Self { objects }
+    }
+
+    fn read(&self) -> Result<Vec<SchemaNodePair>, SchemaError> {
+        if self.objects.len() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: self.objects.len(),
+            });
+        }
+        let mut pairs = Vec::new();
+        for chunk in self.objects.chunks_exact(2) {
+            pairs.push(SchemaNodePair::new(
+                chunk[0].schema_name()?,
+                SchemaNodeValue::from_block(&chunk[1])?,
+            ));
+        }
+        Ok(pairs)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SchemaNodeNotation<'schema> {
+    block: &'schema Block,
+}
+
+impl<'schema> SchemaNodeNotation<'schema> {
+    fn new(block: &'schema Block) -> Self {
+        Self { block }
+    }
+
+    fn compact(&self) -> String {
+        match self.block {
+            Block::Delimited {
+                delimiter,
+                root_objects,
+                ..
+            } => {
+                let children = root_objects
+                    .iter()
+                    .map(|child| Self::new(child).compact())
+                    .collect::<Vec<_>>();
+                SchemaNodeDelimitedNotation::new(*delimiter).wrap(&children)
+            }
+            Block::PipeText(text) => format!("[|{}|]", text.text),
+            Block::Atom(atom) => atom.text().to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SchemaNodeDelimitedNotation {
+    delimiter: Delimiter,
+}
+
+impl SchemaNodeDelimitedNotation {
+    fn new(delimiter: Delimiter) -> Self {
+        Self { delimiter }
+    }
+
+    fn wrap(&self, children: &[String]) -> String {
+        if children.is_empty() {
+            return format!("{}{}", self.opening(), self.closing());
+        }
+        format!("{}{}{}", self.opening(), children.join(" "), self.closing())
+    }
+
+    fn opening(&self) -> &'static str {
+        match self.delimiter {
+            Delimiter::Parenthesis => "(",
+            Delimiter::SquareBracket => "[",
+            Delimiter::Brace => "{",
+            Delimiter::PipeParenthesis => "(|",
+            Delimiter::PipeBrace => "{|",
+        }
+    }
+
+    fn closing(&self) -> &'static str {
+        match self.delimiter {
+            Delimiter::Parenthesis => ")",
+            Delimiter::SquareBracket => "]",
+            Delimiter::Brace => "}",
+            Delimiter::PipeParenthesis => "|)",
+            Delimiter::PipeBrace => "|}",
+        }
+    }
 }
 
 struct AsschemaNotaWriter<'schema> {
@@ -985,7 +1241,7 @@ impl SchemaMacro for TypeReferenceMacro {
         }
         let invocation = TypeReferenceMacroInvocation::from_block(object.block().ok_or(
             SchemaError::ExpectedDelimiter {
-                expected: "(@Macro (...))",
+                expected: "(Macro [input])",
             },
         )?)?;
         if invocation.argument_count() != self.expected_arguments() {
