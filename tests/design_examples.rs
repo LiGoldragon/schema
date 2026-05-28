@@ -306,7 +306,7 @@ fn design_example_brace_macro_dispatch_depends_on_position_and_pair_shape() {
                 variant
                     .payload
                     .as_ref()
-                    .map(|payload| payload.name.as_str()),
+                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
             )
         })
         .collect();

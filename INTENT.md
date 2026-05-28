@@ -57,6 +57,18 @@ that later code will act on: sent message events, Nexus mail, SEMA work, SEMA
 replies, and processed message events. A schema lowering that collapses those
 objects into untyped procedural steps has lost intent.*
 
+*A type at a reference position may be a collection or option, not only a
+bare name. The surface forms are positional and collection-name-first —
+`(Vec T)`, `(KeyValue K V)`, `(Option T)` — lowering to a `TypeReference`
+that is `Plain`, `Vector`, `Map`, or `Optional`. The head names the
+collection and the remaining positions are element types, recursing so
+`(Vec (Option Topic))` and `(KeyValue NodeName (Vec Service))` nest. The
+map keyword is `KeyValue` (the redundant `Map` suffix is dropped); it
+still denotes an ordered map. Collection references appear at every
+reference position: struct fields, enum-variant payloads, root
+input/output variant payloads, and import sources. A schema that uses no
+collection lowers byte-identically to the pre-collection engine.*
+
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.
 

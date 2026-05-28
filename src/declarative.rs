@@ -782,13 +782,52 @@ impl<'template> AssembledFields<'template> {
     fn lower(&self) -> Result<Vec<FieldDeclaration>, SchemaError> {
         let mut fields = Vec::new();
         for object in self.objects {
-            let name = object.schema_name()?;
-            fields.push(FieldDeclaration {
-                name: Name::new(name.field_name()),
-                reference: TypeReference { name },
-            });
+            fields.push(AssembledField::new(object).lower()?);
         }
         Ok(fields)
+    }
+}
+
+/// One field inside a struct body.
+///
+/// A bare PascalCase symbol (`Topic`) is the legacy form: the field
+/// name is derived from the type name (`topic`) and the type is a
+/// `Plain` reference. A parenthesised pair `(fieldName TypeReference)`
+/// is the explicit form that collection fields need — the field name
+/// is stated directly and the type position lowers through
+/// `TypeReference::from_block`, so `(nodes (KeyValue NodeName
+/// NodeProposal))`, `(users (Vec UserProposal))`, and `(cache (Option
+/// BinaryCache))` all express a directly-typed collection field. The
+/// bare form stays byte-identical; the pair form is purely additive.
+#[derive(Clone, Copy, Debug)]
+struct AssembledField<'template> {
+    object: &'template Block,
+}
+
+impl<'template> AssembledField<'template> {
+    fn new(object: &'template Block) -> Self {
+        Self { object }
+    }
+
+    fn lower(&self) -> Result<FieldDeclaration, SchemaError> {
+        if self.object.is_parenthesis() && self.object.holds_root_objects() == 2 {
+            let field_name = self
+                .object
+                .root_object_at(0)
+                .expect("count checked")
+                .schema_name()?;
+            let reference =
+                TypeReference::from_block(self.object.root_object_at(1).expect("count checked"))?;
+            return Ok(FieldDeclaration {
+                name: Name::new(field_name.field_name()),
+                reference,
+            });
+        }
+        let name = self.object.schema_name()?;
+        Ok(FieldDeclaration {
+            name: Name::new(name.field_name()),
+            reference: TypeReference::Plain(name),
+        })
     }
 }
 
@@ -850,13 +889,9 @@ impl<'template> AssembledVariant<'template> {
                     .root_object_at(0)
                     .expect("count checked")
                     .schema_name()?,
-                payload: Some(TypeReference {
-                    name: self
-                        .object
-                        .root_object_at(1)
-                        .expect("count checked")
-                        .schema_name()?,
-                }),
+                payload: Some(TypeReference::from_block(
+                    self.object.root_object_at(1).expect("count checked"),
+                )?),
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }

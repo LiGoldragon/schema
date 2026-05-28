@@ -84,6 +84,11 @@ pub enum SchemaError {
     UnknownAssembledTemplate {
         found: String,
     },
+    EmptyTypeReference,
+    UnknownTypeReferenceForm {
+        head: String,
+        argument_count: usize,
+    },
 }
 
 impl From<nota_next::NotaError> for SchemaError {
@@ -345,7 +350,7 @@ impl SchemaMacro for RootImportsMacro {
                 .schema_name()?;
             imports.push(ImportDeclaration {
                 local_name,
-                source: TypeReference { name: source },
+                source: TypeReference::Plain(source),
             });
         }
         Ok(MacroOutput::Imports(imports))
@@ -651,13 +656,11 @@ impl<'schema> BraceEnumVariantsBody<'schema> {
                 .root_object_at(index)
                 .expect("index within brace enum object count")
                 .schema_name()?;
-            let payload = TypeReference {
-                name: self
-                    .object
+            let payload = TypeReference::from_block(
+                self.object
                     .root_object_at(index + 1)
-                    .expect("index within brace enum object count")
-                    .schema_name()?,
-            };
+                    .expect("index within brace enum object count"),
+            )?;
             variants.push(EnumVariant {
                 name,
                 payload: Some(payload),
@@ -706,13 +709,9 @@ impl<'schema> SchemaVariant<'schema> {
                     .root_object_at(0)
                     .expect("count checked")
                     .schema_name()?,
-                payload: Some(TypeReference {
-                    name: self
-                        .object
-                        .root_object_at(1)
-                        .expect("count checked")
-                        .schema_name()?,
-                }),
+                payload: Some(TypeReference::from_block(
+                    self.object.root_object_at(1).expect("count checked"),
+                )?),
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }

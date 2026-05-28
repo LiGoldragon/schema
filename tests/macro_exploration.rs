@@ -682,9 +682,7 @@ impl SchemaMacro for PairOnlyMacro {
         context.remember_macro(self.label);
         context.remember_position(position);
         let _pair = object.pair().expect("pair shape checked");
-        Ok(MacroOutput::References(vec![TypeReference {
-            name: schema_next::Name::new("Witness"),
-        }]))
+        Ok(MacroOutput::References(vec![TypeReference::new("Witness")]))
     }
 }
 

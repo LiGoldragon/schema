@@ -75,3 +75,20 @@ files in a predictable folder.
 - Imports and exports are schema objects too. Their paths use the workspace's
   single-colon namespace (`crate:module:Type`) so assembled schema can mirror
   the Rust module tree without inheriting Rust's `::` syntax.
+- `TypeReference` at a reference position is an enum: `Plain(Name)`,
+  `Vector(Box<TypeReference>)`, `Map(Box, Box)`, `Optional(Box<TypeReference>)`.
+  `TypeReference::from_block` lowers a bare PascalCase symbol to `Plain` and a
+  parenthesised head-symbol form to a collection — `(Vec T)` → `Vector`,
+  `(KeyValue K V)` → `Map`, `(Option T)` → `Optional`. The head is a positional
+  collection name (not a keyword-tagged record); the inner positions recurse, so
+  collections nest. An unknown head or wrong argument count is a typed
+  `SchemaError::UnknownTypeReferenceForm`; an empty parenthesis is
+  `SchemaError::EmptyTypeReference`. Lowering is pure semantics over nota-next's
+  already-parsed blocks — not a hand-rolled text parser.
+- Collection references reach every reference position. Struct fields accept an
+  explicit pair `(fieldName TypeReference)` for a directly-typed collection
+  field (`(services (Vec Service))`); a bare PascalCase field stays the legacy
+  plain shape with its name derived from the type. Enum-variant payloads, root
+  input/output variant payloads, and import sources all lower their type through
+  `TypeReference::from_block`. A schema with no collection lowers
+  byte-identically to the pre-collection engine.

@@ -18,7 +18,8 @@ fn lowers_spirit_schema_into_ordered_asschema() {
             .payload
             .as_ref()
             .expect("payload")
-            .name
+            .plain_name()
+            .expect("plain payload")
             .as_str(),
         "Entry"
     );
@@ -94,7 +95,8 @@ fn colon_qualified_names_lower_as_schema_names() {
             .payload
             .as_ref()
             .expect("record payload")
-            .name
+            .plain_name()
+            .expect("plain payload")
             .as_str(),
         "schema:spirit:Entry"
     );
@@ -150,7 +152,7 @@ fn root_schema_describes_the_schema_root_type() {
         schema
             .fields
             .iter()
-            .map(|field| field.reference.name.as_str())
+            .map(|field| field.reference.plain_name().expect("plain field").as_str())
             .collect::<Vec<_>>(),
         vec!["Imports", "Input", "Output", "Namespace"]
     );
@@ -170,7 +172,7 @@ fn root_schema_describes_the_schema_root_type() {
                 variant
                     .payload
                     .as_ref()
-                    .map(|payload| payload.name.as_str())
+                    .map(|payload| payload.plain_name().expect("plain payload").as_str())
             ))
             .collect::<Vec<_>>(),
         vec![
@@ -198,7 +200,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         core_schema
             .fields
             .iter()
-            .map(|field| field.reference.name.as_str())
+            .map(|field| field.reference.plain_name().expect("plain field").as_str())
             .collect::<Vec<_>>(),
         vec![
             "BuiltinMacroPositions",
@@ -501,7 +503,7 @@ fn brace_enum_namespace_lowers_to_same_asschema_as_paren_form() {
                 variant
                     .payload
                     .as_ref()
-                    .map(|payload| payload.name.as_str()),
+                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
             )
         })
         .collect();
@@ -533,7 +535,7 @@ fn brace_enum_at_root_position_lowers_to_same_asschema_as_paren_form() {
                 variant
                     .payload
                     .as_ref()
-                    .map(|payload| payload.name.as_str()),
+                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
             )
         })
         .collect();
