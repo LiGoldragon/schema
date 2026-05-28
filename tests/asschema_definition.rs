@@ -35,7 +35,7 @@ fn asschema_data_model_is_built_from_real_schema_fixture() {
     assert_eq!(
         records.reference,
         TypeReference::Vector(Box::new(TypeReference::new("Entry"))),
-        "schema Vec call lowers into typed Vector data, not rendered ASSchema text",
+        "schema native vector reference lowers into typed Vector data",
     );
 
     let by_topic = record_set
@@ -49,7 +49,7 @@ fn asschema_data_model_is_built_from_real_schema_fixture() {
             Box::new(TypeReference::new("Topic")),
             Box::new(TypeReference::new("RecordIdentifier")),
         ),
-        "schema KeyValue call lowers into typed Map data, not rendered ASSchema text",
+        "schema native key-value reference lowers into typed Map data",
     );
 }
 

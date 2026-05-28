@@ -7,8 +7,8 @@ resolved_imports
   DatabaseMarker = marker_core::schema::mail::DatabaseMarker
   CommitSequence = marker_core::schema::mail::CommitSequence
 macro_trace
-  applied RootImports -> RootInput -> SchemaEnumVariants -> RootOutput -> SchemaEnumVariants -> RootNamespace -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Option -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> KeyValue
-  positions RootImports -> RootInput -> EnumVariants -> RootOutput -> EnumVariants -> RootNamespace -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> TypeReference
+  applied RootImports -> RootInput -> SchemaEnumVariants -> RootOutput -> SchemaEnumVariants -> RootNamespace -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields
+  positions RootImports -> RootInput -> EnumVariants -> RootOutput -> EnumVariants -> RootNamespace -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields
 input Input
   Record(Entry)
   Observe(Query)
@@ -19,7 +19,7 @@ output Output
   Observed(RecordSet)
   Marked(DatabaseMarker)
   Committed(CommitSequence)
-  Rejected(Rejected)
+  Rejected(Rejection)
 namespace
   newtype Topic = Text
   newtype Topics = Vec<Topic>

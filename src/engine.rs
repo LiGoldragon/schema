@@ -344,7 +344,7 @@ impl MacroRegistry {
         ));
         registry.register_node_definition(MacroNodeDefinition::new(
             MacroPosition::TypeReference,
-            MacroDispatch::TaggedInvocation,
+            MacroDispatch::StructuralOrTaggedInvocation,
         ));
         registry.register(RootImportsMacro::new());
         registry.register(RootEnumMacro::new(
@@ -358,7 +358,6 @@ impl MacroRegistry {
             "Output",
         ));
         registry.register(RootNamespaceMacro::new());
-        TypeReference::register_builtin_macros(&mut registry);
         for schema_macro in DeclarativeMacroLibrary::builtin()
             .expect("builtin schema macros parse")
             .into_macros()

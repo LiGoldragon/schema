@@ -285,8 +285,9 @@ fn design_example_schema_lowering_records_source_structure_header() {
 }
 
 /// Illustrates: macro expectations live on node definitions. Structural
-/// macros are expected at namespace/fields/variants positions; tagged
-/// macro invocations are expected at type-reference positions.
+/// macros are expected at namespace/fields/variants positions; native
+/// structure or tagged user macro invocations are expected at
+/// type-reference positions.
 #[test]
 fn design_example_macro_node_definitions_separate_structural_from_tagged_invocation() {
     let registry = MacroRegistry::with_schema_defaults();
@@ -310,23 +311,23 @@ fn design_example_macro_node_definitions_separate_structural_from_tagged_invocat
             (MacroPosition::EnumVariants, MacroDispatch::Structural),
             (
                 MacroPosition::TypeReference,
-                MacroDispatch::TaggedInvocation
+                MacroDispatch::StructuralOrTaggedInvocation
             ),
         ],
     );
 }
 
-/// Illustrates: a schema-node macro call is data. `(Vec [Topic])`
-/// parses as a tagged node named `Vec` carrying a vector data payload
+/// Illustrates: a schema-node macro call is data. `(Normalize [Topic])`
+/// parses as a tagged node named `Normalize` carrying a vector data payload
 /// containing the symbol `Topic`. No sigil is needed because this is
 /// read at a known schema-node position.
 #[test]
 fn design_example_schema_node_macro_call_is_tagged_data() {
-    let document = Document::parse("(Vec [Topic])").expect("nota parses");
+    let document = Document::parse("(Normalize [Topic])").expect("nota parses");
     let node = SchemaNode::from_block(document.root_object_at(0).expect("macro node"))
         .expect("schema node parses");
 
-    assert_eq!(node.tag().as_str(), "Vec");
+    assert_eq!(node.tag().as_str(), "Normalize");
     assert_eq!(
         node.data(),
         &SchemaNodeData::Vector(vec![SchemaNodeValue::Symbol(Name::new("Topic"))])
@@ -362,15 +363,14 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
     assert_eq!(variants, vec![("Record", Some("Entry")), ("Drop", None)]);
 }
 
-/// Illustrates: `Record*` is shorthand for the common data-carrying
-/// variant shape `(Record Record)`. The star is part of enum-variant
-/// structural sugar, not a macro invocation.
+/// Illustrates: same-name payload variants are explicit data-carrying
+/// variants. The old star suffix is gone from authored schema.
 #[test]
-fn design_example_same_name_payload_variant_uses_star_suffix() {
-    let source = "(Record*) (Recorded*) { Record [Description] Recorded [RecordIdentifier] }";
+fn design_example_same_name_payload_variant_uses_explicit_payload() {
+    let source = "((Record Record)) ((Recorded Recorded)) { Record [Description] Recorded [RecordIdentifier] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("star variant sugar lowers");
+        .expect("explicit same-name variants lower");
 
     assert_eq!(
         asschema.input().variants[0]

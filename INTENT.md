@@ -27,11 +27,11 @@ supplies the root type name and field positions; inner variable vectors contain
 macro objects that expand by position into assembled schema.*
 
 *A macro invocation is itself data: a tagged/data-carrying schema node at a
-known macro position. A parenthesized node such as `(Vec [Topic])` has a tag
-(`Vec`) and a data payload (`[Topic]`). Macro definitions and macro calls should
-be represented as data-bearing structs and enum variants before execution so
-the macro table can be serialized, deserialized, tested, and eventually
-pre-assembled.*
+known macro position. A parenthesized node such as `(Normalize [Topic])` has a
+tag (`Normalize`) and a data payload (`[Topic]`). Macro definitions and macro
+calls should be represented as data-bearing structs and enum variants before
+execution so the macro table can be serialized, deserialized, tested, and
+eventually pre-assembled.*
 
 *The NOTA delimiter pass emits a compact first-two-level structure header.
 Schema lowering records that header before macro dispatch so textual schema
@@ -65,16 +65,13 @@ replies, and processed message events. A schema lowering that collapses those
 objects into untyped procedural steps has lost intent.*
 
 *A type at a reference position may be a collection or option, not only a
-bare name. The surface forms are no-sigil tagged macro invocations —
-`(Vec [T])`, `(KeyValue [K V])`, `(Option [T])` — lowering to a
-`TypeReference` that is `Plain`, `Vector`, `Map`, or `Optional`. The
-first object is the macro tag; the second object is the macro input data.
-The remaining positions are element types, recursing so
-`(Vec [(Option [Topic])])` and `(KeyValue [NodeName (Vec [Service])])`
+bare name. The surface forms are native NOTA structure: `[T]` lowers to
+`Vector`, `{K V}` lowers to `Map`, and `(Optional T)` lowers to `Optional`.
+The inner positions recurse, so `[(Optional Topic)]` and `{NodeName [Service]}`
 nest. Collection references appear at every reference position: struct
 fields, enum-variant payloads, root input/output variant payloads, and
-import sources. A schema that uses no collection lowers byte-identically
-to the pre-collection engine.*
+import sources. User-declared macros may still appear at type-reference
+positions, but the built-in collection forms are no longer macro calls.*
 
 *Cross-crate schema imports are resolved through Cargo-exposed dependency
 schema directories, not duplicated locally. A schema import source uses the

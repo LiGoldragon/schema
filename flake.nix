@@ -58,6 +58,7 @@
             grep -R "design_example_schema_node_macro_call_is_tagged_data" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_user_declared_macros_extend_structural_and_named_slots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_same_name_payload_variant_uses_explicit_payload" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
             touch $out
           '';
@@ -67,7 +68,15 @@
               exit 1
             fi
             if grep -R -n -E '@(Vec|Option|KeyValue|Bag|HashSet)' ${src}/schemas ${src}/tests ${src}/src; then
-              echo "schema examples must use no-sigil tagged macro invocation" >&2
+              echo "schema examples must not reintroduce the old @ macro sigil" >&2
+              exit 1
+            fi
+            if grep -R -n -E '\((Vec|Option|KeyValue) \[' ${src}/schemas ${src}/tests; then
+              echo "schema examples must use native collection syntax: [T], {K V}, (Optional T)" >&2
+              exit 1
+            fi
+            if grep -R -n -E '[A-Za-z][A-Za-z0-9]*\*' ${src}/tests/fixtures ${src}/schemas/spirit-min.schema; then
+              echo "schema examples must not reintroduce star-suffix same-name payload sugar" >&2
               exit 1
             fi
             if grep -R -n -E 'SchemaEnumDefinitionBrace|BraceEnum|ExpectedEvenBraceEnumPairs' ${src}/src ${src}/schemas ${src}/tests; then

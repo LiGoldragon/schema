@@ -8,16 +8,16 @@
  (Observed RecordSet)
  (Marked DatabaseMarker)
  (Committed CommitSequence)
- Rejected*)
+ (Rejected Rejection))
 {
   Topic [Text]
-  Topics [(items (Vec [Topic]))]
+  Topics [[Topic]]
   Description [Text]
   AgentName [Text]
   RecordIdentifier [Integer]
   Rejection [Description]
   Entry [Topics Description AgentName DatabaseMarker]
-  Query [Topics (limit (Option [Integer]))]
+  Query [Topics (limit (Optional Integer))]
   RecordReceipt [RecordIdentifier DatabaseMarker CommitSequence]
-  RecordSet [(records (Vec [Entry])) (byTopic (KeyValue [Topic RecordIdentifier]))]
+  RecordSet [(records [Entry]) (byTopic {Topic RecordIdentifier})]
 }

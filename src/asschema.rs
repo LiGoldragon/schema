@@ -3,8 +3,8 @@ use std::fmt;
 use nota_next::{Block, Delimiter};
 
 use crate::{
-    MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError, SchemaMacro,
-    macros::SchemaBlockExt,
+    MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
+    macros::{BlockDebug, SchemaBlockExt},
 };
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -171,17 +171,12 @@ pub struct EnumVariant {
 /// A type at a reference position — a struct field's type, an enum
 /// variant's payload, or an import source.
 ///
-/// A reference is no longer just a bare name: it can wrap that name
-/// in a collection or option. `Plain` is the leaf (`Topic`,
-/// `Magnitude`); `Vector`, `Map`, and `Optional` carry inner
-/// references so the schema can express a vector of proposals, an
-/// ordered key-value map of node to config, and an optional config at
-/// the positions that previously only held a name. The authored macro
-/// surface is a tagged/data-carrying variant: `(Vec [T])`,
-/// `(KeyValue [K V])`, `(Option [T])`. The first object is the macro
-/// tag; the second object is the macro input data. `Map` is the
-/// schema-level ordered key-value collection; the concrete Rust
-/// container is the emitter's concern, not this model's.
+/// `Plain` is the leaf (`Topic`, `Magnitude`). `Vector`, `Map`, and
+/// `Optional` carry inner references. These are read from native NOTA
+/// structure, not old collection macro calls: `[T]` lowers to
+/// `Vector<T>`, `{K V}` lowers to `Map<K, V>`, and `(Optional T)`
+/// lowers to `Optional<T>`. Parentheses with other heads remain
+/// available for user-declared type-reference macros.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeReference {
     Plain(Name),
@@ -191,21 +186,6 @@ pub enum TypeReference {
 }
 
 impl TypeReference {
-    pub(crate) fn register_builtin_macros(registry: &mut MacroRegistry) {
-        registry.register(TypeReferenceMacro::new(
-            "Vec",
-            TypeReferenceMacroKind::Vector,
-        ));
-        registry.register(TypeReferenceMacro::new(
-            "Option",
-            TypeReferenceMacroKind::Optional,
-        ));
-        registry.register(TypeReferenceMacro::new(
-            "KeyValue",
-            TypeReferenceMacroKind::Map,
-        ));
-    }
-
     /// Construct a plain (leaf) reference to a named type. This is the
     /// legacy shape every non-collection reference still uses.
     pub fn new(name: impl Into<String>) -> Self {
@@ -232,12 +212,11 @@ impl TypeReference {
     /// a `TypeReference`.
     ///
     /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. A parenthesised tagged macro form lowers to
-    /// a collection: `(Vec [T])` → `Vector`, `(KeyValue [K V])` →
-    /// `Map`, `(Option [T])` → `Optional`. The inner positions
-    /// recurse, so `(Vec [(Option [Topic])])` and
-    /// `(KeyValue [NodeName (Vec [Service])])` nest. nota-next did
-    /// the structural parse; this is pure semantic lowering over its
+    /// lowers to `Plain`. Native NOTA collection structure lowers at
+    /// this position: `[T]` → `Vector`, `{K V}` → `Map`, `(Optional T)`
+    /// → `Optional`. The inner positions recurse, so `[(Optional
+    /// Topic)]` and `{NodeName [Service]}` nest. nota-next did the
+    /// structural parse; this is pure semantic lowering over its
     /// `Block`s, not a hand-rolled text parser.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let mut context = MacroContext::default();
@@ -249,10 +228,94 @@ impl TypeReference {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
-        if block.is_parenthesis() {
-            return Self::from_macro_invocation(block, registry, context);
+        match block {
+            Block::Atom(_) => Ok(Self::Plain(block.schema_name()?)),
+            Block::Delimited {
+                delimiter: Delimiter::SquareBracket,
+                root_objects,
+                ..
+            } => Self::from_vector_objects(root_objects, registry, context),
+            Block::Delimited {
+                delimiter: Delimiter::Brace,
+                root_objects,
+                ..
+            } => Self::from_map_objects(root_objects, registry, context),
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                root_objects,
+                ..
+            } => Self::from_parenthesis_objects(block, root_objects, registry, context),
+            Block::PipeText(_)
+            | Block::Delimited {
+                delimiter: Delimiter::PipeParenthesis | Delimiter::PipeBrace,
+                ..
+            } => Err(SchemaError::ExpectedSymbol {
+                found: block.reemit_fallback(),
+            }),
         }
-        Ok(Self::Plain(block.schema_name()?))
+    }
+
+    fn from_vector_objects(
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        if objects.len() != 1 {
+            return Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Vector".to_owned(),
+                argument_count: objects.len(),
+            });
+        }
+        Ok(Self::Vector(Box::new(Self::from_block_with_registry(
+            &objects[0],
+            registry,
+            context,
+        )?)))
+    }
+
+    fn from_map_objects(
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        if objects.len() != 2 {
+            return Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Map".to_owned(),
+                argument_count: objects.len(),
+            });
+        }
+        Ok(Self::Map(
+            Box::new(Self::from_block_with_registry(
+                &objects[0],
+                registry,
+                context,
+            )?),
+            Box::new(Self::from_block_with_registry(
+                &objects[1],
+                registry,
+                context,
+            )?),
+        ))
+    }
+
+    fn from_parenthesis_objects(
+        block: &Block,
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        if objects.len() == 2
+            && objects[0]
+                .demote_to_string()
+                .is_some_and(|head| head == "Optional")
+        {
+            return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
+                &objects[1],
+                registry,
+                context,
+            )?)));
+        }
+        Self::from_macro_invocation(block, registry, context)
     }
 
     fn from_macro_invocation(
@@ -328,10 +391,6 @@ impl<'schema> TypeReferenceMacroInvocation<'schema> {
     fn argument_count(&self) -> usize {
         self.data.argument_count()
     }
-
-    fn argument_at(&self, index: usize) -> &Block {
-        self.data.argument_at(index)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -354,27 +413,12 @@ impl<'schema> MacroInvocationData<'schema> {
             Self::Single(_) => 1,
         }
     }
-
-    fn argument_at(&self, index: usize) -> &'schema Block {
-        match self {
-            Self::Delimited(objects) => objects.get(index).expect("argument count checked"),
-            Self::Single(object) if index == 0 => object,
-            Self::Single(_) => panic!("argument count checked"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TypeReferenceMacroKind {
-    Vector,
-    Map,
-    Optional,
 }
 
 /// Data representation of a schema-node object before macro execution.
 ///
 /// A parenthesized schema node is a tagged/data-carrying variant:
-/// `(Vec [Topic])` has tag `Vec` and data `[Topic]`. This type exists
+/// `(Normalize [Topic])` has tag `Normalize` and data `[Topic]`. This type exists
 /// so macro calls can be inspected, serialized through assembled
 /// schema, and tested as data rather than disappearing into parser
 /// control flow.
@@ -627,97 +671,5 @@ impl SchemaNodeDelimitedNotation {
             Delimiter::PipeParenthesis => "|)",
             Delimiter::PipeBrace => "|}",
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct TypeReferenceMacro {
-    name: &'static str,
-    kind: TypeReferenceMacroKind,
-}
-
-impl TypeReferenceMacro {
-    fn new(name: &'static str, kind: TypeReferenceMacroKind) -> Self {
-        Self { name, kind }
-    }
-
-    fn expected_arguments(&self) -> usize {
-        match self.kind {
-            TypeReferenceMacroKind::Vector | TypeReferenceMacroKind::Optional => 1,
-            TypeReferenceMacroKind::Map => 2,
-        }
-    }
-}
-
-impl SchemaMacro for TypeReferenceMacro {
-    fn name(&self) -> &str {
-        self.name
-    }
-
-    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        if position != MacroPosition::TypeReference {
-            return false;
-        }
-        let Some(block) = object.block() else {
-            return false;
-        };
-        TypeReferenceMacroInvocation::from_block(block)
-            .is_ok_and(|invocation| invocation.name() == self.name)
-    }
-
-    fn lower(
-        &self,
-        object: MacroObject<'_>,
-        position: MacroPosition,
-        context: &mut MacroContext,
-        registry: &MacroRegistry,
-    ) -> Result<MacroOutput, SchemaError> {
-        if position != MacroPosition::TypeReference {
-            return Err(SchemaError::MacroDidNotMatch {
-                macro_name: self.name.to_owned(),
-            });
-        }
-        let invocation = TypeReferenceMacroInvocation::from_block(object.block().ok_or(
-            SchemaError::ExpectedDelimiter {
-                expected: "(Macro [input])",
-            },
-        )?)?;
-        if invocation.argument_count() != self.expected_arguments() {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: invocation.name().to_owned(),
-                argument_count: invocation.argument_count(),
-            });
-        }
-        context.remember_macro(self.name);
-        context.remember_position(position);
-        let reference = match self.kind {
-            TypeReferenceMacroKind::Vector => {
-                TypeReference::Vector(Box::new(TypeReference::from_block_with_registry(
-                    invocation.argument_at(0),
-                    registry,
-                    context,
-                )?))
-            }
-            TypeReferenceMacroKind::Optional => {
-                TypeReference::Optional(Box::new(TypeReference::from_block_with_registry(
-                    invocation.argument_at(0),
-                    registry,
-                    context,
-                )?))
-            }
-            TypeReferenceMacroKind::Map => TypeReference::Map(
-                Box::new(TypeReference::from_block_with_registry(
-                    invocation.argument_at(0),
-                    registry,
-                    context,
-                )?),
-                Box::new(TypeReference::from_block_with_registry(
-                    invocation.argument_at(1),
-                    registry,
-                    context,
-                )?),
-            ),
-        };
-        Ok(MacroOutput::Reference(reference))
     }
 }

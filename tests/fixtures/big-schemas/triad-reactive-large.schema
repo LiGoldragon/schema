@@ -8,21 +8,21 @@
  (SemaOut SemaReply)
  (AdminOut AdminReply)
  (Event RuntimeEvent)
- Rejected*)
+ (Rejected Rejected))
 {
   CommitSequence [Integer]
   DatabaseDigest [Integer]
   ActorIdentifier [Text]
   SocketPath [Text]
-  SignalRequest (RecordIntent* ObserveIntent* SubscribeIntent*)
-  SignalReply (RecordAccepted* ObservationReturned* SubscriptionStarted*)
-  NexusRequest (PushSignal* PushSemaResult* ResolveMail ExpireMail)
-  NexusReply (PushedToSema* MailResolved* MailExpired)
-  SemaRequest (WriteEntry* ReadEntries* OpenSubscription* CloseSubscription*)
-  SemaReply (EntryWritten* EntriesRead* SubscriptionOpened* SubscriptionClosed*)
-  AdminRequest (Drain Pause Resume Snapshot*)
-  AdminReply (Drained Paused Resumed SnapshotReady*)
-  RuntimeEvent (MailSent* MessageAccepted* MessageCommitted* MessageFailed*)
+  SignalRequest ((RecordIntent RecordIntent) (ObserveIntent ObserveIntent) (SubscribeIntent SubscribeIntent))
+  SignalReply ((RecordAccepted RecordAccepted) (ObservationReturned ObservationReturned) (SubscriptionStarted SubscriptionStarted))
+  NexusRequest ((PushSignal PushSignal) (PushSemaResult PushSemaResult) ResolveMail ExpireMail)
+  NexusReply ((PushedToSema PushedToSema) (MailResolved MailResolved) MailExpired)
+  SemaRequest ((WriteEntry WriteEntry) (ReadEntries ReadEntries) (OpenSubscription OpenSubscription) (CloseSubscription CloseSubscription))
+  SemaReply ((EntryWritten EntryWritten) (EntriesRead EntriesRead) (SubscriptionOpened SubscriptionOpened) (SubscriptionClosed SubscriptionClosed))
+  AdminRequest (Drain Pause Resume (Snapshot Snapshot))
+  AdminReply (Drained Paused Resumed (SnapshotReady SnapshotReady))
+  RuntimeEvent ((MailSent MailSent) (MessageAccepted MessageAccepted) (MessageCommitted MessageCommitted) (MessageFailed MessageFailed))
   Rejected [RejectionReason]
   RejectionReason (Malformed Unauthorized Conflict Unsupported StaleVersion InternalError)
   RecordIntent [ActorIdentifier Entry]
@@ -51,12 +51,12 @@
   MessageFailed [RejectionReason]
   Entry [Topics Kind Description Magnitude ActorIdentifier]
   Topic [Text]
-  Topics [(items (Vec [Topic]))]
+  Topics [[Topic]]
   Description [Text]
   Kind (Decision Principle Correction Clarification Constraint Observation Question)
   Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
-  Query [Topics (kinds (Vec [Kind])) (limit (Option [Integer]))]
+  Query [Topics (kinds [Kind]) (limit (Optional Integer))]
   RecordIdentifier [Integer]
   SubscriptionToken [Integer]
-  RecordSet [(records (Vec [Entry])) (byTopic (KeyValue [Topic RecordIdentifier]))]
+  RecordSet [(records [Entry]) (byTopic {Topic RecordIdentifier})]
 }

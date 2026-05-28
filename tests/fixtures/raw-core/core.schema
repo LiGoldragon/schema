@@ -26,7 +26,7 @@
   RawDatatype (| RawDatatype RawAtom RawText RawRecord RawVector RawKeyValue RawPipeParenthesis RawPipeBrace |)
   RawDatatypeList [RawDatatype]
   RawDatatypeMap { key Name value RawDatatype }
-  OptionalTopic (Option [Topic])
+  OptionalTopic (Optional Topic)
   DescriptionIndex { key Topic value Description }
   Field {| Field name FieldName datatype RawDatatype |}
   Fields [Field]

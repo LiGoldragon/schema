@@ -797,17 +797,14 @@ impl<'template> AssembledFields<'template> {
 
 /// One field inside a struct body.
 ///
-/// A bare PascalCase symbol (`Topic`) is the legacy form: the field
-/// name is derived from the type name (`topic`) and the type is a
-/// `Plain` reference. A parenthesised pair `(fieldName TypeReference)`
-/// is the explicit form that collection fields need — the field name
-/// is stated directly and the type position lowers through
-/// `TypeReference::from_block_with_registry`, so
-/// `(nodes (KeyValue [NodeName NodeProposal]))`,
-/// `(users (Vec [UserProposal]))`, and `(cache (Option
-/// [BinaryCache]))` all express a directly-typed collection field.
-/// The bare form stays byte-identical; the pair form is purely
-/// additive.
+/// A bare PascalCase symbol (`Topic`) derives the field name from the
+/// type name (`topic`) and creates a `Plain` reference. Native NOTA
+/// type-reference objects can also sit directly in a field position:
+/// `[Topic]`, `{Topic RecordIdentifier}`, and `(Optional Topic)` lower
+/// to vector, map, and optional references with names derived from the
+/// reference shape. A parenthesised pair whose first object is a
+/// lower-case field symbol remains the explicit escape hatch for
+/// uncommon names.
 #[derive(Clone, Copy, Debug)]
 struct AssembledField<'template> {
     object: &'template Block,
@@ -823,7 +820,7 @@ impl<'template> AssembledField<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<FieldDeclaration, SchemaError> {
-        if self.object.is_parenthesis() && self.object.holds_root_objects() == 2 {
+        if self.is_explicit_field_pair() {
             let field_name = self
                 .object
                 .root_object_at(0)
@@ -839,11 +836,51 @@ impl<'template> AssembledField<'template> {
                 reference,
             });
         }
+        if !matches!(self.object, Block::Atom(_)) {
+            let reference =
+                TypeReference::from_block_with_registry(self.object, registry, context)?;
+            return Ok(FieldDeclaration {
+                name: self.derived_name_for_reference(&reference),
+                reference,
+            });
+        }
         let name = self.object.schema_name()?;
         Ok(FieldDeclaration {
             name: Name::new(name.field_name()),
             reference: TypeReference::Plain(name),
         })
+    }
+
+    fn is_explicit_field_pair(&self) -> bool {
+        self.object.is_parenthesis()
+            && self.object.holds_root_objects() == 2
+            && self
+                .object
+                .root_object_at(0)
+                .and_then(Block::demote_to_string)
+                .is_some_and(|name| {
+                    name.chars()
+                        .next()
+                        .is_some_and(|character| character.is_ascii_lowercase())
+                })
+    }
+
+    fn derived_name_for_reference(&self, reference: &TypeReference) -> Name {
+        match reference {
+            TypeReference::Plain(name) => Name::new(name.field_name()),
+            TypeReference::Vector(inner) => {
+                Name::new(format!("{}_vector", self.derived_name_for_reference(inner)))
+            }
+            TypeReference::Map(key, value) => Name::new(format!(
+                "{}_by_{}",
+                self.derived_name_for_reference(value),
+                self.derived_name_for_reference(key)
+            )),
+            TypeReference::Optional(inner) => Name::new(format!(
+                "optional_{}",
+                self.derived_name_for_reference(inner)
+            )),
+        }
     }
 }
 
@@ -887,15 +924,6 @@ impl<'template> AssembledVariant<'template> {
     ) -> Result<EnumVariant, SchemaError> {
         if self.object.is_parenthesis() {
             self.lower_parenthesis(registry, context)
-        } else if self.object.demote_to_string().is_some_and(|token| {
-            token.ends_with('*') && token.len() > 1 && self.object.qualifies_as_pascal_case_symbol()
-        }) {
-            let token = self.object.demote_to_string().expect("checked token");
-            let name = token.trim_end_matches('*');
-            Ok(EnumVariant {
-                name: Name::new(name),
-                payload: Some(TypeReference::new(name)),
-            })
         } else if self.object.qualifies_as_pascal_case_symbol() {
             Ok(EnumVariant {
                 name: self.object.schema_name()?,
