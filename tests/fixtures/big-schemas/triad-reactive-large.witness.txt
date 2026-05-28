@@ -5,8 +5,8 @@ imports
 resolved_imports
   none
 macro_trace
-  applied RootInput -> SchemaEnumVariants -> RootOutput -> SchemaEnumVariants -> RootNamespace -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaStructDefinition -> SchemaStructFields -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> SchemaStructDefinition -> SchemaStructFields -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaStructDefinition -> SchemaStructFields -> Vec -> Option -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> KeyValue
-  positions RootInput -> EnumVariants -> RootOutput -> EnumVariants -> RootNamespace -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> StructFields -> TypeReference -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> TypeReference
+  applied RootInput -> SchemaEnumVariants -> RootOutput -> SchemaEnumVariants -> RootNamespace -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaStructDefinition -> SchemaStructFields -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> SchemaStructDefinition -> SchemaStructFields -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaEnumDefinition -> SchemaEnumVariants -> SchemaStructDefinition -> SchemaStructFields -> Vec -> Option -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> KeyValue
+  positions RootInput -> EnumVariants -> RootOutput -> EnumVariants -> RootNamespace -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> EnumVariants -> NamespaceDeclaration -> StructFields -> TypeReference -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> TypeReference
 input Input
   SignalIn(SignalRequest)
   NexusIn(NexusRequest)
@@ -21,58 +21,53 @@ output Output
   Event(RuntimeEvent)
   Rejected(Rejected)
 namespace
-  newtype OriginRoute = Text
-  newtype MessageIdentifier = Integer
   newtype CommitSequence = Integer
   newtype DatabaseDigest = Integer
   newtype ActorIdentifier = Text
   newtype SocketPath = Text
   enum SignalRequest
-    RecordIntent
-    ObserveIntent
-    SubscribeIntent
+    RecordIntent(RecordIntent)
+    ObserveIntent(ObserveIntent)
+    SubscribeIntent(SubscribeIntent)
   enum SignalReply
-    RecordAccepted
-    ObservationReturned
-    SubscriptionStarted
+    RecordAccepted(RecordAccepted)
+    ObservationReturned(ObservationReturned)
+    SubscriptionStarted(SubscriptionStarted)
   enum NexusRequest
-    PushSignal
-    PushSemaResult
+    PushSignal(PushSignal)
+    PushSemaResult(PushSemaResult)
     ResolveMail
     ExpireMail
   enum NexusReply
-    PushedToSema
-    MailResolved
+    PushedToSema(PushedToSema)
+    MailResolved(MailResolved)
     MailExpired
   enum SemaRequest
-    WriteEntry
-    ReadEntries
-    OpenSubscription
-    CloseSubscription
+    WriteEntry(WriteEntry)
+    ReadEntries(ReadEntries)
+    OpenSubscription(OpenSubscription)
+    CloseSubscription(CloseSubscription)
   enum SemaReply
-    EntryWritten
-    EntriesRead
-    SubscriptionOpened
-    SubscriptionClosed
+    EntryWritten(EntryWritten)
+    EntriesRead(EntriesRead)
+    SubscriptionOpened(SubscriptionOpened)
+    SubscriptionClosed(SubscriptionClosed)
   enum AdminRequest
     Drain
     Pause
     Resume
-    Snapshot
+    Snapshot(Snapshot)
   enum AdminReply
     Drained
     Paused
     Resumed
-    SnapshotReady
+    SnapshotReady(SnapshotReady)
   enum RuntimeEvent
-    MessageSent
-    MessageAccepted
-    MessageCommitted
-    MessageFailed
-  struct Rejected
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    rejection_reason: RejectionReason
+    MailSent(MailSent)
+    MessageAccepted(MessageAccepted)
+    MessageCommitted(MessageCommitted)
+    MessageFailed(MessageFailed)
+  newtype Rejected = RejectionReason
   enum RejectionReason
     Malformed
     Unauthorized
@@ -81,134 +76,44 @@ namespace
     StaleVersion
     InternalError
   struct RecordIntent
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     actor_identifier: ActorIdentifier
     entry: Entry
-  struct ObserveIntent
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    query: Query
-  struct SubscribeIntent
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    query: Query
+  newtype ObserveIntent = Query
+  newtype SubscribeIntent = Query
   struct RecordAccepted
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     record_identifier: RecordIdentifier
     commit_sequence: CommitSequence
-  struct ObservationReturned
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    record_set: RecordSet
-  struct SubscriptionStarted
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    subscription_token: SubscriptionToken
-  struct PushSignal
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    signal_request: SignalRequest
-  struct PushSemaResult
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    sema_reply: SemaReply
-  struct ResolveMail
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct ExpireMail
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct PushedToSema
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    sema_request: SemaRequest
-  struct MailResolved
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    signal_reply: SignalReply
-  struct MailExpired
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct WriteEntry
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    entry: Entry
-  struct ReadEntries
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    query: Query
-  struct OpenSubscription
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    query: Query
-  struct CloseSubscription
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    subscription_token: SubscriptionToken
+  newtype ObservationReturned = RecordSet
+  newtype SubscriptionStarted = SubscriptionToken
+  newtype PushSignal = SignalRequest
+  newtype PushSemaResult = SemaReply
+  newtype PushedToSema = SemaRequest
+  newtype MailResolved = SignalReply
+  newtype WriteEntry = Entry
+  newtype ReadEntries = Query
+  newtype OpenSubscription = Query
+  newtype CloseSubscription = SubscriptionToken
   struct EntryWritten
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     record_identifier: RecordIdentifier
     commit_sequence: CommitSequence
     database_digest: DatabaseDigest
   struct EntriesRead
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     record_set: RecordSet
     database_digest: DatabaseDigest
   struct SubscriptionOpened
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     subscription_token: SubscriptionToken
     commit_sequence: CommitSequence
   struct SubscriptionClosed
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     subscription_token: SubscriptionToken
     commit_sequence: CommitSequence
-  struct Drain
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct Pause
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct Resume
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct Snapshot
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    socket_path: SocketPath
-  struct Drained
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct Paused
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct Resumed
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
+  newtype Snapshot = SocketPath
   struct SnapshotReady
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
     socket_path: SocketPath
     database_digest: DatabaseDigest
-  struct MessageSent
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct MessageAccepted
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-  struct MessageCommitted
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    commit_sequence: CommitSequence
-  struct MessageFailed
-    origin_route: OriginRoute
-    message_identifier: MessageIdentifier
-    rejection_reason: RejectionReason
+  newtype MailSent = SignalRequest
+  newtype MessageAccepted = SignalRequest
+  newtype MessageCommitted = CommitSequence
+  newtype MessageFailed = RejectionReason
   struct Entry
     topics: Topics
     kind: Kind

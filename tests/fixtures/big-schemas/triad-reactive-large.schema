@@ -10,56 +10,45 @@
  (Event RuntimeEvent)
  Rejected*)
 {
-  OriginRoute [Text]
-  MessageIdentifier [Integer]
   CommitSequence [Integer]
   DatabaseDigest [Integer]
   ActorIdentifier [Text]
   SocketPath [Text]
-  SignalRequest (RecordIntent ObserveIntent SubscribeIntent)
-  SignalReply (RecordAccepted ObservationReturned SubscriptionStarted)
-  NexusRequest (PushSignal PushSemaResult ResolveMail ExpireMail)
-  NexusReply (PushedToSema MailResolved MailExpired)
-  SemaRequest (WriteEntry ReadEntries OpenSubscription CloseSubscription)
-  SemaReply (EntryWritten EntriesRead SubscriptionOpened SubscriptionClosed)
-  AdminRequest (Drain Pause Resume Snapshot)
-  AdminReply (Drained Paused Resumed SnapshotReady)
-  RuntimeEvent (MessageSent MessageAccepted MessageCommitted MessageFailed)
-  Rejected [OriginRoute MessageIdentifier RejectionReason]
+  SignalRequest (RecordIntent* ObserveIntent* SubscribeIntent*)
+  SignalReply (RecordAccepted* ObservationReturned* SubscriptionStarted*)
+  NexusRequest (PushSignal* PushSemaResult* ResolveMail ExpireMail)
+  NexusReply (PushedToSema* MailResolved* MailExpired)
+  SemaRequest (WriteEntry* ReadEntries* OpenSubscription* CloseSubscription*)
+  SemaReply (EntryWritten* EntriesRead* SubscriptionOpened* SubscriptionClosed*)
+  AdminRequest (Drain Pause Resume Snapshot*)
+  AdminReply (Drained Paused Resumed SnapshotReady*)
+  RuntimeEvent (MailSent* MessageAccepted* MessageCommitted* MessageFailed*)
+  Rejected [RejectionReason]
   RejectionReason (Malformed Unauthorized Conflict Unsupported StaleVersion InternalError)
-  RecordIntent [OriginRoute MessageIdentifier ActorIdentifier Entry]
-  ObserveIntent [OriginRoute MessageIdentifier Query]
-  SubscribeIntent [OriginRoute MessageIdentifier Query]
-  RecordAccepted [OriginRoute MessageIdentifier RecordIdentifier CommitSequence]
-  ObservationReturned [OriginRoute MessageIdentifier RecordSet]
-  SubscriptionStarted [OriginRoute MessageIdentifier SubscriptionToken]
-  PushSignal [OriginRoute MessageIdentifier SignalRequest]
-  PushSemaResult [OriginRoute MessageIdentifier SemaReply]
-  ResolveMail [OriginRoute MessageIdentifier]
-  ExpireMail [OriginRoute MessageIdentifier]
-  PushedToSema [OriginRoute MessageIdentifier SemaRequest]
-  MailResolved [OriginRoute MessageIdentifier SignalReply]
-  MailExpired [OriginRoute MessageIdentifier]
-  WriteEntry [OriginRoute MessageIdentifier Entry]
-  ReadEntries [OriginRoute MessageIdentifier Query]
-  OpenSubscription [OriginRoute MessageIdentifier Query]
-  CloseSubscription [OriginRoute MessageIdentifier SubscriptionToken]
-  EntryWritten [OriginRoute MessageIdentifier RecordIdentifier CommitSequence DatabaseDigest]
-  EntriesRead [OriginRoute MessageIdentifier RecordSet DatabaseDigest]
-  SubscriptionOpened [OriginRoute MessageIdentifier SubscriptionToken CommitSequence]
-  SubscriptionClosed [OriginRoute MessageIdentifier SubscriptionToken CommitSequence]
-  Drain [OriginRoute MessageIdentifier]
-  Pause [OriginRoute MessageIdentifier]
-  Resume [OriginRoute MessageIdentifier]
-  Snapshot [OriginRoute MessageIdentifier SocketPath]
-  Drained [OriginRoute MessageIdentifier]
-  Paused [OriginRoute MessageIdentifier]
-  Resumed [OriginRoute MessageIdentifier]
-  SnapshotReady [OriginRoute MessageIdentifier SocketPath DatabaseDigest]
-  MessageSent [OriginRoute MessageIdentifier]
-  MessageAccepted [OriginRoute MessageIdentifier]
-  MessageCommitted [OriginRoute MessageIdentifier CommitSequence]
-  MessageFailed [OriginRoute MessageIdentifier RejectionReason]
+  RecordIntent [ActorIdentifier Entry]
+  ObserveIntent [Query]
+  SubscribeIntent [Query]
+  RecordAccepted [RecordIdentifier CommitSequence]
+  ObservationReturned [RecordSet]
+  SubscriptionStarted [SubscriptionToken]
+  PushSignal [SignalRequest]
+  PushSemaResult [SemaReply]
+  PushedToSema [SemaRequest]
+  MailResolved [SignalReply]
+  WriteEntry [Entry]
+  ReadEntries [Query]
+  OpenSubscription [Query]
+  CloseSubscription [SubscriptionToken]
+  EntryWritten [RecordIdentifier CommitSequence DatabaseDigest]
+  EntriesRead [RecordSet DatabaseDigest]
+  SubscriptionOpened [SubscriptionToken CommitSequence]
+  SubscriptionClosed [SubscriptionToken CommitSequence]
+  Snapshot [SocketPath]
+  SnapshotReady [SocketPath DatabaseDigest]
+  MailSent [SignalRequest]
+  MessageAccepted [SignalRequest]
+  MessageCommitted [CommitSequence]
+  MessageFailed [RejectionReason]
   Entry [Topics Kind Description Magnitude ActorIdentifier]
   Topic [Text]
   Topics [(items (@Vec (Topic)))]
