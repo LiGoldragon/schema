@@ -426,14 +426,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
         panic!("TextNewtype macro creates a newtype");
     };
-    assert_eq!(
-        topic.fields[0]
-            .reference
-            .plain_name()
-            .expect("plain reference")
-            .as_str(),
-        "Text",
-    );
+    assert_eq!(topic.fields[0].reference, TypeReference::Text);
     let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
     else {
         panic!("single-field Topics should be a newtype");

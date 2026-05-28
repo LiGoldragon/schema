@@ -96,6 +96,9 @@ pub enum SchemaError {
         head: String,
         argument_count: usize,
     },
+    ReservedScalarTypeName {
+        name: String,
+    },
     MalformedImportSource {
         found: String,
     },
@@ -481,7 +484,7 @@ impl SchemaMacro for RootImportsMacro {
                 .schema_name()?;
             imports.push(ImportDeclaration {
                 local_name,
-                source: TypeReference::Plain(source),
+                source: TypeReference::from_name(source),
             });
         }
         Ok(MacroOutput::Imports(imports))
@@ -555,10 +558,16 @@ impl<'schema> NamespaceBlock<'schema> {
             });
         }
         for index in (0..self.object.holds_root_objects()).step_by(2) {
-            self.object
+            let name = self
+                .object
                 .root_object_at(index)
                 .expect("index within namespace object count")
                 .schema_name()?;
+            if TypeReference::is_reserved_scalar_name(&name) {
+                return Err(SchemaError::ReservedScalarTypeName {
+                    name: name.as_str().to_owned(),
+                });
+            }
             let pair = MacroPair {
                 name: self
                     .object

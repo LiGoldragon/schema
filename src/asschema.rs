@@ -171,14 +171,18 @@ pub struct EnumVariant {
 /// A type at a reference position — a struct field's type, an enum
 /// variant's payload, or an import source.
 ///
-/// `Plain` is the leaf (`Topic`, `Magnitude`). `Vector`, `Map`, and
-/// `Optional` carry inner references. These are read from typed NOTA
-/// datatype objects: `(Vec T)` lowers to `Vector<T>`, `(Map (K V))`
-/// lowers to `Map<K, V>`, and `(Optional T)` lowers to
+/// `Text`, `Integer`, and `Boolean` are reserved scalar leaves.
+/// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
+/// `Map`, and `Optional` carry inner references. These are read from
+/// typed NOTA datatype objects: `(Vec T)` lowers to `Vector<T>`,
+/// `(Map (K V))` lowers to `Map<K, V>`, and `(Optional T)` lowers to
 /// `Optional<T>`. Parentheses with other heads remain available for
 /// user-declared type-reference macros.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeReference {
+    Text,
+    Integer,
+    Boolean,
     Plain(Name),
     Vector(Box<TypeReference>),
     Map(Box<TypeReference>, Box<TypeReference>),
@@ -186,24 +190,51 @@ pub enum TypeReference {
 }
 
 impl TypeReference {
-    /// Construct a plain (leaf) reference to a named type. This is the
-    /// legacy shape every non-collection reference still uses.
+    /// Construct a reference from a schema name. Reserved scalar names
+    /// become scalar leaves; every other name remains a declared-name
+    /// leaf.
     pub fn new(name: impl Into<String>) -> Self {
-        Self::Plain(Name::new(name))
+        Self::from_name(Name::new(name))
     }
 
-    /// The plain name when this reference is a leaf. `None` for a
-    /// collection or option reference — those have no single name.
-    /// Call sites that structurally know a reference is plain (import
-    /// sources, scalar fields in legacy tests) use this.
-    pub fn plain_name(&self) -> Option<&Name> {
-        match self {
-            Self::Plain(name) => Some(name),
-            Self::Vector(_) | Self::Map(..) | Self::Optional(_) => None,
+    pub fn from_name(name: Name) -> Self {
+        match name.as_str() {
+            "Text" => Self::Text,
+            "Integer" => Self::Integer,
+            "Boolean" => Self::Boolean,
+            _ => Self::Plain(name),
         }
     }
 
-    /// Whether this reference is a plain leaf (not a collection).
+    pub fn is_reserved_scalar_name(name: &Name) -> bool {
+        matches!(name.as_str(), "Text" | "Integer" | "Boolean")
+    }
+
+    pub fn scalar_name(&self) -> Option<&'static str> {
+        match self {
+            Self::Text => Some("Text"),
+            Self::Integer => Some("Integer"),
+            Self::Boolean => Some("Boolean"),
+            Self::Plain(_) | Self::Vector(_) | Self::Map(..) | Self::Optional(_) => None,
+        }
+    }
+
+    /// The plain name when this reference is a declared-name leaf.
+    /// `None` for scalar, collection, or option references — those do
+    /// not refer to a user-declared namespace type.
+    pub fn plain_name(&self) -> Option<&Name> {
+        match self {
+            Self::Plain(name) => Some(name),
+            Self::Text
+            | Self::Integer
+            | Self::Boolean
+            | Self::Vector(_)
+            | Self::Map(..)
+            | Self::Optional(_) => None,
+        }
+    }
+
+    /// Whether this reference is a declared-name leaf.
     pub fn is_plain(&self) -> bool {
         matches!(self, Self::Plain(_))
     }
@@ -229,7 +260,7 @@ impl TypeReference {
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
         match block {
-            Block::Atom(_) => Ok(Self::Plain(block.schema_name()?)),
+            Block::Atom(_) => Ok(Self::from_name(block.schema_name()?)),
             Block::Delimited {
                 delimiter: Delimiter::SquareBracket,
                 root_objects,

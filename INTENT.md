@@ -77,6 +77,11 @@ sources. User-declared macros may still appear at type-reference positions,
 but the built-in composite type objects belong to the NOTA datatype layer
 that schema reads.*
 
+*Reserved scalar pass-throughs belong in assembled schema, not only in Rust
+emission. `Text`, `Integer`, and `Boolean` lower to scalar `TypeReference`
+variants; `Plain(Name)` is reserved for declared schema types and importable
+namespace names. Scalar names cannot be re-declared in a schema namespace.*
+
 *Cross-crate schema imports are resolved through Cargo-exposed dependency
 schema directories, not duplicated locally. A schema import source uses the
 single-colon path `crate:module:Type`; `ImportResolver` loads the dependency's

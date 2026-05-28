@@ -4,7 +4,8 @@
 //! type in a collection or option. The surface forms are typed NOTA:
 //! `(Vec T)`, `(Map (K V))`, and `(Optional T)`. They lower to
 //! `TypeReference::Vector / Map / Optional`. Bare-symbol fields keep
-//! the plain shape, so non-collection schemas stay byte-identical.
+//! the declared-name shape, while reserved scalar names lower to
+//! scalar references instead of pretending to be user namespace types.
 
 use schema_next::{SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
 
@@ -34,6 +35,55 @@ fn vec_field_lowers_to_vector_reference() {
     assert_eq!(
         fields[0].reference,
         TypeReference::Vector(Box::new(TypeReference::new("Service")))
+    );
+}
+
+#[test]
+fn scalar_field_names_lower_to_reserved_references() {
+    let asschema = lower("() () { Entry [Text Integer Boolean] }");
+    let fields = struct_fields(&asschema, "Entry");
+    assert_eq!(fields[0].name.as_str(), "text");
+    assert_eq!(fields[0].reference, TypeReference::Text);
+    assert_eq!(fields[1].name.as_str(), "integer");
+    assert_eq!(fields[1].reference, TypeReference::Integer);
+    assert_eq!(fields[2].name.as_str(), "boolean");
+    assert_eq!(fields[2].reference, TypeReference::Boolean);
+}
+
+#[test]
+fn scalar_references_nest_inside_collections() {
+    let asschema = lower("() () { Query [(Optional Integer) (Vec Text) (Map (Text Boolean))] }");
+    let fields = struct_fields(&asschema, "Query");
+    assert_eq!(
+        fields[0].reference,
+        TypeReference::Optional(Box::new(TypeReference::Integer))
+    );
+    assert_eq!(
+        fields[1].reference,
+        TypeReference::Vector(Box::new(TypeReference::Text))
+    );
+    assert_eq!(
+        fields[2].reference,
+        TypeReference::Map(
+            Box::new(TypeReference::Text),
+            Box::new(TypeReference::Boolean)
+        )
+    );
+}
+
+#[test]
+fn scalar_names_are_reserved_at_namespace_declaration_position() {
+    let error = SchemaEngine::default()
+        .lower_source(
+            "() () { Text [Integer] }",
+            SchemaIdentity::new("collections:lib", "0.1.0"),
+        )
+        .expect_err("reserved scalar names cannot be user-declared schema types");
+    assert_eq!(
+        error,
+        schema_next::SchemaError::ReservedScalarTypeName {
+            name: "Text".to_owned(),
+        }
     );
 }
 

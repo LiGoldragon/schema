@@ -50,9 +50,9 @@ structure with higher schema semantics.
 
 Tests now prove the endpoint by asserting the Rust data directly:
 `TypeDeclaration::{Struct, Enum, Newtype}` and
-`TypeReference::{Plain, Vector, Optional, Map}`. A later serialized assembled
-schema format must be designed from the raw-NOTA floor rather than reviving the
-obsolete vector-record fixture shape.
+`TypeReference::{Text, Integer, Boolean, Plain, Vector, Optional, Map}`. A
+later serialized assembled schema format must be designed from the raw-NOTA
+floor rather than reviving the obsolete vector-record fixture shape.
 
 ## Schema Package Entry
 
@@ -125,12 +125,16 @@ module schema and checking that the imported type is declared there.
   `crate:module:Type`; resolution records the dependency Rust path so
   `schema-rust-next` can emit a `pub use` alias and keep one type identity
   across the crate boundary.
-- `TypeReference` at a reference position is an enum: `Plain(Name)`,
-  `Vector(Box<TypeReference>)`, `Map(Box, Box)`, `Optional(Box<TypeReference>)`.
-  `TypeReference::from_block` lowers a bare PascalCase symbol to `Plain`,
+- `TypeReference` at a reference position is an enum:
+  `Text`, `Integer`, `Boolean`, `Plain(Name)`, `Vector(Box<TypeReference>)`,
+  `Map(Box, Box)`, and `Optional(Box<TypeReference>)`. `Text`, `Integer`, and
+  `Boolean` are reserved scalar leaves, so they are not user namespace
+  declarations and cannot be shadowed by schema types. `Plain(Name)` now means
+  "a declared type by name." `TypeReference::from_block` lowers a bare scalar
+  symbol to its scalar variant, a different bare PascalCase symbol to `Plain`,
   `(Vec T)` to `Vector`, `(Map (K V))` to `Map`, and `(Optional T)` to
   `Optional`. The inner positions recurse, so `(Vec (Optional Topic))` and
-  `(Map (NodeName (Vec Service)))` nest. Parentheses with another head are
+  `(Map (Text (Vec Service)))` nest. Parentheses with another head are
   dispatched to the user macro registry. An unknown head or wrong native
   argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
   is pure semantics over nota-next's already-parsed blocks — not a hand-rolled

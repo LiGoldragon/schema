@@ -848,7 +848,7 @@ impl<'template> AssembledField<'template> {
         let name = self.object.schema_name()?;
         Ok(FieldDeclaration {
             name: Name::new(name.field_name()),
-            reference: TypeReference::Plain(name),
+            reference: TypeReference::from_name(name),
         })
     }
 
@@ -868,6 +868,9 @@ impl<'template> AssembledField<'template> {
 
     fn derived_name_for_reference(&self, reference: &TypeReference) -> Name {
         match reference {
+            TypeReference::Text => Name::new("text"),
+            TypeReference::Integer => Name::new("integer"),
+            TypeReference::Boolean => Name::new("boolean"),
             TypeReference::Plain(name) => Name::new(name.field_name()),
             TypeReference::Vector(inner) => {
                 Name::new(format!("{}_vector", self.derived_name_for_reference(inner)))

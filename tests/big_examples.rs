@@ -203,6 +203,9 @@ impl<'schema> AsschemaWitness<'schema> {
 
     fn render_reference(&self, reference: &TypeReference) -> String {
         match reference {
+            TypeReference::Text => "Text".to_owned(),
+            TypeReference::Integer => "Integer".to_owned(),
+            TypeReference::Boolean => "Boolean".to_owned(),
             TypeReference::Plain(name) => self.render_name(name),
             TypeReference::Vector(inner) => format!("Vec<{}>", self.render_reference(inner)),
             TypeReference::Map(key, value) => format!(
