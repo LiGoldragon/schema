@@ -10,6 +10,7 @@ use crate::{
         MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry,
         SchemaBlockExt, SchemaMacro,
     },
+    resolution::ImportResolver,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,6 +90,17 @@ pub enum SchemaError {
         head: String,
         argument_count: usize,
     },
+    MalformedImportSource {
+        found: String,
+    },
+    UnresolvedImportCrate {
+        crate_name: String,
+    },
+    ImportedTypeNotFound {
+        crate_name: String,
+        module: String,
+        type_name: String,
+    },
 }
 
 impl From<nota_next::NotaError> for SchemaError {
@@ -155,6 +167,23 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
     ) -> Result<Asschema, SchemaError> {
+        self.lower_document_with_resolver(document, identity, context, &ImportResolver::new())
+    }
+
+    /// Lower a document, resolving its imports against `resolver`.
+    ///
+    /// This is the cross-crate boundary: the consumer build script
+    /// registers dependency crate schema directories on the resolver,
+    /// and the resolver turns each collected import declaration into a
+    /// resolved import that the Rust emitter can use as a `pub use`
+    /// alias instead of re-declaring the dependency's type.
+    pub fn lower_document_with_resolver(
+        &self,
+        document: &Document,
+        identity: SchemaIdentity,
+        context: &mut MacroContext,
+        resolver: &ImportResolver,
+    ) -> Result<Asschema, SchemaError> {
         context.remember_structure_header(document.structure_header());
 
         if document.holds_root_objects() != 4 {
@@ -168,6 +197,7 @@ impl SchemaEngine {
             document.root_object_at(0).expect("checked root count"),
             context,
         )?;
+        let resolved_imports = resolver.resolve_all(&imports, self)?;
         let input = self.lower_root_enum(
             document.root_object_at(1).expect("checked root count"),
             MacroPosition::RootInput,
@@ -183,7 +213,25 @@ impl SchemaEngine {
             context,
         )?;
 
-        Ok(Asschema::new(identity, imports, input, output, namespace))
+        Ok(Asschema::new(
+            identity,
+            imports,
+            resolved_imports,
+            input,
+            output,
+            namespace,
+        ))
+    }
+
+    pub fn lower_source_with_resolver(
+        &self,
+        source: &str,
+        identity: SchemaIdentity,
+        context: &mut MacroContext,
+        resolver: &ImportResolver,
+    ) -> Result<Asschema, SchemaError> {
+        let document = Document::parse(source)?;
+        self.lower_document_with_resolver(&document, identity, context, resolver)
     }
 
     fn lower_imports(
@@ -537,11 +585,10 @@ impl<'schema> RootEnumBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        if self.object.holds_root_objects() == 2
-            && self
-                .object
-                .root_object_at(1)
-                .is_some_and(|object| object.is_parenthesis() || object.is_brace())
+        if self
+            .object
+            .root_object_at(1)
+            .is_some_and(|object| self.second_object_is_enum_body(object))
         {
             return self.variants_from_nested_enum(registry, context);
         }
@@ -558,6 +605,22 @@ impl<'schema> RootEnumBlock<'schema> {
             );
         }
         Ok(variants)
+    }
+
+    fn second_object_is_enum_body(&self, object: &Block) -> bool {
+        if self.object.holds_root_objects() != 2 {
+            return false;
+        }
+        if object.is_brace() {
+            return true;
+        }
+        if !object.is_parenthesis() {
+            return false;
+        }
+        object.holds_root_objects() == 0
+            || object
+                .root_object_at(0)
+                .is_some_and(|first| first.is_parenthesis() || first.is_brace())
     }
 
     fn variants_from_nested_enum(

@@ -110,7 +110,7 @@ fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
     let asschema = lower(
-        "{} (Input ()) (Output ((Projected (KeyValue NodeName NodeConfig)))) { NodeName [Text] NodeConfig [Text] }",
+        "{} (Input ()) (Output (Projected (KeyValue NodeName NodeConfig))) { NodeName [Text] NodeConfig [Text] }",
     );
     let payload = asschema.output().variants[0]
         .payload

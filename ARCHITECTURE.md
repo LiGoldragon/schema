@@ -20,10 +20,11 @@ Additional module schemas are addressed by name through
 `schema/<module>.schema`; colon-qualified module names map to nested paths.
 The loaded module receives an identity such as `spirit-next:lib`.
 
-This is intentionally a small loader, not full cross-crate import resolution.
-It proves the convention that schema lives beside the crate source, that the
-crate name is the first namespace segment, and that schema modules are ordinary
-files in a predictable folder.
+This loader is also the floor for cross-crate import resolution. A consumer
+build script registers dependency schema directories on `ImportResolver`
+(normally from Cargo `DEP_<CRATE>_SCHEMA_DIR` values). `SchemaEngine` then
+turns each import declaration into a resolved import by loading the dependency
+module schema and checking that the imported type is declared there.
 
 ## Constraints
 
@@ -75,6 +76,11 @@ files in a predictable folder.
 - Imports and exports are schema objects too. Their paths use the workspace's
   single-colon namespace (`crate:module:Type`) so assembled schema can mirror
   the Rust module tree without inheriting Rust's `::` syntax.
+- Cross-crate imports resolve through `ImportResolver`, not ad hoc text
+  substitution. A local import alias names a dependency type by
+  `crate:module:Type`; resolution records the dependency Rust path so
+  `schema-rust-next` can emit a `pub use` alias and keep one type identity
+  across the crate boundary.
 - `TypeReference` at a reference position is an enum: `Plain(Name)`,
   `Vector(Box<TypeReference>)`, `Map(Box, Box)`, `Optional(Box<TypeReference>)`.
   `TypeReference::from_block` lowers a bare PascalCase symbol to `Plain` and a

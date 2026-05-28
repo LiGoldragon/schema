@@ -85,7 +85,7 @@ fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even()
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "{} (Input ((Record schema:spirit:Entry))) (Output ()) { schema:spirit:Topic [Text] schema:spirit:Entry [schema:spirit:Topic] }";
+    let source = "{} (Input (Record schema:spirit:Entry)) (Output ()) { schema:spirit:Topic [Text] schema:spirit:Entry [schema:spirit:Topic] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
@@ -351,9 +351,7 @@ fn default_engine_dispatches_through_registered_macros() {
         vec![
             "RootImports",
             "RootInput",
-            "SchemaEnumVariants",
             "RootOutput",
-            "SchemaEnumVariants",
             "RootNamespace",
             "SchemaStructDefinition",
             "SchemaStructFields",
@@ -399,9 +397,7 @@ fn default_engine_dispatches_through_registered_macros() {
         &[
             MacroPosition::RootImports,
             MacroPosition::RootInput,
-            MacroPosition::EnumVariants,
             MacroPosition::RootOutput,
-            MacroPosition::EnumVariants,
             MacroPosition::RootNamespace,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,
@@ -515,7 +511,7 @@ fn brace_enum_namespace_lowers_to_same_asschema_as_paren_form() {
 
 #[test]
 fn brace_enum_at_root_position_lowers_to_same_asschema_as_paren_form() {
-    let paren_source = "{} (Input ((Record Entry) (Observe Query))) (Output ()) {}";
+    let paren_source = "{} (Input (Record Entry) (Observe Query)) (Output ()) {}";
     let brace_source = "{} (Input {Record Entry Observe Query}) (Output ()) {}";
     let paren = SchemaEngine::default()
         .lower_source(paren_source, SchemaIdentity::new("example", "0.1.0"))

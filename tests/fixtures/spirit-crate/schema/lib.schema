@@ -1,6 +1,6 @@
 {}
-(Input ((Record Entry) (Observe Query)))
-(Output ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)))
+(Input (Record Entry) (Observe Query))
+(Output (RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
 {
   Topic [Text]
   Topics [Topic]

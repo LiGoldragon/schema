@@ -55,6 +55,7 @@ impl fmt::Display for Name {
 pub struct Asschema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
+    resolved_imports: Vec<super::ResolvedImport>,
     input: EnumDeclaration,
     output: EnumDeclaration,
     namespace: Vec<TypeDeclaration>,
@@ -64,6 +65,7 @@ impl Asschema {
     pub(crate) fn new(
         identity: super::SchemaIdentity,
         imports: Vec<ImportDeclaration>,
+        resolved_imports: Vec<super::ResolvedImport>,
         input: EnumDeclaration,
         output: EnumDeclaration,
         namespace: Vec<TypeDeclaration>,
@@ -71,6 +73,7 @@ impl Asschema {
         Self {
             identity,
             imports,
+            resolved_imports,
             input,
             output,
             namespace,
@@ -83,6 +86,14 @@ impl Asschema {
 
     pub fn imports(&self) -> &[ImportDeclaration] {
         &self.imports
+    }
+
+    /// The imports resolved against dependency crate schemas. Empty
+    /// when the schema was lowered without an import resolver or when
+    /// the schema declares no imports. The Rust emitter reads these to
+    /// reference dependency-emitted types instead of re-declaring them.
+    pub fn resolved_imports(&self) -> &[super::ResolvedImport] {
+        &self.resolved_imports
     }
 
     pub fn input(&self) -> &EnumDeclaration {

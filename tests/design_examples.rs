@@ -244,7 +244,7 @@ fn design_example_default_engine_has_two_macro_layers() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "{} (Input ((Record Entry))) (Output (Accepted)) { Entry [Description] }";
+    let source = "{} (Input (Record Entry)) (Output (Accepted)) { Entry [Description] }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -271,7 +271,7 @@ fn design_example_schema_lowering_records_source_structure_header() {
             (StructureShape::Brace, 0),
             (StructureShape::Parenthesis, 2),
             (StructureShape::Atom, 0),
-            (StructureShape::Parenthesis, 1),
+            (StructureShape::Parenthesis, 2),
             (StructureShape::Parenthesis, 2),
             (StructureShape::Atom, 0),
             (StructureShape::Parenthesis, 1),
@@ -329,23 +329,33 @@ fn design_example_brace_macro_dispatch_depends_on_position_and_pair_shape() {
     assert_eq!(error, SchemaError::ExpectedEvenBraceEnumPairs { found: 3 });
 }
 
-/// Illustrates: root enum payloads can be written in direct variant
-/// form or in nested enum-body form. Both lower to the same assembled
-/// schema, which keeps the authored shorthand separate from the
-/// macro-free endpoint.
+/// Illustrates: root enum payloads are authored directly under the
+/// root enum name. Payload-carrying variants use parenthesized
+/// variant objects; unit variants use bare symbols.
 #[test]
-fn design_example_root_enum_accepts_direct_and_nested_variant_shapes() {
-    let direct = "{} (Input (Record Entry) Drop) (Output ()) {}";
-    let nested = "{} (Input ((Record Entry) Drop)) (Output ()) {}";
+fn design_example_root_enum_uses_direct_variant_shapes() {
+    let source = "{} (Input (Record Entry) Drop) (Output ()) {}";
 
-    let direct_schema = SchemaEngine::default()
-        .lower_source(direct, SchemaIdentity::new("example", "0.1.0"))
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("direct variants lower");
-    let nested_schema = SchemaEngine::default()
-        .lower_source(nested, SchemaIdentity::new("example", "0.1.0"))
-        .expect("nested enum body lowers");
 
-    assert_eq!(direct_schema.input(), nested_schema.input());
+    let variants: Vec<(&str, Option<&str>)> = asschema
+        .input()
+        .variants
+        .iter()
+        .map(|variant| {
+            (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
+            )
+        })
+        .collect();
+
+    assert_eq!(variants, vec![("Record", Some("Entry")), ("Drop", None)]);
 }
 
 /// Illustrates: the same schema language names the three runtime

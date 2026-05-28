@@ -52,8 +52,15 @@
             grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_schema_lowering_records_source_structure_header" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_brace_macro_dispatch_depends_on_position_and_pair_shape" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_root_enum_accepts_direct_and_nested_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
+            touch $out
+          '';
+          no-nested-root-enum-examples = pkgs.runCommand "schema-next-no-nested-root-enum-examples" { } ''
+            if grep -R -n -E '\((Input|Output) \(\(' ${src}/schemas ${src}/tests; then
+              echo "root Input/Output examples must use direct variants, not nested enum bodies" >&2
+              exit 1
+            fi
             touch $out
           '';
           no-btree-canonical = pkgs.runCommand "schema-next-no-btree-canonical" { } ''

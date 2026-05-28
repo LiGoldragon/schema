@@ -69,6 +69,12 @@ reference position: struct fields, enum-variant payloads, root
 input/output variant payloads, and import sources. A schema that uses no
 collection lowers byte-identically to the pre-collection engine.*
 
+*Cross-crate schema imports are resolved through Cargo-exposed dependency
+schema directories, not duplicated locally. A schema import source uses the
+single-colon path `crate:module:Type`; `ImportResolver` loads the dependency's
+schema module, confirms the type is declared there, and records a resolved
+import so Rust emission can reference the dependency type by alias.*
+
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.
 
