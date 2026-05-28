@@ -26,7 +26,6 @@
         schemaFilter = path: type:
           type == "regular" && (
             pkgs.lib.hasSuffix ".schema" path
-            || pkgs.lib.hasSuffix ".asschema" path
             || pkgs.lib.hasSuffix ".witness.txt" path
           );
         sourceFilter = path: type:
@@ -84,20 +83,15 @@
             fi
             touch $out
           '';
-          asschema-is-final-data = pkgs.runCommand "schema-next-asschema-is-final-data" { } ''
-            test -f ${src}/schemas/asschema.asschema
-            grep -R "asschema_schema_is_final_macro_free_data" ${src}/tests/asschema_definition.rs >/dev/null
-            grep -R "lowered_asschema_uses_final_collection_variants_not_macro_sugar" ${src}/tests/asschema_definition.rs >/dev/null
-            if grep -R -n --include='*.asschema' '@' ${src}; then
-              echo ".asschema files must not contain authored macro markers" >&2
+          no-obsolete-asschema-syntax = pkgs.runCommand "schema-next-no-obsolete-asschema-syntax" { } ''
+            if find ${src} -name '*.asschema' -print -quit | grep .; then
+              echo "obsolete .asschema syntax fixtures must not remain in schema-next" >&2
               exit 1
             fi
-            if grep -R -n --include='*.asschema' '\$' ${src}; then
-              echo ".asschema files must not contain macro captures" >&2
-              exit 1
-            fi
-            if grep -R -n --include='*.asschema' -E '\(Map \(Plain' ${src}; then
-              echo ".asschema Map must carry one vector payload: (Map [(Plain Key) (Plain Value)])" >&2
+            grep -R "asschema_data_model_is_built_from_real_schema_fixture" ${src}/tests/asschema_definition.rs >/dev/null
+            grep -R "raw_core_schema_fixture_is_legal_nota_before_schema_reading" ${src}/tests/raw_core_schema.rs >/dev/null
+            if grep -R -n -E '\[Input \[|\[Output \[|\(Struct \[|\(Enum \[|\(Newtype \[|\(Map \[\(Plain|\(Carries \(Plain' ${src}/src ${src}/tests ${src}/schemas; then
+              echo "obsolete ASSchema vector-record syntax must not remain in active code or fixtures" >&2
               exit 1
             fi
             touch $out

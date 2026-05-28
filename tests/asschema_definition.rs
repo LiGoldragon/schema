@@ -1,142 +1,83 @@
-use schema_next::{Asschema, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
+use std::path::Path;
+
+use nota_next::Document;
+use schema_next::{ImportResolver, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
 
 #[test]
-fn asschema_schema_is_final_macro_free_data() {
-    let source = include_str!("../schemas/asschema.asschema");
+fn asschema_data_model_is_built_from_real_schema_fixture() {
+    let source = include_str!("fixtures/big-schemas/spirit-reactive-large.schema");
+    Document::parse(source).expect("schema fixture is legal NOTA");
 
-    assert!(
-        !source.contains('@'),
-        ".asschema must not contain macro markers"
-    );
-    assert!(
-        !source.contains("SchemaMacro"),
-        ".asschema defines final data, not macro definitions"
-    );
-    assert!(
-        !source.contains("$Name") && !source.contains("$*"),
-        ".asschema must not contain macro captures"
-    );
-
-    let asschema = Asschema::from_nota(source).expect("assembled schema definition parses");
+    let asschema = SchemaEngine::default()
+        .lower_source(
+            source,
+            SchemaIdentity::new("example:spirit-reactive-large", "0.1.0"),
+        )
+        .expect("schema lowers into typed Asschema data");
 
     assert_eq!(
         asschema.identity().component().as_str(),
-        "schema-next:asschema"
+        "example:spirit-reactive-large"
     );
     assert_eq!(asschema.identity().version(), "0.1.0");
-    assert!(asschema.imports().is_empty());
-    assert!(asschema.resolved_imports().is_empty());
 
-    let TypeDeclaration::Struct(root) = asschema.type_named("Asschema").expect("Asschema type")
+    let TypeDeclaration::Struct(record_set) = asschema
+        .type_named("RecordSet")
+        .expect("RecordSet declaration")
     else {
-        panic!("Asschema must be a struct declaration");
+        panic!("RecordSet must be a struct declaration");
     };
+    let records = record_set
+        .fields
+        .iter()
+        .find(|field| field.name.as_str() == "records")
+        .expect("records field");
     assert_eq!(
-        root.fields
-            .iter()
-            .map(|field| field.name.as_str())
-            .collect::<Vec<_>>(),
-        vec![
-            "identity",
-            "imports",
-            "resolved_imports",
-            "input",
-            "output",
-            "namespace"
-        ]
+        records.reference,
+        TypeReference::Vector(Box::new(TypeReference::new("Entry"))),
+        "schema Vec call lowers into typed Vector data, not rendered ASSchema text",
     );
 
-    let TypeDeclaration::Enum(type_reference) = asschema
-        .type_named("TypeReference")
-        .expect("TypeReference declaration")
-    else {
-        panic!("TypeReference must be an enum declaration");
-    };
+    let by_topic = record_set
+        .fields
+        .iter()
+        .find(|field| field.name.as_str() == "by_topic")
+        .expect("by_topic field");
     assert_eq!(
-        type_reference
-            .variants
-            .iter()
-            .map(|variant| {
-                (
-                    variant.name.as_str(),
-                    variant
-                        .payload
-                        .as_ref()
-                        .and_then(TypeReference::plain_name)
-                        .map(|name| name.as_str()),
-                )
-            })
-            .collect::<Vec<_>>(),
-        vec![
-            ("Plain", Some("Name")),
-            ("Vector", Some("TypeReference")),
-            ("Optional", Some("TypeReference")),
-            ("Map", Some("TypeReferencePair")),
-        ]
-    );
-
-    let TypeDeclaration::Struct(schema_node) = asschema
-        .type_named("SchemaNode")
-        .expect("SchemaNode declaration")
-    else {
-        panic!("SchemaNode must be a struct declaration");
-    };
-    assert_eq!(
-        schema_node
-            .fields
-            .iter()
-            .map(|field| field.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["tag", "data"],
-        "macro calls are represented as tagged data nodes in assembled schema",
-    );
-
-    let TypeDeclaration::Enum(schema_node_data) = asschema
-        .type_named("SchemaNodeData")
-        .expect("SchemaNodeData declaration")
-    else {
-        panic!("SchemaNodeData must be an enum declaration");
-    };
-    assert_eq!(
-        schema_node_data
-            .variants
-            .iter()
-            .map(|variant| variant.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["Unit", "Value", "Vector", "Map"],
+        by_topic.reference,
+        TypeReference::Map(
+            Box::new(TypeReference::new("Topic")),
+            Box::new(TypeReference::new("RecordIdentifier")),
+        ),
+        "schema KeyValue call lowers into typed Map data, not rendered ASSchema text",
     );
 }
 
 #[test]
-fn lowered_asschema_uses_final_collection_variants_not_macro_sugar() {
-    let source = "
-        () ()
-        {
-          Topic [Text]
-          Topics [(items (Vec [Topic]))]
-          Query [(limit (Option [Integer]))]
-          RecordSet [(byTopic (KeyValue [Topic Integer]))]
-        }
-    ";
+fn asschema_import_data_is_built_from_real_schema_fixture() {
+    let source = include_str!("fixtures/big-schemas/imported-mail-consumer.schema");
+    Document::parse(source).expect("schema fixture is legal NOTA");
 
+    let schema_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("marker-core")
+        .join("schema");
+    let resolver = ImportResolver::new().with_dependency("marker-core", schema_dir, "0.1.0");
+    let mut context = schema_next::MacroContext::default();
     let asschema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("example:collections", "0.1.0"))
-        .expect("schema lowers");
-    let rendered = asschema.to_nota();
+        .lower_source_with_resolver(
+            source,
+            SchemaIdentity::new("example:imported-mail-consumer", "0.1.0"),
+            &mut context,
+            &resolver,
+        )
+        .expect("schema with imports lowers");
 
-    assert!(
-        !rendered.contains('@'),
-        "assembled schema must not contain macro markers"
-    );
-    assert!(rendered.contains("(Vector (Plain Topic))"));
-    assert!(rendered.contains("(Optional (Plain Integer))"));
-    assert!(rendered.contains("(Map [(Plain Topic) (Plain Integer)])"));
-    assert!(
-        !rendered.contains("(Map (Plain Topic) (Plain Integer))"),
-        "Map is a final variant carrying one vector payload, not loose macro arguments"
-    );
+    assert_eq!(asschema.imports().len(), 2);
+    assert_eq!(asschema.resolved_imports().len(), 2);
     assert_eq!(
-        Asschema::from_nota(&rendered).expect("rendered asschema parses"),
-        asschema
+        asschema.resolved_imports()[0].source().rust_path(),
+        "marker_core::schema::mail::DatabaseMarker"
     );
 }

@@ -82,15 +82,11 @@ single-colon path `crate:module:Type`; `ImportResolver` loads the dependency's
 schema module, confirms the type is declared there, and records a resolved
 import so Rust emission can reference the dependency type by alias.*
 
-*Assembled schema is defined before authored-schema sugar. A `.asschema` file
-is macro-free NOTA data with a known root vector typed as `Asschema`; square
-brackets remain NOTA vectors whose field meaning comes from that known type.
-Collection and declaration forms in assembled schema are final variants
-(`Struct`, `Enum`, `Newtype`, `Plain`, `Vector`, `Optional`, `Map`,
-`Carries`), not macro invocations. `$Name` and other capture syntax belong
-only to macro definition inputs before lowering. No-sigil macro calls belong
-only to authored `.schema`; they must be assembled into final data before
-Rust emission.*
+*Assembled schema is defined before authored-schema sugar, but the old
+checked-in `.asschema` vector-record syntax is obsolete. `Asschema` is the
+typed in-memory macro-free endpoint produced by lowering real `.schema` files.
+Current tests assert that typed data directly rather than preserving obsolete
+`.asschema` text fixtures.*
 
 *A core schema file can be read one layer lower than schema lowering: as raw
 NOTA datatype data. In that mode the root struct name is derived from the

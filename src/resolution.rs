@@ -18,14 +18,6 @@ pub struct ImportSource {
 }
 
 impl ImportSource {
-    pub(crate) fn new(crate_name: Name, module: Name, type_name: Name) -> Self {
-        Self {
-            crate_name,
-            module,
-            type_name,
-        }
-    }
-
     pub fn crate_name(&self) -> &Name {
         &self.crate_name
     }
@@ -93,10 +85,6 @@ pub struct ResolvedImport {
 }
 
 impl ResolvedImport {
-    pub(crate) fn new(local_name: Name, source: ImportSource) -> Self {
-        Self { local_name, source }
-    }
-
     pub fn local_name(&self) -> &Name {
         &self.local_name
     }
