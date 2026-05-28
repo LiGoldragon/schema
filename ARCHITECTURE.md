@@ -12,6 +12,25 @@
    output enum, namespace declarations, struct fields, and enum variants.
 5. `Asschema` is emitted as the ordered macro-free endpoint.
 
+## Assembled Schema Endpoint
+
+`schemas/asschema.asschema` is the canonical data definition for the
+assembled-schema endpoint. It is itself an `.asschema` document: one known root
+vector typed as `Asschema`, followed by final type declarations in the
+namespace.
+
+Square brackets remain NOTA vectors. In `.asschema`, a surrounding known type
+gives each vector position its field meaning: the root vector is an `Asschema`,
+`[component version]` is a `SchemaIdentity`, and `[name reference]` is a
+`FieldDeclaration`. The delimiter has not been redefined as "struct"; it is the
+vector representation the assembled-schema type reads positionally.
+
+No macro syntax is valid in `.asschema`. The final forms are variants:
+`Struct`, `Enum`, `Newtype`, `Plain`, `Vector`, `Optional`, `Map`, `Unit`, and
+`Carries`. A map reference is the `Map` variant carrying one vector payload:
+`(Map [(Plain Key) (Plain Value)])`. The older loose shape
+`(Map (Plain Key) (Plain Value))` is not the assembled endpoint.
+
 ## Schema Package Entry
 
 `SchemaPackage` is the first crate-local module loader. It expects a crate root
@@ -39,6 +58,10 @@ module schema and checking that the imported type is declared there.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
 - `Asschema` stores declarations in `Vec` order; lookup maps are derived.
+- `.asschema` is parsed by `Asschema::from_nota` and emitted by
+  `Asschema::to_nota`; both are final-data operations, not macro passes.
+- `.asschema` files must not contain `@` macro markers, `$` captures, or
+  authored collection sugar. Those forms can only appear before lowering.
 - The root schema is positional. Current MVP shape:
   - field 1: input enum body, for example `((Record Entry) Reindex)`
   - field 2: output enum body, for example `((Recorded Receipt) Rejected*)`

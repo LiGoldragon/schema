@@ -12,6 +12,7 @@
   Variants [VariantDeclaration]
   VariantDeclaration [Name Payload]
   Payload (Unit (Carries TypeReference))
-  TypeReference (Plain Vector Map Optional)
+  TypeReference ((Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference))
+  TypeReferencePair [TypeReference TypeReference]
   Name [Text]
 }

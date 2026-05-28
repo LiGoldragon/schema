@@ -83,6 +83,24 @@
             fi
             touch $out
           '';
+          asschema-is-final-data = pkgs.runCommand "schema-next-asschema-is-final-data" { } ''
+            test -f ${src}/schemas/asschema.asschema
+            grep -R "asschema_schema_is_final_macro_free_data" ${src}/tests/asschema_definition.rs >/dev/null
+            grep -R "lowered_asschema_uses_final_collection_variants_not_macro_sugar" ${src}/tests/asschema_definition.rs >/dev/null
+            if grep -R -n --include='*.asschema' '@' ${src}; then
+              echo ".asschema files must not contain authored macro markers" >&2
+              exit 1
+            fi
+            if grep -R -n --include='*.asschema' '\$' ${src}; then
+              echo ".asschema files must not contain macro captures" >&2
+              exit 1
+            fi
+            if grep -R -n --include='*.asschema' -E '\(Map \(Plain' ${src}; then
+              echo ".asschema Map must carry one vector payload: (Map [(Plain Key) (Plain Value)])" >&2
+              exit 1
+            fi
+            touch $out
+          '';
           no-authored-features = pkgs.runCommand "schema-next-no-authored-features" { } ''
             if grep -R "EffectTable\\|FanOutTargets\\|StorageDescriptor\\|Features" ${src}; then
               echo "retracted authored schema features are forbidden" >&2

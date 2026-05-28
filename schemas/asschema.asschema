@@ -1,0 +1,23 @@
+[
+  [schema-next:asschema 0.1.0]
+  []
+  []
+  [Input []]
+  [Output []]
+  [
+    (Newtype [Name [[text (Plain Text)]]])
+    (Newtype [Version [[text (Plain Text)]]])
+    (Struct [SchemaIdentity [[component (Plain Name)] [version (Plain Version)]]])
+    (Struct [Asschema [[identity (Plain SchemaIdentity)] [imports (Vector (Plain ImportDeclaration))] [resolved_imports (Vector (Plain ResolvedImport))] [input (Plain EnumDeclaration)] [output (Plain EnumDeclaration)] [namespace (Vector (Plain TypeDeclaration))]]])
+    (Struct [ImportDeclaration [[local_name (Plain Name)] [source (Plain TypeReference)]]])
+    (Struct [ResolvedImport [[local_name (Plain Name)] [crate_name (Plain Name)] [module (Plain Name)] [type_name (Plain Name)]]])
+    (Enum [TypeDeclaration [[Struct (Carries (Plain StructDeclaration))] [Newtype (Carries (Plain StructDeclaration))] [Enum (Carries (Plain EnumDeclaration))]]])
+    (Struct [StructDeclaration [[name (Plain Name)] [fields (Vector (Plain FieldDeclaration))]]])
+    (Struct [FieldDeclaration [[name (Plain Name)] [reference (Plain TypeReference)]]])
+    (Enum [Payload [[Unit Unit] [Carries (Carries (Plain TypeReference))]]])
+    (Struct [EnumDeclaration [[name (Plain Name)] [variants (Vector (Plain EnumVariant))]]])
+    (Struct [EnumVariant [[name (Plain Name)] [payload (Plain Payload)]]])
+    (Enum [TypeReference [[Plain (Carries (Plain Name))] [Vector (Carries (Plain TypeReference))] [Optional (Carries (Plain TypeReference))] [Map (Carries (Plain TypeReferencePair))]]])
+    (Struct [TypeReferencePair [[key (Plain TypeReference)] [value (Plain TypeReference)]]])
+  ]
+]

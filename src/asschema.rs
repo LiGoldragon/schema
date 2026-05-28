@@ -507,8 +507,7 @@ impl<'schema> AsschemaNotaWriter<'schema> {
             }
             TypeReference::Map(key, value) => NotaExpression::parenthesis([
                 "Map".to_owned(),
-                self.render_reference(key),
-                self.render_reference(value),
+                NotaExpression::square([self.render_reference(key), self.render_reference(value)]),
             ]),
             TypeReference::Optional(inner) => {
                 NotaExpression::parenthesis(["Optional".to_owned(), self.render_reference(inner)])
@@ -788,10 +787,13 @@ impl<'block> AsschemaReferenceReader<'block> {
             "Optional" if fields.len() == 2 => Ok(TypeReference::Optional(Box::new(
                 AsschemaReferenceReader::new(&fields[1]).read()?,
             ))),
-            "Map" if fields.len() == 3 => Ok(TypeReference::Map(
-                Box::new(AsschemaReferenceReader::new(&fields[1]).read()?),
-                Box::new(AsschemaReferenceReader::new(&fields[2]).read()?),
-            )),
+            "Map" if fields.len() == 2 => {
+                let pair = AsschemaNotaBlock::new(&fields[1]).square_children("MapReference", 2)?;
+                Ok(TypeReference::Map(
+                    Box::new(AsschemaReferenceReader::new(&pair[0]).read()?),
+                    Box::new(AsschemaReferenceReader::new(&pair[1]).read()?),
+                ))
+            }
             _ => Err(SchemaError::UnknownTypeReferenceForm {
                 head: tag.to_owned(),
                 argument_count: fields.len().saturating_sub(1),
