@@ -1,6 +1,4 @@
-{}
-(Input ())
-(Output ())
+() ()
 {
   CoreSchema [BuiltinMacroPositions BuiltinMacroShapes BuiltinMacroOutputs BuiltinMacroDefinitions]
   BuiltinMacroPositions [MacroPosition]
@@ -12,7 +10,7 @@
   MacroPattern [Text]
   MacroTemplate [Text]
   MacroBinding (SingleCapture RestCapture)
-  MacroPosition (RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants)
+  MacroPosition (RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference)
   MacroShape (BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol)
-  MacroOutputKind (Imports RootEnum Types Type Fields Variants References AssembledSchema)
+  MacroOutputKind (Imports RootEnum Types Type Fields Variants Reference References AssembledSchema)
 }

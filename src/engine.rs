@@ -7,8 +7,8 @@ use crate::{
     },
     declarative::DeclarativeMacroLibrary,
     macros::{
-        MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry,
-        SchemaBlockExt, SchemaMacro,
+        MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
+        MacroPosition, MacroRegistry, SchemaBlockExt, SchemaMacro,
     },
     resolution::ImportResolver,
 };
@@ -40,7 +40,7 @@ impl SchemaIdentity {
 pub enum SchemaError {
     Nota(String),
     ExpectedRootObjectCount {
-        expected: usize,
+        expected: &'static str,
         found: usize,
     },
     ExpectedDelimiter {
@@ -57,8 +57,11 @@ pub enum SchemaError {
         found: String,
     },
     ExpectedEnumVariant,
-    ExpectedEvenBraceEnumPairs {
-        found: usize,
+    RootEnumLabelForbidden {
+        label: String,
+    },
+    ExpectedMacroMarker {
+        found: String,
     },
     MacroDidNotMatch {
         macro_name: String,
@@ -186,30 +189,46 @@ impl SchemaEngine {
     ) -> Result<Asschema, SchemaError> {
         context.remember_structure_header(document.structure_header());
 
-        if document.holds_root_objects() != 4 {
+        if !matches!(document.holds_root_objects(), 3 | 4) {
             return Err(SchemaError::ExpectedRootObjectCount {
-                expected: 4,
+                expected: "3 root values (input output namespace) or 4 with leading imports",
                 found: document.holds_root_objects(),
             });
         }
 
-        let imports = self.lower_imports(
-            document.root_object_at(0).expect("checked root count"),
-            context,
-        )?;
+        let (imports, input_index, output_index, namespace_index) =
+            if document.holds_root_objects() == 4 {
+                (
+                    self.lower_imports(
+                        document.root_object_at(0).expect("checked root count"),
+                        context,
+                    )?,
+                    1,
+                    2,
+                    3,
+                )
+            } else {
+                (Vec::new(), 0, 1, 2)
+            };
         let resolved_imports = resolver.resolve_all(&imports, self)?;
         let input = self.lower_root_enum(
-            document.root_object_at(1).expect("checked root count"),
+            document
+                .root_object_at(input_index)
+                .expect("checked root count"),
             MacroPosition::RootInput,
             context,
         )?;
         let output = self.lower_root_enum(
-            document.root_object_at(2).expect("checked root count"),
+            document
+                .root_object_at(output_index)
+                .expect("checked root count"),
             MacroPosition::RootOutput,
             context,
         )?;
         let namespace = self.lower_namespace(
-            document.root_object_at(3).expect("checked root count"),
+            document
+                .root_object_at(namespace_index)
+                .expect("checked root count"),
             context,
         )?;
 
@@ -290,13 +309,53 @@ impl SchemaEngine {
 }
 
 impl MacroRegistry {
-    pub(crate) fn with_schema_defaults() -> Self {
+    pub fn with_schema_defaults() -> Self {
         let mut registry = Self::new();
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::RootImports,
+            MacroDispatch::RootPositional,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::RootInput,
+            MacroDispatch::RootPositional,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::RootOutput,
+            MacroDispatch::RootPositional,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::RootNamespace,
+            MacroDispatch::RootPositional,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::NamespaceDeclaration,
+            MacroDispatch::Structural,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::StructFields,
+            MacroDispatch::Structural,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::EnumVariants,
+            MacroDispatch::Structural,
+        ));
+        registry.register_node_definition(MacroNodeDefinition::new(
+            MacroPosition::TypeReference,
+            MacroDispatch::NamedInvocation,
+        ));
         registry.register(RootImportsMacro::new());
-        registry.register(RootEnumMacro::new("RootInput", MacroPosition::RootInput));
-        registry.register(RootEnumMacro::new("RootOutput", MacroPosition::RootOutput));
+        registry.register(RootEnumMacro::new(
+            "RootInput",
+            MacroPosition::RootInput,
+            "Input",
+        ));
+        registry.register(RootEnumMacro::new(
+            "RootOutput",
+            MacroPosition::RootOutput,
+            "Output",
+        ));
         registry.register(RootNamespaceMacro::new());
-        registry.register(BraceEnumVariantsMacro::new());
+        TypeReference::register_builtin_macros(&mut registry);
         for schema_macro in DeclarativeMacroLibrary::builtin()
             .expect("builtin schema macros parse")
             .into_macros()
@@ -519,12 +578,14 @@ impl<'schema> NamespaceBlock<'schema> {
 #[derive(Clone, Debug)]
 struct RootEnumMacro {
     signature: MacroSignature,
+    enum_name: &'static str,
 }
 
 impl RootEnumMacro {
-    fn new(name: &'static str, position: MacroPosition) -> Self {
+    fn new(name: &'static str, position: MacroPosition, enum_name: &'static str) -> Self {
         Self {
             signature: MacroSignature::new(name, position, "( )"),
+            enum_name,
         }
     }
 }
@@ -536,13 +597,7 @@ impl SchemaMacro for RootEnumMacro {
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
         self.signature.accepts_position(position)
-            && object.block().is_some_and(|object| {
-                object.is_parenthesis()
-                    && object.holds_root_objects() >= 1
-                    && object
-                        .root_object_at(0)
-                        .is_some_and(Block::qualifies_as_pascal_case_symbol)
-            })
+            && object.block().is_some_and(|object| object.is_parenthesis())
     }
 
     fn lower(
@@ -556,8 +611,9 @@ impl SchemaMacro for RootEnumMacro {
         let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
             expected: self.signature.expected_delimiter(),
         })?;
-        let root_enum = RootEnumBlock::new(object);
-        let name = root_enum.name()?;
+        let root_enum = RootEnumBlock::new(object, self.enum_name);
+        root_enum.reject_labeled_root()?;
+        let name = root_enum.name();
         let variants = root_enum.variants(registry, context)?;
         Ok(MacroOutput::RootEnum(EnumDeclaration { name, variants }))
     }
@@ -566,18 +622,30 @@ impl SchemaMacro for RootEnumMacro {
 #[derive(Clone, Copy, Debug)]
 struct RootEnumBlock<'schema> {
     object: &'schema Block,
+    enum_name: &'static str,
 }
 
 impl<'schema> RootEnumBlock<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
+    fn new(object: &'schema Block, enum_name: &'static str) -> Self {
+        Self { object, enum_name }
     }
 
-    fn name(&self) -> Result<Name, SchemaError> {
-        self.object
+    fn name(&self) -> Name {
+        Name::new(self.enum_name)
+    }
+
+    fn reject_labeled_root(&self) -> Result<(), SchemaError> {
+        if self
+            .object
             .root_object_at(0)
-            .expect("root enum match checked first object")
-            .schema_name()
+            .and_then(Block::demote_to_string)
+            .is_some_and(|label| label == self.enum_name)
+        {
+            return Err(SchemaError::RootEnumLabelForbidden {
+                label: self.enum_name.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     fn variants(
@@ -585,55 +653,8 @@ impl<'schema> RootEnumBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        if self
-            .object
-            .root_object_at(1)
-            .is_some_and(|object| self.second_object_is_enum_body(object))
-        {
-            return self.variants_from_nested_enum(registry, context);
-        }
-
-        let mut variants = Vec::new();
-        for index in 1..self.object.holds_root_objects() {
-            variants.push(
-                SchemaVariant::new(
-                    self.object
-                        .root_object_at(index)
-                        .expect("index within root enum object count"),
-                )
-                .lower()?,
-            );
-        }
-        Ok(variants)
-    }
-
-    fn second_object_is_enum_body(&self, object: &Block) -> bool {
-        if self.object.holds_root_objects() != 2 {
-            return false;
-        }
-        if object.is_brace() {
-            return true;
-        }
-        if !object.is_parenthesis() {
-            return false;
-        }
-        object.holds_root_objects() == 0
-            || object
-                .root_object_at(0)
-                .is_some_and(|first| first.is_parenthesis() || first.is_brace())
-    }
-
-    fn variants_from_nested_enum(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Vec<EnumVariant>, SchemaError> {
         match registry.lower(
-            MacroObject::Block(
-                self.object
-                    .root_object_at(1)
-                    .expect("root enum match checked variant object"),
-            ),
+            MacroObject::Block(self.object),
             MacroPosition::EnumVariants,
             context,
         )? {
@@ -642,141 +663,6 @@ impl<'schema> RootEnumBlock<'schema> {
                 macro_name: "EnumVariants".to_owned(),
                 expected: "variants",
             }),
-        }
-    }
-}
-
-/// Rust macro for the brace-form payload-carrying enum body.
-///
-/// Pairs up the children of a brace into `(Name Payload)` variants —
-/// `{Variant1 Payload1 Variant2 Payload2}` lowers to
-/// `[(Variant1, Payload1), (Variant2, Payload2)]`. Unit-variant brace
-/// input (odd count, or any pair whose payload isn't a PascalCase
-/// symbol the schema can read as a type reference) errors loud rather
-/// than silently producing the wrong shape.
-#[derive(Clone, Debug)]
-struct BraceEnumVariantsMacro {
-    signature: MacroSignature,
-}
-
-impl BraceEnumVariantsMacro {
-    fn new() -> Self {
-        Self {
-            signature: MacroSignature::new("BraceEnumVariants", MacroPosition::EnumVariants, "{ }"),
-        }
-    }
-}
-
-impl SchemaMacro for BraceEnumVariantsMacro {
-    fn name(&self) -> &str {
-        self.signature.name()
-    }
-
-    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        self.signature.accepts_position(position)
-            && object.block().is_some_and(|block| block.is_brace())
-    }
-
-    fn lower(
-        &self,
-        object: MacroObject<'_>,
-        position: MacroPosition,
-        context: &mut MacroContext,
-        _registry: &MacroRegistry,
-    ) -> Result<MacroOutput, SchemaError> {
-        self.signature.remember(position, context);
-        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
-            expected: self.signature.expected_delimiter(),
-        })?;
-        if !object.is_brace() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: self.signature.expected_delimiter(),
-            });
-        }
-        BraceEnumVariantsBody::new(object).lower_variants()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct BraceEnumVariantsBody<'schema> {
-    object: &'schema Block,
-}
-
-impl<'schema> BraceEnumVariantsBody<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
-    }
-
-    fn lower_variants(&self) -> Result<MacroOutput, SchemaError> {
-        let count = self.object.holds_root_objects();
-        if count % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenBraceEnumPairs { found: count });
-        }
-        let mut variants = Vec::with_capacity(count / 2);
-        for index in (0..count).step_by(2) {
-            let name = self
-                .object
-                .root_object_at(index)
-                .expect("index within brace enum object count")
-                .schema_name()?;
-            let payload = TypeReference::from_block(
-                self.object
-                    .root_object_at(index + 1)
-                    .expect("index within brace enum object count"),
-            )?;
-            variants.push(EnumVariant {
-                name,
-                payload: Some(payload),
-            });
-        }
-        Ok(MacroOutput::Variants(variants))
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SchemaVariant<'schema> {
-    object: &'schema Block,
-}
-
-impl<'schema> SchemaVariant<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
-    }
-
-    fn lower(&self) -> Result<EnumVariant, SchemaError> {
-        if self.object.is_parenthesis() {
-            self.lower_parenthesis()
-        } else if self.object.qualifies_as_pascal_case_symbol() {
-            Ok(EnumVariant {
-                name: self.object.schema_name()?,
-                payload: None,
-            })
-        } else {
-            Err(SchemaError::ExpectedEnumVariant)
-        }
-    }
-
-    fn lower_parenthesis(&self) -> Result<EnumVariant, SchemaError> {
-        match self.object.holds_root_objects() {
-            1 => Ok(EnumVariant {
-                name: self
-                    .object
-                    .root_object_at(0)
-                    .expect("count checked")
-                    .schema_name()?,
-                payload: None,
-            }),
-            2 => Ok(EnumVariant {
-                name: self
-                    .object
-                    .root_object_at(0)
-                    .expect("count checked")
-                    .schema_name()?,
-                payload: Some(TypeReference::from_block(
-                    self.object.root_object_at(1).expect("count checked"),
-                )?),
-            }),
-            _ => Err(SchemaError::ExpectedEnumVariant),
         }
     }
 }

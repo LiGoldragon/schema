@@ -24,7 +24,7 @@
         ];
         craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
         schemaFilter = path: type:
-          type == "regular" && pkgs.lib.hasSuffix ".schema" path;
+          type == "regular" && (pkgs.lib.hasSuffix ".schema" path || pkgs.lib.hasSuffix ".asschema" path);
         sourceFilter = path: type:
           type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);
         src = pkgs.lib.cleanSourceWith {
@@ -45,20 +45,29 @@
           build = craneLib.cargoBuild (commonArguments // { inherit cargoArtifacts; });
           test = craneLib.cargoTest (commonArguments // { inherit cargoArtifacts; });
           design-examples = pkgs.runCommand "schema-next-design-examples" { } ''
-            grep -R "design_example_schema_document_has_exactly_four_root_objects" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_schema_document_has_three_roots_or_four_with_imports" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_namespace_brace_is_pair_style_key_value_map" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_macro_captures_use_dollar_and_dollar_star_sigils" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_schema_lowering_records_source_structure_header" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_brace_macro_dispatch_depends_on_position_and_pair_shape" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_macro_node_definitions_separate_structural_from_named_invocation" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_user_declared_macros_extend_structural_and_named_slots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
             touch $out
           '';
           no-nested-root-enum-examples = pkgs.runCommand "schema-next-no-nested-root-enum-examples" { } ''
-            if grep -R -n -E '\((Input|Output) \(\(' ${src}/schemas ${src}/tests; then
-              echo "root Input/Output examples must use direct variants, not nested enum bodies" >&2
+            if grep -R -n -E '^\s*\((Input|Output) \(' ${src}/schemas ${src}/tests/fixtures; then
+              echo "schema examples must not reintroduce labeled Input/Output root enums" >&2
+              exit 1
+            fi
+            if grep -R -n -E '\((Vec|Option|KeyValue) ' ${src}/schemas ${src}/tests; then
+              echo "schema examples must use @ macro markers for collection references" >&2
+              exit 1
+            fi
+            if grep -R -n -E 'SchemaEnumDefinitionBrace|BraceEnum|ExpectedEvenBraceEnumPairs' ${src}/src ${src}/schemas ${src}/tests; then
+              echo "brace enum sugar must not reappear; braces are key/value maps" >&2
               exit 1
             fi
             touch $out

@@ -6,10 +6,6 @@
   ($Name ($*Variants))
   (Type (Enum $Name ($*Variants))))
 
-(SchemaMacro SchemaEnumDefinitionBrace NamespaceDeclaration
-  ($Name {$*Variants})
-  (Type (Enum $Name {$*Variants})))
-
 (SchemaMacro SchemaStructFields StructFields
   [$*Fields]
   (Fields $*Fields))

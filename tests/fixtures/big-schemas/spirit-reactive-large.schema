@@ -1,0 +1,38 @@
+((Record Entry)
+ (Correct Correction)
+ (Observe Query)
+ (Watch WatchRequest)
+ (Unwatch SubscriptionToken)
+ Reindex
+ Compact)
+((Recorded RecordReceipt)
+ (Corrected CorrectionReceipt)
+ (Observed RecordSet)
+ (Watching SubscriptionReceipt)
+ (Unwatched SubscriptionReceipt)
+ (Rejected Rejection)
+ (Indexed IndexReceipt))
+{
+  Topic [Text]
+  Topics [(items (@Vec (Topic)))]
+  Description [Text]
+  AgentName [Text]
+  Timestamp [Integer]
+  RecordIdentifier [Integer]
+  SubscriptionToken [Integer]
+  CommitSequence [Integer]
+  DatabaseDigest [Integer]
+  Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
+  Kind (Decision Principle Correction Clarification Constraint Observation Question)
+  RejectionReason (Malformed Unauthorized Conflict Unsupported StaleVersion)
+  Entry [Topics Kind Description Magnitude AgentName Timestamp]
+  Correction [RecordIdentifier Description Magnitude AgentName Timestamp]
+  Query [Topics (kinds (@Vec (Kind))) (limit (@Option (Integer)))]
+  WatchRequest [Topics (kinds (@Vec (Kind))) AgentName]
+  RecordReceipt [RecordIdentifier CommitSequence DatabaseDigest]
+  CorrectionReceipt [RecordIdentifier CommitSequence DatabaseDigest]
+  RecordSet [(records (@Vec (Entry))) (byTopic (@KeyValue (Topic RecordIdentifier)))]
+  SubscriptionReceipt [SubscriptionToken CommitSequence]
+  Rejection [RejectionReason Description]
+  IndexReceipt [CommitSequence DatabaseDigest]
+}

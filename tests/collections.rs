@@ -1,11 +1,11 @@
-//! Collection + Option type references (psyche records 1034 / 1045).
+//! Collection + Option type references.
 //!
 //! A struct field or enum-variant payload can now wrap its referenced
-//! type in a collection or option. The surface forms are positional,
-//! collection-name-first — `(Vec T)`, `(KeyValue K V)`, `(Option T)`
-//! — and lower to the `TypeReference::Vector / Map / Optional`
+//! type in a collection or option. The surface forms are explicit
+//! macro invocations — `(@Vec (T))`, `(@KeyValue (K V))`, `(@Option
+//! (T))` — and lower to the `TypeReference::Vector / Map / Optional`
 //! variants. Collection fields are written as explicit pairs inside a
-//! struct body: `(fieldName (Vec T))`. Bare-symbol fields keep the
+//! struct body: `(fieldName (@Vec (T)))`. Bare-symbol fields keep the
 //! legacy plain shape, so non-collection schemas stay byte-identical.
 //!
 //! The map keyword is `KeyValue` (record 1045 dropped the redundant
@@ -33,8 +33,7 @@ fn struct_fields<'asschema>(
 
 #[test]
 fn vec_field_lowers_to_vector_reference() {
-    let asschema =
-        lower("{} (Input ()) (Output ()) { Service [Text] Cluster [(services (Vec Service))] }");
+    let asschema = lower("() () { Service [Text] Cluster [(services (@Vec (Service)))] }");
     let fields = struct_fields(&asschema, "Cluster");
     assert_eq!(fields[0].name.as_str(), "services");
     assert_eq!(
@@ -46,7 +45,7 @@ fn vec_field_lowers_to_vector_reference() {
 #[test]
 fn key_value_field_lowers_to_map_reference() {
     let asschema = lower(
-        "{} (Input ()) (Output ()) { NodeName [Text] NodeProposal [Text] Cluster [(nodes (KeyValue NodeName NodeProposal))] }",
+        "() () { NodeName [Text] NodeProposal [Text] Cluster [(nodes (@KeyValue (NodeName NodeProposal)))] }",
     );
     let fields = struct_fields(&asschema, "Cluster");
     assert_eq!(fields[0].name.as_str(), "nodes");
@@ -61,8 +60,7 @@ fn key_value_field_lowers_to_map_reference() {
 
 #[test]
 fn option_field_lowers_to_optional_reference() {
-    let asschema =
-        lower("{} (Input ()) (Output ()) { Cache [Text] Cluster [(cache (Option Cache))] }");
+    let asschema = lower("() () { Cache [Text] Cluster [(cache (@Option (Cache)))] }");
     let fields = struct_fields(&asschema, "Cluster");
     assert_eq!(fields[0].name.as_str(), "cache");
     assert_eq!(
@@ -74,7 +72,7 @@ fn option_field_lowers_to_optional_reference() {
 #[test]
 fn collection_field_and_plain_field_coexist_in_one_struct() {
     let asschema = lower(
-        "{} (Input ()) (Output ()) { Trust [Text] Service [Text] Cluster [Trust (services (Vec Service)) (cache (Option Trust))] }",
+        "() () { Trust [Text] Service [Text] Cluster [Trust (services (@Vec (Service))) (cache (@Option (Trust)))] }",
     );
     let fields = struct_fields(&asschema, "Cluster");
     // Bare symbol stays the legacy plain field (name derived from type).
@@ -91,7 +89,7 @@ fn collection_field_and_plain_field_coexist_in_one_struct() {
 fn nested_collections_lower_recursively() {
     // A map whose value is itself a vector of an optional leaf.
     let asschema = lower(
-        "{} (Input ()) (Output ()) { Leaf [Text] Key [Text] Nest [(deep (KeyValue Key (Vec (Option Leaf))))] }",
+        "() () { Leaf [Text] Key [Text] Nest [(deep (@KeyValue (Key (@Vec ((@Option (Leaf)))))))] }",
     );
     let fields = struct_fields(&asschema, "Nest");
     assert_eq!(
@@ -110,7 +108,7 @@ fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
     let asschema = lower(
-        "{} (Input ()) (Output (Projected (KeyValue NodeName NodeConfig))) { NodeName [Text] NodeConfig [Text] }",
+        "() ((Projected (@KeyValue (NodeName NodeConfig)))) { NodeName [Text] NodeConfig [Text] }",
     );
     let payload = asschema.output().variants[0]
         .payload
@@ -129,7 +127,7 @@ fn collection_payload_lowers_in_an_output_variant() {
 fn unknown_collection_head_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "{} (Input ()) (Output ()) { Leaf [Text] Bad [(field (HashSet Leaf))] }",
+            "() () { Leaf [Text] Bad [(field (@HashSet (Leaf)))] }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("unknown collection head should fail");
@@ -146,7 +144,7 @@ fn unknown_collection_head_is_rejected() {
 fn key_value_with_wrong_argument_count_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "{} (Input ()) (Output ()) { Leaf [Text] Bad [(field (KeyValue Leaf))] }",
+            "() () { Leaf [Text] Bad [(field (@KeyValue (Leaf)))] }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("KeyValue needs two arguments");

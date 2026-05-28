@@ -14,6 +14,7 @@ pub enum MacroPosition {
     NamespaceDeclaration,
     StructFields,
     EnumVariants,
+    TypeReference,
 }
 
 impl MacroPosition {
@@ -26,6 +27,7 @@ impl MacroPosition {
             Self::NamespaceDeclaration => "NamespaceDeclaration",
             Self::StructFields => "StructFields",
             Self::EnumVariants => "EnumVariants",
+            Self::TypeReference => "TypeReference",
         }
     }
 
@@ -38,6 +40,7 @@ impl MacroPosition {
             "NamespaceDeclaration" => Ok(Self::NamespaceDeclaration),
             "StructFields" => Ok(Self::StructFields),
             "EnumVariants" => Ok(Self::EnumVariants),
+            "TypeReference" => Ok(Self::TypeReference),
             found => Err(SchemaError::UnknownMacroPosition {
                 found: found.to_owned(),
             }),
@@ -156,17 +159,27 @@ pub enum MacroOutput {
     Type(TypeDeclaration),
     Fields(Vec<FieldDeclaration>),
     Variants(Vec<crate::EnumVariant>),
+    Reference(TypeReference),
     References(Vec<TypeReference>),
 }
 
-#[derive(Default)]
 pub struct MacroRegistry {
     macros: Vec<Box<dyn SchemaMacro>>,
+    node_definitions: Vec<MacroNodeDefinition>,
+}
+
+impl Default for MacroRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MacroRegistry {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            macros: Vec::new(),
+            node_definitions: Vec::new(),
+        }
     }
 
     pub fn register(&mut self, schema_macro: impl SchemaMacro + 'static) {
@@ -175,6 +188,20 @@ impl MacroRegistry {
 
     pub fn register_box(&mut self, schema_macro: Box<dyn SchemaMacro>) {
         self.macros.push(schema_macro);
+    }
+
+    pub fn register_node_definition(&mut self, definition: MacroNodeDefinition) {
+        self.node_definitions.push(definition);
+    }
+
+    pub fn node_definition(&self, position: MacroPosition) -> Option<&MacroNodeDefinition> {
+        self.node_definitions
+            .iter()
+            .find(|definition| definition.position == position)
+    }
+
+    pub fn node_definitions(&self) -> &[MacroNodeDefinition] {
+        &self.node_definitions
     }
 
     pub fn lower(
@@ -199,6 +226,41 @@ impl MacroRegistry {
             .map(|schema_macro| schema_macro.name().to_owned())
             .collect()
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacroNodeDefinition {
+    position: MacroPosition,
+    dispatch: MacroDispatch,
+}
+
+impl MacroNodeDefinition {
+    pub fn new(position: MacroPosition, dispatch: MacroDispatch) -> Self {
+        Self { position, dispatch }
+    }
+
+    pub fn position(&self) -> MacroPosition {
+        self.position
+    }
+
+    pub fn dispatch(&self) -> MacroDispatch {
+        self.dispatch
+    }
+
+    pub fn accepts_named_invocation(&self) -> bool {
+        matches!(
+            self.dispatch,
+            MacroDispatch::NamedInvocation | MacroDispatch::StructuralOrNamedInvocation
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacroDispatch {
+    RootPositional,
+    Structural,
+    NamedInvocation,
+    StructuralOrNamedInvocation,
 }
 
 pub(crate) trait BlockDebug {

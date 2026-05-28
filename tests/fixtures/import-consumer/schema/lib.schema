@@ -1,6 +1,6 @@
 { DatabaseMarker marker-core:mail:DatabaseMarker }
-(Input (Observe Query))
-(Output (Marked DatabaseMarker))
+((Observe Query))
+((Marked DatabaseMarker))
 {
   Topic [Text]
   Query [Topic]

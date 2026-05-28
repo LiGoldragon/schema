@@ -40,22 +40,21 @@ module schema and checking that the imported type is declared there.
   lowering consumed the source's first-pass structural shape.
 - `Asschema` stores declarations in `Vec` order; lookup maps are derived.
 - The root schema is positional. Current MVP shape:
-  - field 1: imports/exports map `{ }`
-  - field 2: input enum definition `(Input (...))`
-  - field 3: output enum definition `(Output (...))`
-  - field 4: namespace map `{ }`
+  - field 1: input enum body, for example `((Record Entry) Reindex)`
+  - field 2: output enum body, for example `((Recorded Receipt) Rejected*)`
+  - field 3: namespace map `{ }`
+  - optional leading field: imports map `{ Local dependency-crate:module:Type }`
 - Input and output roots are actor reaction languages. They declare
   the variants a component can receive and emit; the Rust emission
   layer turns those variants into executor methods and signal-frame
   route headers.
 - The same root shape is used for Signal, Nexus, and SEMA schema files:
-  imports/exports, input, output, and namespace. The macro engine lowers
-  all three planes uniformly; the runtime meaning differs after lowering.
+  input, output, and namespace, with optional leading imports. The macro
+  engine lowers all three planes uniformly; the runtime meaning differs after
+  lowering.
 - Parentheses define enums and variants. A named enum definition is
   `(Name (Variant ...))`.
-- Brace pair bodies are enum sugar only at enum-variant positions. The body
-  `{Variant Payload Variant Payload}` lowers through a macro to payload-carrying
-  enum variants; odd brace counts are rejected rather than guessed.
+- Braces are key/value maps only. They are not enum sugar.
 - Square brackets define structs and their fields. A named struct definition
   is `(Name [FieldType ...])`; the one-field form is a newtype struct.
 - The root `Schema` name is implicit when reading a `.schema` file. Nested
@@ -84,16 +83,16 @@ module schema and checking that the imported type is declared there.
 - `TypeReference` at a reference position is an enum: `Plain(Name)`,
   `Vector(Box<TypeReference>)`, `Map(Box, Box)`, `Optional(Box<TypeReference>)`.
   `TypeReference::from_block` lowers a bare PascalCase symbol to `Plain` and a
-  parenthesised head-symbol form to a collection — `(Vec T)` → `Vector`,
-  `(KeyValue K V)` → `Map`, `(Option T)` → `Optional`. The head is a positional
-  collection name (not a keyword-tagged record); the inner positions recurse, so
-  collections nest. An unknown head or wrong argument count is a typed
+  parenthesised explicit macro-marker form to a collection — `(@Vec (T))` →
+  `Vector`, `(@KeyValue (K V))` → `Map`, `(@Option (T))` → `Optional`. The
+  `@` head is a macro marker atom, not a schema symbol; the inner positions
+  recurse, so collections nest. An unknown head or wrong argument count is a typed
   `SchemaError::UnknownTypeReferenceForm`; an empty parenthesis is
   `SchemaError::EmptyTypeReference`. Lowering is pure semantics over nota-next's
   already-parsed blocks — not a hand-rolled text parser.
 - Collection references reach every reference position. Struct fields accept an
   explicit pair `(fieldName TypeReference)` for a directly-typed collection
-  field (`(services (Vec Service))`); a bare PascalCase field stays the legacy
+  field (`(services (@Vec (Service)))`); a bare PascalCase field stays the legacy
   plain shape with its name derived from the type. Enum-variant payloads, root
   input/output variant payloads, and import sources all lower their type through
   `TypeReference::from_block`. A schema with no collection lowers

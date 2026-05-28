@@ -11,40 +11,45 @@
 
 use nota_next::StructureShape;
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroPosition, Name, SchemaEngine, SchemaError,
-    SchemaIdentity, TypeDeclaration,
+    DeclarativeMacroLibrary, MacroContext, MacroDispatch, MacroPosition, MacroRegistry, Name,
+    SchemaEngine, SchemaError, SchemaIdentity, TypeDeclaration, TypeReference,
 };
 
-/// Illustrates: a schema document is positional — exactly 4 root
-/// objects (Imports, Input, Output, Namespace). Any other count is
-/// a typed error, not silent truncation or zero-fill.
-///
-/// Intent record 805 (Maximum) names the four-position root.
+/// Illustrates: a schema document is positional. The common no-import
+/// form has exactly 3 root values (input enum body, output enum body,
+/// namespace). A leading import map makes the 4-root form.
 #[test]
-fn design_example_schema_document_has_exactly_four_root_objects() {
-    let too_few = "{} (Input ()) (Output ())";
+fn design_example_schema_document_has_three_roots_or_four_with_imports() {
+    let too_few = "() ()";
     let error = SchemaEngine::default()
         .lower_source(too_few, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("three root objects should fail");
+        .expect_err("two root objects should fail");
     assert_eq!(
         error,
         SchemaError::ExpectedRootObjectCount {
-            expected: 4,
-            found: 3,
+            expected: "3 root values (input output namespace) or 4 with leading imports",
+            found: 2,
         }
     );
 
-    let too_many = "{} (Input ()) (Output ()) {} {}";
+    let too_many = "{} () () {} {}";
     let error = SchemaEngine::default()
         .lower_source(too_many, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("five root objects should fail");
     assert_eq!(
         error,
         SchemaError::ExpectedRootObjectCount {
-            expected: 4,
+            expected: "3 root values (input output namespace) or 4 with leading imports",
             found: 5,
         }
     );
+
+    SchemaEngine::default()
+        .lower_source("() () {}", SchemaIdentity::new("example", "0.1.0"))
+        .expect("three-root no-import schema lowers");
+    SchemaEngine::default()
+        .lower_source("{} () () {}", SchemaIdentity::new("example", "0.1.0"))
+        .expect("four-root import schema lowers");
 }
 
 /// Illustrates: a namespace brace is a key/value MAP — odd positions
@@ -59,7 +64,7 @@ fn design_example_schema_document_has_exactly_four_root_objects() {
 /// the pair-style positive path.
 #[test]
 fn design_example_namespace_brace_is_pair_style_key_value_map() {
-    let source = "{} (Input ()) (Output ()) { Topic [Text] Kind (Decision Constraint) }";
+    let source = "() () { Topic [Text] Kind (Decision Constraint) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("pair-style namespace lowers");
@@ -108,7 +113,7 @@ fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
 
     // The captures FIRE — feed a minimal schema where the struct macro
     // matches one declaration and observe the recorded binding names.
-    let source = "{} (Input ()) (Output ()) { Entry [Topic Description] }";
+    let source = "() () { Entry [Topic Description] }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -162,10 +167,10 @@ fn design_example_colon_qualified_name_decomposes_into_segments() {
     assert_eq!(bare.field_name(), "topic");
 }
 
-/// Illustrates: the default `SchemaEngine` registers two macro
-/// layers — Rust-hand-coded for the four ROOT positions
+/// Illustrates: the default `SchemaEngine` registers macro layers:
+/// Rust-hand-coded for the root positions and type-reference markers
 /// (RootImports, RootInput, RootOutput, RootNamespace) plus
-/// declarative-from-`builtin-macros.schema` for the four INNER
+/// declarative-from-`builtin-macros.schema` for the inner structural
 /// positions (NamespaceDeclaration / StructFields / EnumVariants —
 /// the SchemaStructDefinition / SchemaEnumDefinition /
 /// SchemaStructFields / SchemaEnumVariants library).
@@ -186,11 +191,10 @@ fn design_example_default_engine_has_two_macro_layers() {
         vec![
             "SchemaStructDefinition",
             "SchemaEnumDefinition",
-            "SchemaEnumDefinitionBrace",
             "SchemaStructFields",
             "SchemaEnumVariants",
         ],
-        "five declarative macros loaded from builtin-macros.schema (paren + brace enum forms)",
+        "four declarative structural macros loaded from builtin-macros.schema",
     );
 
     let positions: Vec<MacroPosition> = library
@@ -203,11 +207,10 @@ fn design_example_default_engine_has_two_macro_layers() {
         vec![
             MacroPosition::NamespaceDeclaration,
             MacroPosition::NamespaceDeclaration,
-            MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,
             MacroPosition::EnumVariants,
         ],
-        "declarative macros target the three INNER positions",
+        "declarative macros target the structural inner positions",
     );
 
     // The four ROOT positions are not in the declarative set — they
@@ -215,7 +218,7 @@ fn design_example_default_engine_has_two_macro_layers() {
     // `MacroRegistry::with_schema_defaults`. Observed indirectly:
     // when the default engine processes a schema, all four ROOT
     // macro names appear in the applied trace.
-    let source = "{} (Input ()) (Output ()) {}";
+    let source = "() () {}";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -229,7 +232,7 @@ fn design_example_default_engine_has_two_macro_layers() {
         .iter()
         .map(String::as_str)
         .collect();
-    for root_macro in ["RootImports", "RootInput", "RootOutput", "RootNamespace"] {
+    for root_macro in ["RootInput", "RootOutput", "RootNamespace"] {
         assert!(
             applied.contains(&root_macro),
             "root macro {root_macro} fires on a minimal schema; applied = {applied:?}",
@@ -244,7 +247,7 @@ fn design_example_default_engine_has_two_macro_layers() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "{} (Input (Record Entry)) (Output (Accepted)) { Entry [Description] }";
+    let source = "((Record Entry)) (Accepted) { Entry [Description] }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -267,66 +270,46 @@ fn design_example_schema_lowering_records_source_structure_header() {
     assert_eq!(
         observed,
         vec![
-            (StructureShape::Document, 4),
-            (StructureShape::Brace, 0),
-            (StructureShape::Parenthesis, 2),
-            (StructureShape::Atom, 0),
-            (StructureShape::Parenthesis, 2),
-            (StructureShape::Parenthesis, 2),
-            (StructureShape::Atom, 0),
+            (StructureShape::Document, 3),
             (StructureShape::Parenthesis, 1),
+            (StructureShape::Parenthesis, 2),
+            (StructureShape::Parenthesis, 1),
+            (StructureShape::Atom, 0),
+            (StructureShape::Brace, 2),
+            (StructureShape::Atom, 0),
+            (StructureShape::SquareBracket, 1),
         ],
     );
     assert_ne!(header.packed_word(), 0, "header packs into a u64 word");
 }
 
-/// Illustrates: brace-enum sugar is still a macro dispatch, not a
-/// special ad-hoc parser branch. It fires only at enum-variant
-/// positions with an even pair shape; malformed brace bodies produce
-/// the typed brace-pair error.
+/// Illustrates: macro expectations live on node definitions. Structural
+/// macros are expected at namespace/fields/variants positions; explicit
+/// marker macros are expected at type-reference positions.
 #[test]
-fn design_example_brace_macro_dispatch_depends_on_position_and_pair_shape() {
-    let source = "{} (Input {Record Entry Observe Query}) (Output ()) {}";
-    let mut context = MacroContext::default();
-    let asschema = SchemaEngine::default()
-        .lower_source_with_context(
-            source,
-            SchemaIdentity::new("example", "0.1.0"),
-            &mut context,
-        )
-        .expect("brace enum sugar lowers in root input position");
-
-    let variants: Vec<(&str, Option<&str>)> = asschema
-        .input()
-        .variants
+fn design_example_macro_node_definitions_separate_structural_from_named_invocation() {
+    let registry = MacroRegistry::with_schema_defaults();
+    let dispatches: Vec<(MacroPosition, MacroDispatch)> = registry
+        .node_definitions()
         .iter()
-        .map(|variant| {
-            (
-                variant.name.as_str(),
-                variant
-                    .payload
-                    .as_ref()
-                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
-            )
-        })
+        .map(|definition| (definition.position(), definition.dispatch()))
         .collect();
     assert_eq!(
-        variants,
-        vec![("Record", Some("Entry")), ("Observe", Some("Query"))],
+        dispatches,
+        vec![
+            (MacroPosition::RootImports, MacroDispatch::RootPositional),
+            (MacroPosition::RootInput, MacroDispatch::RootPositional),
+            (MacroPosition::RootOutput, MacroDispatch::RootPositional),
+            (MacroPosition::RootNamespace, MacroDispatch::RootPositional),
+            (
+                MacroPosition::NamespaceDeclaration,
+                MacroDispatch::Structural
+            ),
+            (MacroPosition::StructFields, MacroDispatch::Structural),
+            (MacroPosition::EnumVariants, MacroDispatch::Structural),
+            (MacroPosition::TypeReference, MacroDispatch::NamedInvocation),
+        ],
     );
-    assert!(
-        context
-            .macros_applied()
-            .iter()
-            .any(|name| name == "BraceEnumVariants"),
-        "brace enum sugar is witnessed through macro context",
-    );
-
-    let malformed = "{} (Input {Record Entry Observe}) (Output ()) {}";
-    let error = SchemaEngine::default()
-        .lower_source(malformed, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("odd brace count is not a valid enum-pair macro input");
-    assert_eq!(error, SchemaError::ExpectedEvenBraceEnumPairs { found: 3 });
 }
 
 /// Illustrates: root enum payloads are authored directly under the
@@ -334,7 +317,7 @@ fn design_example_brace_macro_dispatch_depends_on_position_and_pair_shape() {
 /// variant objects; unit variants use bare symbols.
 #[test]
 fn design_example_root_enum_uses_direct_variant_shapes() {
-    let source = "{} (Input (Record Entry) Drop) (Output ()) {}";
+    let source = "((Record Entry) Drop) () {}";
 
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
@@ -358,6 +341,88 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
     assert_eq!(variants, vec![("Record", Some("Entry")), ("Drop", None)]);
 }
 
+/// Illustrates: `Record*` is shorthand for the common data-carrying
+/// variant shape `(Record Record)`. The star is part of enum-variant
+/// structural sugar, not a macro invocation.
+#[test]
+fn design_example_same_name_payload_variant_uses_star_suffix() {
+    let source = "(Record*) (Recorded*) { Record [Description] Recorded [RecordIdentifier] }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("star variant sugar lowers");
+
+    assert_eq!(
+        asschema.input().variants[0]
+            .payload
+            .as_ref()
+            .expect("record payload")
+            .plain_name()
+            .expect("plain payload")
+            .as_str(),
+        "Record",
+    );
+    assert_eq!(
+        asschema.output().variants[0]
+            .payload
+            .as_ref()
+            .expect("recorded payload")
+            .plain_name()
+            .expect("plain payload")
+            .as_str(),
+        "Recorded",
+    );
+}
+
+/// Illustrates: user-declared structural macros and named-invocation
+/// macros are both real registry entries. The first has no `@` because
+/// the node position expects structural definitions. The second uses
+/// `@` because the reference position expects named macro invocation.
+#[test]
+fn design_example_user_declared_macros_extend_structural_and_named_slots() {
+    let user_macros = DeclarativeMacroLibrary::from_source(
+        "
+        (SchemaMacro TextNewtype NamespaceDeclaration
+          ($Name TextNewtype)
+          (Type (Struct $Name [Text])))
+        (SchemaMacro Bag TypeReference
+          (@Bag ($Type))
+          (Reference (Vector $Type)))
+        ",
+    )
+    .expect("user macro definitions parse");
+    let mut registry = MacroRegistry::with_schema_defaults();
+    for schema_macro in user_macros.into_macros() {
+        registry.register_box(schema_macro);
+    }
+    let engine = SchemaEngine::with_registry(registry);
+    let asschema = engine
+        .lower_source(
+            "() () { Topic TextNewtype Topics [(items (@Bag (Topic)))] }",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect("schema lowers through user macros");
+
+    let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
+        panic!("TextNewtype macro creates a newtype");
+    };
+    assert_eq!(
+        topic.fields[0]
+            .reference
+            .plain_name()
+            .expect("plain reference")
+            .as_str(),
+        "Text",
+    );
+    let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
+    else {
+        panic!("single-field Topics should be a newtype");
+    };
+    assert_eq!(
+        topics.fields[0].reference,
+        TypeReference::Vector(Box::new(TypeReference::new("Topic"))),
+    );
+}
+
 /// Illustrates: the same schema language names the three runtime
 /// planes. Signal roots remain the schema's Input/Output, while
 /// Nexus and SEMA vocabularies are ordinary schema objects in the
@@ -368,14 +433,13 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
 #[test]
 fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
     let source = "
-        {}
-        (Input {Record Entry Observe Query})
-        (Output {RecordAccepted RecordIdentifier RecordsObserved RecordSet})
+        ((Record Entry) (Observe Query))
+        ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
         {
-          NexusAction {Record Entry Observe Query}
-          NexusResult {Accepted RecordIdentifier Observed RecordSet}
-          SemaCommand {Record Entry Observe Query}
-          SemaResponse {Recorded RecordIdentifier Observed RecordSet}
+          NexusAction ((Record Entry) (Observe Query))
+          NexusResult ((Accepted RecordIdentifier) (Observed RecordSet))
+          SemaCommand ((Record Entry) (Observe Query))
+          SemaResponse ((Recorded RecordIdentifier) (Observed RecordSet))
           Topic [Text]
           RecordIdentifier [Integer]
           Entry [Topic]

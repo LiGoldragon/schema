@@ -45,7 +45,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 
 #[test]
 fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
-    let source = "{} (Input ()) (Output ()) { Entry [Topic Kind] Kind (Decision Constraint) }";
+    let source = "() () { Entry [Topic Kind] Kind (Decision Constraint) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -59,7 +59,7 @@ fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
-    let source = "{} (Input ()) (Output ()) { (Entry [Topic Kind]) }";
+    let source = "() () { (Entry [Topic Kind]) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespaces are key-value maps only");
@@ -72,7 +72,7 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even() {
-    let source = "{} (Input ()) (Output ()) { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
+    let source = "() () { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespace keys must be symbols");
@@ -85,7 +85,7 @@ fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even()
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "{} (Input (Record schema:spirit:Entry)) (Output ()) { schema:spirit:Topic [Text] schema:spirit:Entry [schema:spirit:Topic] }";
+    let source = "((Record schema:spirit:Entry)) () { schema:spirit:Topic [Text] schema:spirit:Entry [schema:spirit:Topic] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
@@ -154,7 +154,7 @@ fn root_schema_describes_the_schema_root_type() {
             .iter()
             .map(|field| field.reference.plain_name().expect("plain field").as_str())
             .collect::<Vec<_>>(),
-        vec!["Imports", "Input", "Output", "Namespace"]
+        vec!["Input", "Output", "Namespace"]
     );
 
     let TypeDeclaration::Enum(type_declaration) = asschema
@@ -230,6 +230,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
             "NamespaceDeclaration",
             "StructFields",
             "EnumVariants",
+            "TypeReference",
         ]
     );
 }
@@ -247,7 +248,6 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
         vec![
             "SchemaStructDefinition",
             "SchemaEnumDefinition",
-            "SchemaEnumDefinitionBrace",
             "SchemaStructFields",
             "SchemaEnumVariants",
         ]
@@ -321,7 +321,7 @@ fn macro_lowering_receives_macro_position() {
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source = "{} (Input ()) (Output ()) { Entry [RecordIdentifier Description] }";
+    let source = "() () { Entry [RecordIdentifier Description] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -349,9 +349,10 @@ fn default_engine_dispatches_through_registered_macros() {
             .map(String::as_str)
             .collect::<Vec<_>>(),
         vec![
-            "RootImports",
             "RootInput",
+            "SchemaEnumVariants",
             "RootOutput",
+            "SchemaEnumVariants",
             "RootNamespace",
             "SchemaStructDefinition",
             "SchemaStructFields",
@@ -395,9 +396,10 @@ fn default_engine_dispatches_through_registered_macros() {
     assert_eq!(
         context.positions_seen(),
         &[
-            MacroPosition::RootImports,
             MacroPosition::RootInput,
+            MacroPosition::EnumVariants,
             MacroPosition::RootOutput,
+            MacroPosition::EnumVariants,
             MacroPosition::RootNamespace,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,
@@ -427,10 +429,7 @@ fn schema_engine_can_be_built_from_a_macro_registry() {
     registry.register(RejectingRootImports);
     let engine = SchemaEngine::with_registry(registry);
     let error = engine
-        .lower_source(
-            "{} (Input ()) (Output ()) {}",
-            SchemaIdentity::new("example", "0.1.0"),
-        )
+        .lower_source("{} () () {}", SchemaIdentity::new("example", "0.1.0"))
         .expect_err("custom registry should reject");
 
     assert_eq!(
@@ -467,120 +466,44 @@ impl SchemaMacro for RejectingRootImports {
     }
 }
 
-// ---------------------------------------------------------------
-// Brace-enum sugar (records 894 / 932). The brace body form
-// `Foo {Variant Payload Other Payload}` is a macro expansion of
-// the canonical paren form `Foo ((Variant Payload) (Other Payload))`.
-// Both shapes produce the same Asschema; only the surface differs.
-// ---------------------------------------------------------------
-
 #[test]
-fn brace_enum_namespace_lowers_to_same_asschema_as_paren_form() {
-    let paren_source =
-        "{} (Input ()) (Output ()) { Routing ((ToInbox Address) (ToOutbox Address)) }";
-    let brace_source = "{} (Input ()) (Output ()) { Routing {ToInbox Address ToOutbox Address} }";
-    let paren = SchemaEngine::default()
-        .lower_source(paren_source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("paren form lowers");
-    let brace = SchemaEngine::default()
-        .lower_source(brace_source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("brace sugar lowers");
-
-    assert_eq!(paren.namespace(), brace.namespace());
-    let TypeDeclaration::Enum(routing) = &brace.namespace()[0] else {
-        panic!("Routing should be an enum");
-    };
-    let pairs: Vec<(&str, Option<&str>)> = routing
-        .variants
-        .iter()
-        .map(|variant| {
-            (
-                variant.name.as_str(),
-                variant
-                    .payload
-                    .as_ref()
-                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
-            )
-        })
-        .collect();
-    assert_eq!(
-        pairs,
-        vec![("ToInbox", Some("Address")), ("ToOutbox", Some("Address"))],
-    );
-}
-
-#[test]
-fn brace_enum_at_root_position_lowers_to_same_asschema_as_paren_form() {
-    let paren_source = "{} (Input (Record Entry) (Observe Query)) (Output ()) {}";
-    let brace_source = "{} (Input {Record Entry Observe Query}) (Output ()) {}";
-    let paren = SchemaEngine::default()
-        .lower_source(paren_source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("paren form lowers");
-    let brace = SchemaEngine::default()
-        .lower_source(brace_source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("brace sugar lowers at root");
-
-    assert_eq!(paren.input(), brace.input());
-    let pairs: Vec<(&str, Option<&str>)> = brace
-        .input()
-        .variants
-        .iter()
-        .map(|variant| {
-            (
-                variant.name.as_str(),
-                variant
-                    .payload
-                    .as_ref()
-                    .map(|payload| payload.plain_name().expect("plain payload").as_str()),
-            )
-        })
-        .collect();
-    assert_eq!(
-        pairs,
-        vec![("Record", Some("Entry")), ("Observe", Some("Query"))],
-    );
-}
-
-#[test]
-fn brace_enum_rejects_odd_count_as_unit_variant_ambiguity() {
-    // Unit-variant brace input is structurally ambiguous (no payload to pair
-    // each name with); the engine errors loud rather than guessing.
-    let source = "{} (Input ()) (Output ()) { Kind {Decision Principle Correction} }";
+fn brace_body_is_not_enum_sugar_inside_namespace() {
+    let source = "() () { Routing {ToInbox Address ToOutbox Address} }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("odd brace count should fail");
-    assert_eq!(
+        .expect_err("brace values are maps, not enum sugar");
+
+    assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedEvenBraceEnumPairs { found: 3 },
-    );
+        schema_next::SchemaError::MacroDidNotMatch { .. }
+    ));
 }
 
 #[test]
-fn brace_enum_definition_macro_captures_pair_payload_names() {
-    // The declarative SchemaEnumDefinitionBrace macro fires alongside
-    // the paren-form macro; the macros_applied trace shows the brace
-    // version on brace input.
-    let source = "{} (Input ()) (Output ()) { Routing {ToInbox Address ToOutbox Address} }";
-    let mut context = MacroContext::default();
-    SchemaEngine::default()
-        .lower_source_with_context(
-            source,
+fn root_enum_rejects_labeled_input_and_output_positions() {
+    let error = SchemaEngine::default()
+        .lower_source(
+            "(Input ((Record Entry))) () {}",
             SchemaIdentity::new("example", "0.1.0"),
-            &mut context,
         )
-        .expect("brace sugar lowers through declarative macro");
-
-    let applied: Vec<&str> = context
-        .macros_applied()
-        .iter()
-        .map(String::as_str)
-        .collect();
-    assert!(
-        applied.contains(&"SchemaEnumDefinitionBrace"),
-        "brace-form namespace macro applies; trace = {applied:?}",
+        .expect_err("root input label should be rejected");
+    assert_eq!(
+        error,
+        schema_next::SchemaError::RootEnumLabelForbidden {
+            label: "Input".to_owned()
+        }
     );
-    assert!(
-        applied.contains(&"BraceEnumVariants"),
-        "brace-form variant-pairing macro applies; trace = {applied:?}",
+
+    let error = SchemaEngine::default()
+        .lower_source(
+            "() (Output ((Accepted Receipt))) {}",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect_err("root output label should be rejected");
+    assert_eq!(
+        error,
+        schema_next::SchemaError::RootEnumLabelForbidden {
+            label: "Output".to_owned()
+        }
     );
 }

@@ -631,11 +631,14 @@ impl<'template> AssembledTemplate<'template> {
                 .lower(registry, context)
                 .map(MacroOutput::Type),
             "Fields" => AssembledFields::new(&children[1..])
-                .lower()
+                .lower(registry, context)
                 .map(MacroOutput::Fields),
             "Variants" => AssembledVariants::new(&children[1..])
-                .lower()
+                .lower(registry, context)
                 .map(MacroOutput::Variants),
+            "Reference" => AssembledReference::new(&children[1..])
+                .lower(registry, context)
+                .map(MacroOutput::Reference),
             found => Err(SchemaError::UnknownAssembledTemplate {
                 found: found.to_owned(),
             }),
@@ -779,10 +782,14 @@ impl<'template> AssembledFields<'template> {
         Self { objects }
     }
 
-    fn lower(&self) -> Result<Vec<FieldDeclaration>, SchemaError> {
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<FieldDeclaration>, SchemaError> {
         let mut fields = Vec::new();
         for object in self.objects {
-            fields.push(AssembledField::new(object).lower()?);
+            fields.push(AssembledField::new(object).lower(registry, context)?);
         }
         Ok(fields)
     }
@@ -795,10 +802,12 @@ impl<'template> AssembledFields<'template> {
 /// `Plain` reference. A parenthesised pair `(fieldName TypeReference)`
 /// is the explicit form that collection fields need — the field name
 /// is stated directly and the type position lowers through
-/// `TypeReference::from_block`, so `(nodes (KeyValue NodeName
-/// NodeProposal))`, `(users (Vec UserProposal))`, and `(cache (Option
-/// BinaryCache))` all express a directly-typed collection field. The
-/// bare form stays byte-identical; the pair form is purely additive.
+/// `TypeReference::from_block_with_registry`, so
+/// `(nodes (@KeyValue (NodeName NodeProposal)))`,
+/// `(users (@Vec (UserProposal)))`, and `(cache (@Option
+/// (BinaryCache)))` all express a directly-typed collection field.
+/// The bare form stays byte-identical; the pair form is purely
+/// additive.
 #[derive(Clone, Copy, Debug)]
 struct AssembledField<'template> {
     object: &'template Block,
@@ -809,15 +818,22 @@ impl<'template> AssembledField<'template> {
         Self { object }
     }
 
-    fn lower(&self) -> Result<FieldDeclaration, SchemaError> {
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<FieldDeclaration, SchemaError> {
         if self.object.is_parenthesis() && self.object.holds_root_objects() == 2 {
             let field_name = self
                 .object
                 .root_object_at(0)
                 .expect("count checked")
                 .schema_name()?;
-            let reference =
-                TypeReference::from_block(self.object.root_object_at(1).expect("count checked"))?;
+            let reference = TypeReference::from_block_with_registry(
+                self.object.root_object_at(1).expect("count checked"),
+                registry,
+                context,
+            )?;
             return Ok(FieldDeclaration {
                 name: Name::new(field_name.field_name()),
                 reference,
@@ -841,10 +857,14 @@ impl<'template> AssembledVariants<'template> {
         Self { objects }
     }
 
-    fn lower(&self) -> Result<Vec<EnumVariant>, SchemaError> {
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<EnumVariant>, SchemaError> {
         let mut variants = Vec::new();
         for object in self.objects {
-            variants.push(AssembledVariant::new(object).lower()?);
+            variants.push(AssembledVariant::new(object).lower(registry, context)?);
         }
         Ok(variants)
     }
@@ -860,9 +880,22 @@ impl<'template> AssembledVariant<'template> {
         Self { object }
     }
 
-    fn lower(&self) -> Result<EnumVariant, SchemaError> {
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<EnumVariant, SchemaError> {
         if self.object.is_parenthesis() {
-            self.lower_parenthesis()
+            self.lower_parenthesis(registry, context)
+        } else if self.object.demote_to_string().is_some_and(|token| {
+            token.ends_with('*') && token.len() > 1 && self.object.qualifies_as_pascal_case_symbol()
+        }) {
+            let token = self.object.demote_to_string().expect("checked token");
+            let name = token.trim_end_matches('*');
+            Ok(EnumVariant {
+                name: Name::new(name),
+                payload: Some(TypeReference::new(name)),
+            })
         } else if self.object.qualifies_as_pascal_case_symbol() {
             Ok(EnumVariant {
                 name: self.object.schema_name()?,
@@ -873,7 +906,11 @@ impl<'template> AssembledVariant<'template> {
         }
     }
 
-    fn lower_parenthesis(&self) -> Result<EnumVariant, SchemaError> {
+    fn lower_parenthesis(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<EnumVariant, SchemaError> {
         match self.object.holds_root_objects() {
             1 => Ok(EnumVariant {
                 name: self
@@ -889,11 +926,68 @@ impl<'template> AssembledVariant<'template> {
                     .root_object_at(0)
                     .expect("count checked")
                     .schema_name()?,
-                payload: Some(TypeReference::from_block(
+                payload: Some(TypeReference::from_block_with_registry(
                     self.object.root_object_at(1).expect("count checked"),
+                    registry,
+                    context,
                 )?),
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AssembledReference<'template> {
+    objects: &'template [Block],
+}
+
+impl<'template> AssembledReference<'template> {
+    fn new(objects: &'template [Block]) -> Self {
+        Self { objects }
+    }
+
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        if self.objects.len() != 1 {
+            return Err(SchemaError::UnknownAssembledTemplate {
+                found: "Reference".to_owned(),
+            });
+        }
+        Self::lower_object(&self.objects[0], registry, context)
+    }
+
+    fn lower_object(
+        object: &'template Block,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        if !object.is_parenthesis() {
+            return TypeReference::from_block_with_registry(object, registry, context);
+        }
+        let children =
+            AssembledTemplate::new(object).parenthesized_children("assembled reference")?;
+        let head = children
+            .first()
+            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+                found: "Reference".to_owned(),
+            })?
+            .schema_name()?;
+        match head.as_str() {
+            "Vector" if children.len() == 2 => Ok(TypeReference::Vector(Box::new(
+                Self::lower_object(&children[1], registry, context)?,
+            ))),
+            "Optional" if children.len() == 2 => Ok(TypeReference::Optional(Box::new(
+                Self::lower_object(&children[1], registry, context)?,
+            ))),
+            "Map" if children.len() == 3 => Ok(TypeReference::Map(
+                Box::new(Self::lower_object(&children[1], registry, context)?),
+                Box::new(Self::lower_object(&children[2], registry, context)?),
+            )),
+            _ => TypeReference::from_block_with_registry(object, registry, context),
         }
     }
 }

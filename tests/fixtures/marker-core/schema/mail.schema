@@ -1,6 +1,4 @@
-{}
-(Input ())
-(Output ())
+() ()
 {
   CommitSequence [Integer]
   StateDigest [Integer]

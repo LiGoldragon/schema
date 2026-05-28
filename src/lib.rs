@@ -12,7 +12,8 @@ pub use asschema::{
 pub use declarative::{DeclarativeMacroLibrary, MacroDefinition};
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
 pub use macros::{
-    MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaMacro,
+    MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
+    MacroPosition, MacroRegistry, SchemaMacro,
 };
 pub use module::{SchemaModuleSource, SchemaPackage};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};

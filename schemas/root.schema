@@ -1,8 +1,6 @@
-{}
-(Input ())
-(Output ())
+() ()
 {
-  Schema [Imports Input Output Namespace]
+  Schema [Input Output Namespace]
   Imports [ImportDeclaration]
   Namespace [TypeDeclaration]
   ImportDeclaration [Name TypeReference]
@@ -14,6 +12,6 @@
   Variants [VariantDeclaration]
   VariantDeclaration [Name Payload]
   Payload (Unit (Carries TypeReference))
-  TypeReference [Name]
+  TypeReference (Plain Vector Map Optional)
   Name [Text]
 }
