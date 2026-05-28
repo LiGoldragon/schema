@@ -50,7 +50,27 @@ fn assert_big_fixture(name: &str, source: &str, resolver: Option<ImportResolver>
             .lower_source_with_context(source, identity, &mut context)
             .expect("big schema lowers"),
     };
+    assert_big_asschema_fixture(name, &asschema);
     let rendered = AsschemaWitness::new(name, &asschema, &context).render();
+    let expected_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("tests/fixtures/big-schemas/{name}.witness.txt"));
+    if std::env::var_os("SCHEMA_NEXT_UPDATE_BIG_EXAMPLES").is_some() {
+        std::fs::write(&expected_path, &rendered).expect("write expected asschema");
+    }
+    let expected = std::fs::read_to_string(&expected_path).expect("read expected asschema");
+    assert_eq!(
+        rendered, expected,
+        "assembled schema witness drifted for {name}"
+    );
+}
+
+fn assert_big_asschema_fixture(name: &str, asschema: &Asschema) {
+    let rendered = asschema.to_nota();
+    let reparsed = Asschema::from_nota(&rendered).expect("rendered asschema parses back");
+    assert_eq!(
+        &reparsed, asschema,
+        "NOTA asschema round-trip changed data for {name}"
+    );
     let expected_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(format!("tests/fixtures/big-schemas/{name}.asschema"));
     if std::env::var_os("SCHEMA_NEXT_UPDATE_BIG_EXAMPLES").is_some() {
@@ -59,7 +79,7 @@ fn assert_big_fixture(name: &str, source: &str, resolver: Option<ImportResolver>
     let expected = std::fs::read_to_string(&expected_path).expect("read expected asschema");
     assert_eq!(
         rendered, expected,
-        "assembled schema witness drifted for {name}"
+        "NOTA asschema fixture drifted for {name}"
     );
 }
 

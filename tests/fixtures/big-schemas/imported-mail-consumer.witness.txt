@@ -1,0 +1,44 @@
+fixture imported-mail-consumer
+identity example:imported-mail-consumer 0.1.0
+imports
+  DatabaseMarker = marker-core:mail:DatabaseMarker
+  CommitSequence = marker-core:mail:CommitSequence
+resolved_imports
+  DatabaseMarker = marker_core::schema::mail::DatabaseMarker
+  CommitSequence = marker_core::schema::mail::CommitSequence
+macro_trace
+  applied RootImports -> RootInput -> SchemaEnumVariants -> RootOutput -> SchemaEnumVariants -> RootNamespace -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Option -> SchemaStructDefinition -> SchemaStructFields -> SchemaStructDefinition -> SchemaStructFields -> Vec -> KeyValue
+  positions RootImports -> RootInput -> EnumVariants -> RootOutput -> EnumVariants -> RootNamespace -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> NamespaceDeclaration -> StructFields -> NamespaceDeclaration -> StructFields -> TypeReference -> TypeReference
+input Input
+  Record(Entry)
+  Observe(Query)
+  Mark(DatabaseMarker)
+  Commit(CommitSequence)
+output Output
+  Recorded(RecordReceipt)
+  Observed(RecordSet)
+  Marked(DatabaseMarker)
+  Committed(CommitSequence)
+  Rejected(Rejected)
+namespace
+  newtype Topic = Text
+  newtype Topics = Vec<Topic>
+  newtype Description = Text
+  newtype AgentName = Text
+  newtype RecordIdentifier = Integer
+  newtype Rejection = Description
+  struct Entry
+    topics: Topics
+    description: Description
+    agent_name: AgentName
+    database_marker: DatabaseMarker
+  struct Query
+    topics: Topics
+    limit: Option<Integer>
+  struct RecordReceipt
+    record_identifier: RecordIdentifier
+    database_marker: DatabaseMarker
+    commit_sequence: CommitSequence
+  struct RecordSet
+    records: Vec<Entry>
+    by_topic: KeyValue<Topic, RecordIdentifier>
