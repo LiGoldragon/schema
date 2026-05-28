@@ -8,8 +8,8 @@ The active file surface is `.schema`. A `.schema` file must parse as legal
 NOTA before schema-specific reading. Core schema files can be inspected at the
 raw layer as a known root struct named from the file stem, containing one
 native brace key/value map of datatype names to raw NOTA datatype objects.
-`Asschema` is the in-memory macro-free endpoint produced by lowering; the old
-checked-in `.asschema` vector-record fixture syntax is obsolete.
+`Asschema` is the in-memory macro-free endpoint produced by lowering. Checked-in
+assembled-schema text fixtures are not part of the active surface.
 
 Rust code emission is not here. It lives in `schema-rust-next`.
 

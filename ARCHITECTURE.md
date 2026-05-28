@@ -44,8 +44,8 @@ will consume.
 ## Assembled Schema Endpoint
 
 `Asschema` is currently the typed in-memory endpoint produced by lowering a
-real `.schema` file. The previous checked-in `.asschema` vector-record syntax
-has been removed from active code because it confused raw NOTA bracket
+real `.schema` file. The previous checked-in assembled-schema text fixture
+surface has been removed from active code because it confused raw NOTA bracket
 structure with higher schema semantics.
 
 Tests now prove the endpoint by asserting the Rust data directly:
@@ -81,8 +81,9 @@ module schema and checking that the imported type is declared there.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
 - `Asschema` stores declarations in `Vec` order; lookup maps are derived.
-- Active code does not keep `.asschema` fixtures. The current serialized
-  file-level witness is `.schema`, parsed as NOTA first and then lowered.
+- Active code does not keep assembled-schema text fixtures. The current
+  serialized file-level witness is `.schema`, parsed as NOTA first and then
+  lowered.
 - The root schema is positional. Current MVP shape:
   - field 1: input enum body, for example `((Record Entry) Reindex)`
   - field 2: output enum body, for example `((Recorded Receipt) (Rejected Rejection))`
