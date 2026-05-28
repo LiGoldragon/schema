@@ -172,11 +172,11 @@ pub struct EnumVariant {
 /// variant's payload, or an import source.
 ///
 /// `Plain` is the leaf (`Topic`, `Magnitude`). `Vector`, `Map`, and
-/// `Optional` carry inner references. These are read from native NOTA
-/// structure, not old collection macro calls: `[T]` lowers to
-/// `Vector<T>`, `{K V}` lowers to `Map<K, V>`, and `(Optional T)`
-/// lowers to `Optional<T>`. Parentheses with other heads remain
-/// available for user-declared type-reference macros.
+/// `Optional` carry inner references. These are read from typed NOTA
+/// datatype objects: `(Vec T)` lowers to `Vector<T>`, `(Map (K V))`
+/// lowers to `Map<K, V>`, and `(Optional T)` lowers to
+/// `Optional<T>`. Parentheses with other heads remain available for
+/// user-declared type-reference macros.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeReference {
     Plain(Name),
@@ -212,12 +212,12 @@ impl TypeReference {
     /// a `TypeReference`.
     ///
     /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. Native NOTA collection structure lowers at
-    /// this position: `[T]` → `Vector`, `{K V}` → `Map`, `(Optional T)`
-    /// → `Optional`. The inner positions recurse, so `[(Optional
-    /// Topic)]` and `{NodeName [Service]}` nest. nota-next did the
-    /// structural parse; this is pure semantic lowering over its
-    /// `Block`s, not a hand-rolled text parser.
+    /// lowers to `Plain`. Typed NOTA datatype objects lower at this
+    /// position: `(Vec T)` -> `Vector`, `(Map (K V))` -> `Map`, and
+    /// `(Optional T)` -> `Optional`. The inner positions recurse, so
+    /// `(Vec (Optional Topic))` and `(Map (NodeName (Vec Service)))`
+    /// nest. nota-next did the structural parse; this is pure semantic
+    /// lowering over its `Block`s, not a hand-rolled text parser.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let mut context = MacroContext::default();
         Self::from_block_with_registry(block, &MacroRegistry::with_schema_defaults(), &mut context)
@@ -234,12 +234,18 @@ impl TypeReference {
                 delimiter: Delimiter::SquareBracket,
                 root_objects,
                 ..
-            } => Self::from_vector_objects(root_objects, registry, context),
+            } => Err(SchemaError::UnknownTypeReferenceForm {
+                head: "SquareBracket".to_owned(),
+                argument_count: root_objects.len(),
+            }),
             Block::Delimited {
                 delimiter: Delimiter::Brace,
                 root_objects,
                 ..
-            } => Self::from_map_objects(root_objects, registry, context),
+            } => Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Brace".to_owned(),
+                argument_count: root_objects.len(),
+            }),
             Block::Delimited {
                 delimiter: Delimiter::Parenthesis,
                 root_objects,
@@ -255,67 +261,73 @@ impl TypeReference {
         }
     }
 
-    fn from_vector_objects(
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        if objects.len() != 1 {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Vector".to_owned(),
-                argument_count: objects.len(),
-            });
-        }
-        Ok(Self::Vector(Box::new(Self::from_block_with_registry(
-            &objects[0],
-            registry,
-            context,
-        )?)))
-    }
-
-    fn from_map_objects(
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        if objects.len() != 2 {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: objects.len(),
-            });
-        }
-        Ok(Self::Map(
-            Box::new(Self::from_block_with_registry(
-                &objects[0],
-                registry,
-                context,
-            )?),
-            Box::new(Self::from_block_with_registry(
-                &objects[1],
-                registry,
-                context,
-            )?),
-        ))
-    }
-
     fn from_parenthesis_objects(
         block: &Block,
         objects: &[Block],
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
-        if objects.len() == 2
-            && objects[0]
-                .demote_to_string()
-                .is_some_and(|head| head == "Optional")
-        {
-            return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
-                &objects[1],
-                registry,
-                context,
-            )?)));
+        if objects.len() == 2 {
+            if let Some(head) = objects[0].demote_to_string() {
+                match head {
+                    "Vec" | "Vector" => {
+                        return Ok(Self::Vector(Box::new(Self::from_block_with_registry(
+                            &objects[1],
+                            registry,
+                            context,
+                        )?)));
+                    }
+                    "Optional" | "Option" => {
+                        return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
+                            &objects[1],
+                            registry,
+                            context,
+                        )?)));
+                    }
+                    "Map" | "KeyValue" => {
+                        return Self::from_grouped_map_payload(&objects[1], registry, context);
+                    }
+                    _ => {}
+                }
+            }
         }
         Self::from_macro_invocation(block, registry, context)
+    }
+
+    fn from_grouped_map_payload(
+        block: &Block,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        let Block::Delimited {
+            delimiter: Delimiter::Parenthesis,
+            root_objects,
+            ..
+        } = block
+        else {
+            return Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Map".to_owned(),
+                argument_count: 1,
+            });
+        };
+        if root_objects.len() != 2 {
+            return Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Map".to_owned(),
+                argument_count: root_objects.len(),
+            });
+        }
+        Ok(Self::Map(
+            Box::new(Self::from_block_with_registry(
+                &root_objects[0],
+                registry,
+                context,
+            )?),
+            Box::new(Self::from_block_with_registry(
+                &root_objects[1],
+                registry,
+                context,
+            )?),
+        ))
     }
 
     fn from_macro_invocation(
@@ -418,10 +430,11 @@ impl<'schema> MacroInvocationData<'schema> {
 /// Data representation of a schema-node object before macro execution.
 ///
 /// A parenthesized schema node is a tagged/data-carrying variant:
-/// `(Normalize [Topic])` has tag `Normalize` and data `[Topic]`. This type exists
-/// so macro calls can be inspected, serialized through assembled
-/// schema, and tested as data rather than disappearing into parser
-/// control flow.
+/// `(Normalize [Topic])` has tag `Normalize` and raw vector data
+/// `[Topic]`. That vector is macro payload data, not the schema `Vec`
+/// type constructor. This type exists so macro calls can be inspected,
+/// serialized through assembled schema, and tested as data rather than
+/// disappearing into parser control flow.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SchemaNode {
     tag: Name,

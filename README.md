@@ -11,6 +11,13 @@ native brace key/value map of datatype names to raw NOTA datatype objects.
 `Asschema` is the in-memory macro-free endpoint produced by lowering. Checked-in
 assembled-schema text fixtures are not part of the active surface.
 
+The low-level syntax layer preserves the NOTA/schema split: square brackets are
+raw vector structure and schema struct field lists, not `Vec` type syntax.
+Composite type references are typed NOTA objects such as `(Vec Topic)`,
+`(Map (Topic RecordIdentifier))`, and `(Optional Topic)`. Pipe delimiters carry
+self-named declarations: `(| Kind Decision Correction |)` for enums and
+`{| Entry topic Topic description Text |}` for structs.
+
 Rust code emission is not here. It lives in `schema-rust-next`.
 
 Crates expose schemas through a standard `schema/` directory. The current

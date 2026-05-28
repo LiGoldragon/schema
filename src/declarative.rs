@@ -800,9 +800,10 @@ impl<'template> AssembledFields<'template> {
 /// A bare PascalCase symbol (`Topic`) derives the field name from the
 /// type name (`topic`) and creates a `Plain` reference. Native NOTA
 /// type-reference objects can also sit directly in a field position:
-/// `[Topic]`, `{Topic RecordIdentifier}`, and `(Optional Topic)` lower
-/// to vector, map, and optional references with names derived from the
-/// reference shape. A parenthesised pair whose first object is a
+/// `(Vec Topic)`, `(Map (Topic RecordIdentifier))`, and
+/// `(Optional Topic)` lower to vector, map, and optional references
+/// with names derived from the reference shape. A parenthesised pair
+/// whose first object is a
 /// lower-case field symbol remains the explicit escape hatch for
 /// uncommon names.
 #[derive(Clone, Copy, Debug)]

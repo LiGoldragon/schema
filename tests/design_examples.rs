@@ -406,7 +406,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
           ($Name TextNewtype)
           (Type (Struct $Name [Text])))
         (SchemaMacro Bag TypeReference
-          (Bag [$Type])
+          (Bag $Type)
           (Reference (Vector $Type)))
         ",
     )
@@ -418,7 +418,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let asschema = engine
         .lower_source(
-            "() () { Topic TextNewtype Topics [(items (Bag [Topic]))] }",
+            "() () { Topic TextNewtype Topics [(items (Bag Topic))] }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");
@@ -465,7 +465,7 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
           RecordIdentifier [Integer]
           Entry [Topic]
           Query [Topic]
-          RecordSet [Entry]
+          RecordSet [(Vec Entry)]
         }
     ";
     let asschema = SchemaEngine::default()

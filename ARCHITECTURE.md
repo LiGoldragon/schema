@@ -128,20 +128,40 @@ module schema and checking that the imported type is declared there.
 - `TypeReference` at a reference position is an enum: `Plain(Name)`,
   `Vector(Box<TypeReference>)`, `Map(Box, Box)`, `Optional(Box<TypeReference>)`.
   `TypeReference::from_block` lowers a bare PascalCase symbol to `Plain`,
-  `[T]` to `Vector`, `{K V}` to `Map`, and `(Optional T)` to `Optional`.
-  The inner positions recurse, so `[(Optional Topic)]` and
-  `{NodeName [Service]}` nest. Parentheses with another head are dispatched to
-  the user macro registry. An unknown head or wrong native argument count is a
-  typed `SchemaError::UnknownTypeReferenceForm`. Lowering is pure semantics
-  over nota-next's already-parsed blocks — not a hand-rolled text parser.
-- Collection references reach every reference position. Struct fields accept an
-  native type-reference object directly (`[Service]`, `{Topic RecordIdentifier}`,
-  `(Optional Cache)`) and derive a field name from that reference. The explicit
-  lower-case pair `(fieldName TypeReference)` remains only as an escape hatch
-  for uncommon field names. Enum-variant payloads, root input/output variant
-  payloads, and import sources all lower their type through
-  `TypeReference::from_block`.
+  `(Vec T)` to `Vector`, `(Map (K V))` to `Map`, and `(Optional T)` to
+  `Optional`. The inner positions recurse, so `(Vec (Optional Topic))` and
+  `(Map (NodeName (Vec Service)))` nest. Parentheses with another head are
+  dispatched to the user macro registry. An unknown head or wrong native
+  argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
+  is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
+  text parser.
+- Collection references reach every reference position. Struct fields accept a
+  typed NOTA type-reference object directly (`(Vec Service)`,
+  `(Map (Topic RecordIdentifier))`, `(Optional Cache)`) and derive a field name
+  from that reference. The explicit lower-case pair `(fieldName TypeReference)`
+  remains only as an escape hatch for uncommon field names. Enum-variant
+  payloads, root input/output variant payloads, and import sources all lower
+  their type through `TypeReference::from_block`.
 - `SchemaNode` is the data model for macro calls before execution. It reads a
   parenthesized object as a tagged/data-carrying node: first object is the tag,
   second object is the data. This prevents macro invocation from being a hidden
   parser branch; macro calls can be inspected and represented as assembled data.
+
+## Syntax Schema Layer
+
+`SyntaxSchema` is the typed layer directly above `RawSchemaFile`. It proves the
+new delimiter contract without skipping into the older macro engine:
+
+1. `RawSchemaFile` parses a `.schema` file as legal NOTA and preserves raw
+   delimiter objects.
+2. `SyntaxSchema` reads the raw datatype map into declaration objects.
+3. Square brackets at datatype declaration position are struct field lists.
+   They do not mean `Vec`.
+4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are typed NOTA datatype
+   objects and lower into composite type references.
+5. `(| Name ... |)` is an enum declaration and `{| Name ... |}` is a struct
+   declaration. The first item must match the namespace key, so the raw map key
+   and the self-named declaration cannot silently drift.
+
+The proof fixture is `tests/fixtures/syntax-layer/schema.schema`; the tests in
+`tests/syntax_layer.rs` assert the raw-to-syntax result directly.

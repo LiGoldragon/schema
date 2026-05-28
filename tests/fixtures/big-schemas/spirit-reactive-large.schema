@@ -14,7 +14,7 @@
  (Indexed IndexReceipt))
 {
   Topic [Text]
-  Topics [[Topic]]
+  Topics [(Vec Topic)]
   Description [Text]
   AgentName [Text]
   Timestamp [Integer]
@@ -27,11 +27,11 @@
   RejectionReason (Malformed Unauthorized Conflict Unsupported StaleVersion)
   Entry [Topics Kind Description Magnitude AgentName Timestamp]
   Correction [RecordIdentifier Description Magnitude AgentName Timestamp]
-  Query [Topics (kinds [Kind]) (limit (Optional Integer))]
-  WatchRequest [Topics (kinds [Kind]) AgentName]
+  Query [Topics (kinds (Vec Kind)) (limit (Optional Integer))]
+  WatchRequest [Topics (kinds (Vec Kind)) AgentName]
   RecordReceipt [RecordIdentifier CommitSequence DatabaseDigest]
   CorrectionReceipt [RecordIdentifier CommitSequence DatabaseDigest]
-  RecordSet [(records [Entry]) (byTopic {Topic RecordIdentifier})]
+  RecordSet [(records (Vec Entry)) (byTopic (Map (Topic RecordIdentifier)))]
   SubscriptionReceipt [SubscriptionToken CommitSequence]
   Rejection [RejectionReason Description]
   IndexReceipt [CommitSequence DatabaseDigest]

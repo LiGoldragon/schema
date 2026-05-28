@@ -51,12 +51,12 @@
   MessageFailed [RejectionReason]
   Entry [Topics Kind Description Magnitude ActorIdentifier]
   Topic [Text]
-  Topics [[Topic]]
+  Topics [(Vec Topic)]
   Description [Text]
   Kind (Decision Principle Correction Clarification Constraint Observation Question)
   Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
-  Query [Topics (kinds [Kind]) (limit (Optional Integer))]
+  Query [Topics (kinds (Vec Kind)) (limit (Optional Integer))]
   RecordIdentifier [Integer]
   SubscriptionToken [Integer]
-  RecordSet [(records [Entry]) (byTopic {Topic RecordIdentifier})]
+  RecordSet [(records (Vec Entry)) (byTopic (Map (Topic RecordIdentifier)))]
 }

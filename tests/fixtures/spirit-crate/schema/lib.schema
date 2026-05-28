@@ -2,12 +2,12 @@
 ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
 {
   Topic [Text]
-  Topics [Topic]
+  Topics [(Vec Topic)]
   Description [Text]
   RecordIdentifier [Integer]
   Entry [Topics Kind Description Magnitude]
   Query [Topic Kind]
-  RecordSet [Entry]
+  RecordSet [(Vec Entry)]
   Kind (Decision Principle Correction Clarification Constraint)
   Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
 }

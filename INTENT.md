@@ -28,7 +28,8 @@ macro objects that expand by position into assembled schema.*
 
 *A macro invocation is itself data: a tagged/data-carrying schema node at a
 known macro position. A parenthesized node such as `(Normalize [Topic])` has a
-tag (`Normalize`) and a data payload (`[Topic]`). Macro definitions and macro
+tag (`Normalize`) and a raw vector data payload (`[Topic]`); that raw vector is
+macro payload data, not the `Vec` type constructor. Macro definitions and macro
 calls should be represented as data-bearing structs and enum variants before
 execution so the macro table can be serialized, deserialized, tested, and
 eventually pre-assembled.*
@@ -65,13 +66,16 @@ replies, and processed message events. A schema lowering that collapses those
 objects into untyped procedural steps has lost intent.*
 
 *A type at a reference position may be a collection or option, not only a
-bare name. The surface forms are native NOTA structure: `[T]` lowers to
-`Vector`, `{K V}` lowers to `Map`, and `(Optional T)` lowers to `Optional`.
-The inner positions recurse, so `[(Optional Topic)]` and `{NodeName [Service]}`
+bare name. Square brackets remain raw NOTA vector structure and schema field
+lists; they are not the schema syntax for declaring a `Vec` type. The typed
+NOTA data objects are `(Vec T)`, `(Map (K V))`, and `(Optional T)`, lowering to
+`Vector`, `Map`, and `Optional` in assembled schema. The inner positions
+recurse, so `(Vec (Optional Topic))` and `(Map (NodeName (Vec Service)))`
 nest. Collection references appear at every reference position: struct
-fields, enum-variant payloads, root input/output variant payloads, and
-import sources. User-declared macros may still appear at type-reference
-positions, but the built-in collection forms are no longer macro calls.*
+fields, enum-variant payloads, root input/output variant payloads, and import
+sources. User-declared macros may still appear at type-reference positions,
+but the built-in composite type objects belong to the NOTA datatype layer
+that schema reads.*
 
 *Cross-crate schema imports are resolved through Cargo-exposed dependency
 schema directories, not duplicated locally. A schema import source uses the

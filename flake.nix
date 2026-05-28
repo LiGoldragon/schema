@@ -71,8 +71,12 @@
               echo "schema examples must not reintroduce the old @ macro sigil" >&2
               exit 1
             fi
-            if grep -R -n -E '\((Vec|Option|KeyValue) \[' ${src}/schemas ${src}/tests; then
-              echo "schema examples must use native collection syntax: [T], {K V}, (Optional T)" >&2
+            if grep -R -n -E '\[\[[A-Z]|\((records|kinds|services|Listed) \[[A-Z]|\((byTopic|Projected|nodes) \{[A-Z]' ${src}/schemas ${src}/tests/fixtures; then
+              echo "schema examples must use typed NOTA composite references: (Vec T), (Map (K V)), (Optional T)" >&2
+              exit 1
+            fi
+            if grep -R -n -E '\((Vec|Option|KeyValue|Map) \[' ${src}/schemas ${src}/tests; then
+              echo "schema examples must not put raw vectors inside composite type constructors" >&2
               exit 1
             fi
             if grep -R -n -E '[A-Za-z][A-Za-z0-9]*\*' ${src}/tests/fixtures ${src}/schemas/spirit-min.schema; then

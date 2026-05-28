@@ -107,6 +107,28 @@ pub enum SchemaError {
         module: String,
         type_name: String,
     },
+    ExpectedRawDeclarationName {
+        found: String,
+    },
+    RawDeclarationNameMismatch {
+        key: String,
+        declared: String,
+    },
+    ExpectedRawFieldPairCount {
+        declaration: String,
+        found: usize,
+    },
+    ExpectedSyntaxReference {
+        found: String,
+    },
+    ExpectedSyntaxReferenceArity {
+        form: &'static str,
+        expected: &'static str,
+        found: usize,
+    },
+    ExpectedSyntaxEnumVariant {
+        found: String,
+    },
 }
 
 impl From<nota_next::NotaError> for SchemaError {

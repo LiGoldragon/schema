@@ -5,6 +5,7 @@ mod macros;
 mod module;
 mod raw;
 mod resolution;
+mod syntax;
 
 pub use asschema::{
     Asschema, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name, SchemaNode,
@@ -20,3 +21,8 @@ pub use macros::{
 pub use module::{SchemaModuleSource, SchemaPackage};
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
+pub use syntax::{
+    SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField,
+    SyntaxKeyValueDeclaration, SyntaxKeyValueEntry, SyntaxReference, SyntaxSchema,
+    SyntaxStructDeclaration, SyntaxVariant,
+};
