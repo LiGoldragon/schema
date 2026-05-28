@@ -12,6 +12,35 @@
    output enum, namespace declarations, struct fields, and enum variants.
 5. `Asschema` is emitted as the ordered macro-free endpoint.
 
+## Raw Core Schema Reading
+
+`RawSchemaFile` is the bottom layer used to inspect a core schema before
+schema lowering. It takes a path plus source text, derives the root type name
+from the file stem (`core.schema` -> `Core`), parses the source with
+`nota-next`, and requires one root brace object.
+
+The input file is still `.schema`, and `.schema` must be legal NOTA. Tests
+that prove schema-file behavior use real `.schema` fixtures and parse them
+through `nota-next::Document` before the raw schema reader interprets the
+known root shape.
+
+That root brace object is a native NOTA key/value map. Odd positions are
+datatype names; even positions are raw datatype objects. The values preserve
+the delimiter shape that the first NOTA pass saw:
+
+- atom -> `RawNotaDatatype::Atom`
+- pipe text -> `RawNotaDatatype::Text`
+- `(...)` -> `RawNotaDatatype::Record`
+- `[...]` -> `RawNotaDatatype::Vector`
+- `{...}` -> `RawNotaDatatype::KeyValue`
+- `(|...|)` -> `RawNotaDatatype::PipeParenthesis`
+- `{|...|}` -> `RawNotaDatatype::PipeBrace`
+
+This layer intentionally does not decide that a bracket is a string or that a
+parenthesis is a tagged node. Those are schema expectations applied by later
+readers. The raw layer only preserves the data object that the schema reader
+will consume.
+
 ## Assembled Schema Endpoint
 
 `schemas/asschema.asschema` is the canonical data definition for the

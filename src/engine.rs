@@ -53,6 +53,9 @@ pub enum SchemaError {
         path: String,
         reason: String,
     },
+    MalformedSchemaPath {
+        path: String,
+    },
     ExpectedSymbol {
         found: String,
     },

@@ -147,6 +147,19 @@
             grep -R "colon_qualified_names_lower_as_schema_names" ${src}/tests/lowering.rs >/dev/null
             touch $out
           '';
+          raw-core-schema-example = pkgs.runCommand "schema-next-raw-core-schema-example" { } ''
+            test -f ${src}/tests/fixtures/raw-core/core.schema
+            test -f ${src}/tests/fixtures/raw-core/non-map-root.schema
+            test -f ${src}/tests/fixtures/raw-core/odd-map.schema
+            grep -R "RawSchemaFile::from_path_and_source" ${src}/tests/raw_core_schema.rs >/dev/null
+            grep -R "raw_core_schema_fixture_is_legal_nota_before_schema_reading" ${src}/tests/raw_core_schema.rs >/dev/null
+            grep -R "raw_core_schema_file_root_name_comes_from_filename" ${src}/tests/raw_core_schema.rs >/dev/null
+            grep -R "raw_core_schema_reads_datatype_key_value_map" ${src}/tests/raw_core_schema.rs >/dev/null
+            grep -R "raw_core_schema_preserves_native_key_value_and_pipe_forms" ${src}/tests/raw_core_schema.rs >/dev/null
+            grep -R "RawDatatypeMap" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
+            grep -F "{ key Name value RawDatatype }" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
+            touch $out
+          '';
           no-production-free-functions = pkgs.runCommand "schema-next-no-production-free-functions" { } ''
             if grep -R -n -E '^(pub(\([^)]*\))? )?fn ' ${src}/src; then
               echo "production Rust must not use module-level free functions" >&2

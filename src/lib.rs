@@ -3,6 +3,7 @@ mod declarative;
 mod engine;
 mod macros;
 mod module;
+mod raw;
 mod resolution;
 
 pub use asschema::{
@@ -17,4 +18,5 @@ pub use macros::{
     MacroPosition, MacroRegistry, SchemaMacro,
 };
 pub use module::{SchemaModuleSource, SchemaPackage};
+pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};

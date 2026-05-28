@@ -92,6 +92,23 @@ only to macro definition inputs before lowering. No-sigil macro calls belong
 only to authored `.schema`; they must be assembled into final data before
 Rust emission.*
 
+*A core schema file can be read one layer lower than schema lowering: as raw
+NOTA datatype data. In that mode the root struct name is derived from the
+filename, mirroring Rust modules, and the file does not restate that root
+name. The root body is a native brace key/value map of datatype names to raw
+NOTA datatype objects.*
+
+*.schema files are NOTA documents. Every `.schema` fixture used to prove a
+schema-language behavior must first be legal and parseable by `nota-next`
+before any schema-specific lowering or raw-schema reading is applied.*
+
+*NOTA delimiters keep structural meaning before schema applies semantic
+expectations. Square brackets are bracket/vector structure at the raw layer,
+but a schema position typed as `String` or a string newtype may read that
+bracket form as text. Parentheses are raw record/struct structure; they become
+tagged schema nodes only when the expected type is `SchemaNode` or another
+tag-plus-payload struct.*
+
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.
 
