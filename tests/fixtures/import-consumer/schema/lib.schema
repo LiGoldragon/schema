@@ -2,6 +2,6 @@
 ((Observe Query))
 ((Marked DatabaseMarker))
 {
-  Topic [String]
-  Query [Topic]
+  Topic {| Topic string String |}
+  Query {| Query topic Topic |}
 }

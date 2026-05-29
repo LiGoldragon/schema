@@ -1,13 +1,13 @@
 ((Record Entry) (Observe Query))
 ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
 {
-  Topic [String]
-  Topics [(Vec Topic)]
-  Description [String]
-  RecordIdentifier [Integer]
-  Entry [Topics Kind Description Magnitude]
-  Query [Topic Kind]
-  RecordSet [(Vec Entry)]
-  Kind (Decision Principle Correction Clarification Constraint)
-  Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
+  Topic {| Topic string String |}
+  Topics {| Topics values (Vec Topic) |}
+  Description {| Description string String |}
+  RecordIdentifier {| RecordIdentifier integer Integer |}
+  Entry {| Entry topics Topics kind Kind description Description magnitude Magnitude |}
+  Query {| Query topic Topic kind Kind |}
+  RecordSet {| RecordSet entries (Vec Entry) |}
+  Kind (| Kind Decision Principle Correction Clarification Constraint |)
+  Magnitude (| Magnitude Minimum VeryLow Low Medium High VeryHigh Maximum |)
 }

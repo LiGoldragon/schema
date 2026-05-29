@@ -82,7 +82,8 @@ fn resolver_rejects_import_of_a_type_the_dependency_does_not_declare() {
         "0.1.0",
     );
     let engine = SchemaEngine::default();
-    let consumer_source = "{ Missing marker-core:mail:Missing } () () { Topic [String] }";
+    let consumer_source =
+        "{ Missing marker-core:mail:Missing } () () { Topic {| Topic string String |} }";
 
     let error = engine
         .lower_source_with_resolver(
@@ -107,8 +108,7 @@ fn resolver_rejects_import_of_a_type_the_dependency_does_not_declare() {
 fn unregistered_dependency_crate_is_reported() {
     let resolver = ImportResolver::new();
     let engine = SchemaEngine::default();
-    let consumer_source =
-        "{ DatabaseMarker marker-core:mail:DatabaseMarker } () () { Topic [String] }";
+    let consumer_source = "{ DatabaseMarker marker-core:mail:DatabaseMarker } () () { Topic {| Topic string String |} }";
 
     let error = engine
         .lower_source_with_resolver(

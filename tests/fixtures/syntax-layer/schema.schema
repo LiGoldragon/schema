@@ -1,6 +1,6 @@
 {
-  Text [String]
-  Identifier [Integer]
+  Text {| Text string String |}
+  Identifier {| Identifier integer Integer |}
   Topic {| Topic text Text |}
   Topics {| Topics values (Vec Topic) |}
   TopicIndex {| TopicIndex entries (Map (Topic Identifier)) |}

@@ -71,13 +71,28 @@ fn pipe_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
 }
 
 #[test]
-fn square_brackets_at_datatype_declaration_position_create_struct_field_lists_not_vec_types() {
+fn pipe_brace_at_datatype_declaration_position_creates_struct_field_lists() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/schema.schema");
     let text = struct_named(&schema, "Text");
 
     assert!(text.is_newtype());
     assert_eq!("string", text.fields()[0].name().as_str());
     assert_eq!(&name_reference("String"), text.fields()[0].reference());
+}
+
+#[test]
+fn plain_square_bracket_datatype_declarations_are_rejected() {
+    let source = "{ Text [String] }";
+    let error =
+        SyntaxSchema::from_path_and_source("tests/fixtures/syntax-layer/plain.schema", source)
+            .unwrap_err();
+
+    assert_eq!(
+        SchemaError::ExpectedSyntaxDeclaration {
+            found: "square-bracket vector".to_owned(),
+        },
+        error
+    );
 }
 
 #[test]

@@ -1,18 +1,18 @@
 () ()
 {
-  Schema [Input Output Namespace]
-  Imports [ImportDeclaration]
-  Namespace [TypeDeclaration]
-  ImportDeclaration [Name TypeReference]
-  TypeDeclaration ((Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration))
-  StructDeclaration [Name Fields]
-  Fields [FieldDeclaration]
-  FieldDeclaration [Name TypeReference]
-  EnumDeclaration [Name Variants]
-  Variants [VariantDeclaration]
-  VariantDeclaration [Name Payload]
-  Payload (Unit (Carries TypeReference))
-  TypeReference (String Integer Boolean (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference))
-  TypeReferencePair [TypeReference TypeReference]
-  Name [String]
+  Schema {| Schema input Input output Output namespace Namespace |}
+  Imports {| Imports importDeclaration ImportDeclaration |}
+  Namespace {| Namespace typeDeclaration TypeDeclaration |}
+  ImportDeclaration {| ImportDeclaration name Name typeReference TypeReference |}
+  TypeDeclaration (| TypeDeclaration (Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration) |)
+  StructDeclaration {| StructDeclaration name Name fields Fields |}
+  Fields {| Fields fieldDeclaration FieldDeclaration |}
+  FieldDeclaration {| FieldDeclaration name Name typeReference TypeReference |}
+  EnumDeclaration {| EnumDeclaration name Name variants Variants |}
+  Variants {| Variants variantDeclaration VariantDeclaration |}
+  VariantDeclaration {| VariantDeclaration name Name payload Payload |}
+  Payload (| Payload Unit (Carries TypeReference) |)
+  TypeReference (| TypeReference String Integer Boolean (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference) |)
+  TypeReferencePair {| TypeReferencePair key TypeReference value TypeReference |}
+  Name {| Name string String |}
 }

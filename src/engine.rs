@@ -121,6 +121,9 @@ pub enum SchemaError {
         declaration: String,
         found: usize,
     },
+    ExpectedSyntaxDeclaration {
+        found: String,
+    },
     ExpectedSyntaxReference {
         found: String,
     },
@@ -595,8 +598,12 @@ impl<'schema> NamespaceBlock<'schema> {
         context: &mut MacroContext,
         declarations: &mut Vec<TypeDeclaration>,
     ) -> Result<(), SchemaError> {
+        let inline_start = context.inline_declaration_count();
         match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
-            MacroOutput::Type(declaration) => declarations.push(declaration),
+            MacroOutput::Type(declaration) => {
+                declarations.extend(context.drain_inline_declarations_from(inline_start));
+                declarations.push(declaration);
+            }
             _ => {
                 return Err(SchemaError::UnexpectedMacroOutput {
                     macro_name: "TypeDeclaration".to_owned(),

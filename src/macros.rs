@@ -97,6 +97,7 @@ pub struct MacroContext {
     bindings_seen: Vec<String>,
     expanded_templates: Vec<String>,
     structure_headers: Vec<StructureHeader>,
+    inline_declarations: Vec<TypeDeclaration>,
 }
 
 impl MacroContext {
@@ -129,6 +130,18 @@ impl MacroContext {
         self.structure_headers.push(header);
     }
 
+    pub(crate) fn remember_inline_declaration(&mut self, declaration: TypeDeclaration) {
+        self.inline_declarations.push(declaration);
+    }
+
+    pub(crate) fn inline_declaration_count(&self) -> usize {
+        self.inline_declarations.len()
+    }
+
+    pub(crate) fn drain_inline_declarations_from(&mut self, index: usize) -> Vec<TypeDeclaration> {
+        self.inline_declarations.drain(index..).collect()
+    }
+
     pub fn positions_seen(&self) -> &[MacroPosition] {
         &self.positions_seen
     }
@@ -147,6 +160,10 @@ impl MacroContext {
 
     pub fn structure_headers(&self) -> &[StructureHeader] {
         &self.structure_headers
+    }
+
+    pub fn inline_declarations(&self) -> &[TypeDeclaration] {
+        &self.inline_declarations
     }
 }
 

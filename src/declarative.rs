@@ -67,7 +67,13 @@ impl MacroDefinition {
     }
 
     pub fn capture_names(&self) -> Vec<String> {
-        self.pattern.capture_names()
+        let mut names = Vec::new();
+        for name in self.pattern.capture_names() {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        names
     }
 }
 
@@ -773,25 +779,51 @@ impl<'template> AssembledType<'template> {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct AssembledFields<'template> {
+pub(crate) struct AssembledFields<'template> {
     objects: &'template [Block],
 }
 
 impl<'template> AssembledFields<'template> {
-    fn new(objects: &'template [Block]) -> Self {
+    pub(crate) fn new(objects: &'template [Block]) -> Self {
         Self { objects }
     }
 
-    fn lower(
+    pub(crate) fn lower(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<FieldDeclaration>, SchemaError> {
         let mut fields = Vec::new();
-        for object in self.objects {
-            fields.push(AssembledField::new(object).lower(registry, context)?);
+        let mut index = 0;
+        while index < self.objects.len() {
+            if self.starts_flat_field_pair(index) {
+                let next_index = index + 1;
+                if next_index >= self.objects.len() {
+                    return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                        form: "flat struct field pair",
+                        expected: "field name plus one type reference",
+                        found: 1,
+                    });
+                }
+                fields.push(
+                    AssembledField::new_named_pair(&self.objects[index], &self.objects[next_index])
+                        .lower(registry, context)?,
+                );
+                index += 2;
+            } else {
+                fields.push(AssembledField::new(&self.objects[index]).lower(registry, context)?);
+                index += 1;
+            }
         }
         Ok(fields)
+    }
+
+    fn starts_flat_field_pair(&self, index: usize) -> bool {
+        self.objects[index].demote_to_string().is_some_and(|name| {
+            name.chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_lowercase())
+        })
     }
 }
 
@@ -809,11 +841,22 @@ impl<'template> AssembledFields<'template> {
 #[derive(Clone, Copy, Debug)]
 struct AssembledField<'template> {
     object: &'template Block,
+    paired_reference: Option<&'template Block>,
 }
 
 impl<'template> AssembledField<'template> {
     fn new(object: &'template Block) -> Self {
-        Self { object }
+        Self {
+            object,
+            paired_reference: None,
+        }
+    }
+
+    fn new_named_pair(name: &'template Block, reference: &'template Block) -> Self {
+        Self {
+            object: name,
+            paired_reference: Some(reference),
+        }
     }
 
     fn lower(
@@ -821,6 +864,15 @@ impl<'template> AssembledField<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<FieldDeclaration, SchemaError> {
+        if let Some(reference_object) = self.paired_reference {
+            let field_name = self.object.schema_name()?;
+            let reference =
+                TypeReference::from_block_with_registry(reference_object, registry, context)?;
+            return Ok(FieldDeclaration {
+                name: Name::new(field_name.field_name()),
+                reference,
+            });
+        }
         if self.is_explicit_field_pair() {
             let field_name = self
                 .object
@@ -889,16 +941,16 @@ impl<'template> AssembledField<'template> {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct AssembledVariants<'template> {
+pub(crate) struct AssembledVariants<'template> {
     objects: &'template [Block],
 }
 
 impl<'template> AssembledVariants<'template> {
-    fn new(objects: &'template [Block]) -> Self {
+    pub(crate) fn new(objects: &'template [Block]) -> Self {
         Self { objects }
     }
 
-    fn lower(
+    pub(crate) fn lower(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,

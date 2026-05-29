@@ -4,6 +4,7 @@ use nota_next::{Block, Delimiter};
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
+    declarative::{AssembledFields, AssembledVariants},
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -283,14 +284,64 @@ impl TypeReference {
                 root_objects,
                 ..
             } => Self::from_parenthesis_objects(block, root_objects, registry, context),
-            Block::PipeText(_)
-            | Block::Delimited {
-                delimiter: Delimiter::PipeParenthesis | Delimiter::PipeBrace,
-                ..
-            } => Err(SchemaError::ExpectedSymbol {
+            Block::PipeText(_) => Err(SchemaError::ExpectedSymbol {
                 found: block.reemit_fallback(),
             }),
+            Block::Delimited {
+                delimiter: Delimiter::PipeBrace,
+                root_objects,
+                ..
+            } => Self::from_inline_struct(root_objects, registry, context),
+            Block::Delimited {
+                delimiter: Delimiter::PipeParenthesis,
+                root_objects,
+                ..
+            } => Self::from_inline_enum(root_objects, registry, context),
         }
+    }
+
+    fn from_inline_struct(
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        let name = Self::inline_declaration_name(objects, "inline struct declaration")?;
+        let fields = AssembledFields::new(&objects[1..]).lower(registry, context)?;
+        let declaration = StructDeclaration {
+            name: name.clone(),
+            fields,
+        };
+        if declaration.fields.len() == 1 {
+            context.remember_inline_declaration(TypeDeclaration::Newtype(declaration));
+        } else {
+            context.remember_inline_declaration(TypeDeclaration::Struct(declaration));
+        }
+        Ok(Self::Plain(name))
+    }
+
+    fn from_inline_enum(
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        let name = Self::inline_declaration_name(objects, "inline enum declaration")?;
+        let variants = AssembledVariants::new(&objects[1..]).lower(registry, context)?;
+        context.remember_inline_declaration(TypeDeclaration::Enum(EnumDeclaration {
+            name: name.clone(),
+            variants,
+        }));
+        Ok(Self::Plain(name))
+    }
+
+    fn inline_declaration_name(objects: &[Block], form: &'static str) -> Result<Name, SchemaError> {
+        let Some(name) = objects.first() else {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form,
+                expected: "declaration name plus body",
+                found: 0,
+            });
+        };
+        name.schema_name()
     }
 
     fn from_parenthesis_objects(

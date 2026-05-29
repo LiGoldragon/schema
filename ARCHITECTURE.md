@@ -97,11 +97,16 @@ module schema and checking that the imported type is declared there.
   input, output, and namespace, with optional leading imports. The macro
   engine lowers all three planes uniformly; the runtime meaning differs after
   lowering.
-- Parentheses define enums and variants. A named enum definition is
-  `(Name (Variant ...))`.
+- Pipe-parentheses define authored enum declarations. A named enum definition
+  is `Name (| Name Variant (Variant Payload) ... |)`.
 - Braces are key/value maps only. They are not enum sugar.
-- Square brackets define structs and their fields. A named struct definition
-  is `(Name [FieldType ...])`; the one-field form is a newtype struct.
+- Pipe-braces define authored struct declarations. A named struct definition
+  is `Name {| Name field Reference ... |}`; the one-field form is a newtype
+  struct. Lowercase/camelCase items inside the pipe-brace are field names.
+  PascalCase items are schema type names.
+- Plain square brackets are NOTA vector/bracket structure. They may appear as
+  macro payload data or value data, but they are not the authored declaration
+  syntax for a schema datatype.
 - The root `Schema` name is implicit when reading a `.schema` file. Nested
   enum, struct, and newtype definitions still carry their own names.
 - `schemas/root.schema` describes that known root `Schema` type.
@@ -141,13 +146,17 @@ module schema and checking that the imported type is declared there.
   argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
   is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
   text parser.
-- Collection references reach every reference position. Struct fields accept a
-  Schema type-reference object directly (`(Vec Service)`,
-  `(Map (Topic RecordIdentifier))`, `(Optional Cache)`) and derive a field name
-  from that reference. The explicit lower-case pair `(fieldName TypeReference)`
-  remains only as an escape hatch for uncommon field names. Enum-variant
-  payloads, root input/output variant payloads, and import sources all lower
-  their type through `TypeReference::from_block`.
+- Collection references reach every reference position. Struct fields are
+  written as lower-case field/type pairs inside a pipe-brace declaration:
+  `serviceVector (Vec Service)`, `byTopic (Map (Topic RecordIdentifier))`,
+  `optionalCache (Optional Cache)`. Enum-variant payloads, root input/output
+  variant payloads, and import sources all lower their type through
+  `TypeReference::from_block`.
+- Inline pipe declarations at a type-reference position lower to a `Plain`
+  reference and insert their declaration before the containing declaration in
+  `Asschema.namespace`. This makes `Entry {| Entry receipt {| Receipt ... |}
+  later Receipt |}` declare `Receipt` first and then `Entry`, so later fields
+  can reuse the inline PascalCase type by name.
 - `SchemaNode` is the data model for macro calls before execution. It reads a
   parenthesized object as a tagged/data-carrying node: first object is the tag,
   second object is the data. This prevents macro invocation from being a hidden
@@ -161,8 +170,8 @@ new delimiter contract without skipping into the older macro engine:
 1. `RawSchemaFile` parses a `.schema` file as legal NOTA and preserves raw
    delimiter objects.
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
-3. Square brackets at datatype declaration position are struct field lists.
-   They do not mean `Vec`.
+3. Pipe-braces at datatype declaration position are struct field lists.
+   Plain square brackets are rejected there.
 4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
 5. `(| Name ... |)` is an enum declaration and `{| Name ... |}` is a struct

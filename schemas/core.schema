@@ -1,16 +1,16 @@
 () ()
 {
-  CoreSchema [BuiltinMacroPositions BuiltinMacroShapes BuiltinMacroOutputs BuiltinMacroDefinitions]
-  BuiltinMacroPositions [MacroPosition]
-  BuiltinMacroShapes [MacroShape]
-  BuiltinMacroOutputs [MacroOutputKind]
-  BuiltinMacroDefinitions [SchemaMacro]
-  SchemaMacro [MacroName MacroPosition MacroPattern MacroTemplate]
-  MacroName [String]
-  MacroPattern [String]
-  MacroTemplate [String]
-  MacroBinding (SingleCapture RestCapture)
-  MacroPosition (RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference)
-  MacroShape (BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol)
-  MacroOutputKind (Imports RootEnum Types Type Fields Variants Reference References AssembledSchema)
+  CoreSchema {| CoreSchema builtinMacroPositions BuiltinMacroPositions builtinMacroShapes BuiltinMacroShapes builtinMacroOutputs BuiltinMacroOutputs builtinMacroDefinitions BuiltinMacroDefinitions |}
+  BuiltinMacroPositions {| BuiltinMacroPositions macroPosition MacroPosition |}
+  BuiltinMacroShapes {| BuiltinMacroShapes macroShape MacroShape |}
+  BuiltinMacroOutputs {| BuiltinMacroOutputs macroOutputKind MacroOutputKind |}
+  BuiltinMacroDefinitions {| BuiltinMacroDefinitions schemaMacro SchemaMacro |}
+  SchemaMacro {| SchemaMacro macroName MacroName macroPosition MacroPosition macroPattern MacroPattern macroTemplate MacroTemplate |}
+  MacroName {| MacroName string String |}
+  MacroPattern {| MacroPattern string String |}
+  MacroTemplate {| MacroTemplate string String |}
+  MacroBinding (| MacroBinding SingleCapture RestCapture |)
+  MacroPosition (| MacroPosition RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference |)
+  MacroShape (| MacroShape BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol |)
+  MacroOutputKind (| MacroOutputKind Imports RootEnum Types Type Fields Variants Reference References AssembledSchema |)
 }

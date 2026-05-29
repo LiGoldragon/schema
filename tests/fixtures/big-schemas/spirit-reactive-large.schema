@@ -13,26 +13,26 @@
  (Rejected Rejection)
  (Indexed IndexReceipt))
 {
-  Topic [String]
-  Topics [(Vec Topic)]
-  Description [String]
-  AgentName [String]
-  Timestamp [Integer]
-  RecordIdentifier [Integer]
-  SubscriptionToken [Integer]
-  CommitSequence [Integer]
-  DatabaseDigest [Integer]
-  Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
-  Kind (Decision Principle Correction Clarification Constraint Observation Question)
-  RejectionReason (Malformed Unauthorized Conflict Unsupported StaleVersion)
-  Entry [Topics Kind Description Magnitude AgentName Timestamp]
-  Correction [RecordIdentifier Description Magnitude AgentName Timestamp]
-  Query [Topics (kinds (Vec Kind)) (limit (Optional Integer))]
-  WatchRequest [Topics (kinds (Vec Kind)) AgentName]
-  RecordReceipt [RecordIdentifier CommitSequence DatabaseDigest]
-  CorrectionReceipt [RecordIdentifier CommitSequence DatabaseDigest]
-  RecordSet [(records (Vec Entry)) (byTopic (Map (Topic RecordIdentifier)))]
-  SubscriptionReceipt [SubscriptionToken CommitSequence]
-  Rejection [RejectionReason Description]
-  IndexReceipt [CommitSequence DatabaseDigest]
+  Topic {| Topic string String |}
+  Topics {| Topics values (Vec Topic) |}
+  Description {| Description string String |}
+  AgentName {| AgentName string String |}
+  Timestamp {| Timestamp integer Integer |}
+  RecordIdentifier {| RecordIdentifier integer Integer |}
+  SubscriptionToken {| SubscriptionToken integer Integer |}
+  CommitSequence {| CommitSequence integer Integer |}
+  DatabaseDigest {| DatabaseDigest integer Integer |}
+  Magnitude (| Magnitude Minimum VeryLow Low Medium High VeryHigh Maximum |)
+  Kind (| Kind Decision Principle Correction Clarification Constraint Observation Question |)
+  RejectionReason (| RejectionReason Malformed Unauthorized Conflict Unsupported StaleVersion |)
+  Entry {| Entry topics Topics kind Kind description Description magnitude Magnitude agentName AgentName timestamp Timestamp |}
+  Correction {| Correction recordIdentifier RecordIdentifier description Description magnitude Magnitude agentName AgentName timestamp Timestamp |}
+  Query {| Query topics Topics kinds (Vec Kind) limit (Optional Integer) |}
+  WatchRequest {| WatchRequest topics Topics kinds (Vec Kind) agentName AgentName |}
+  RecordReceipt {| RecordReceipt recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest |}
+  CorrectionReceipt {| CorrectionReceipt recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest |}
+  RecordSet {| RecordSet records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) |}
+  SubscriptionReceipt {| SubscriptionReceipt subscriptionToken SubscriptionToken commitSequence CommitSequence |}
+  Rejection {| Rejection rejectionReason RejectionReason description Description |}
+  IndexReceipt {| IndexReceipt commitSequence CommitSequence databaseDigest DatabaseDigest |}
 }

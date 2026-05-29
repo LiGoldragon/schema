@@ -80,12 +80,6 @@ impl SyntaxDeclaration {
         match raw {
             RawNotaDatatype::Atom(_) => Ok(Self::Alias(SyntaxReference::from_raw(raw)?)),
             RawNotaDatatype::Text(text) => Ok(Self::Text(text.clone())),
-            RawNotaDatatype::Vector(sequence) => Ok(Self::Struct(
-                SyntaxStructDeclaration::from_vector(name.clone(), sequence)?,
-            )),
-            RawNotaDatatype::Record(sequence) => Ok(Self::Enum(
-                SyntaxEnumDeclaration::from_record(name.clone(), sequence)?,
-            )),
             RawNotaDatatype::KeyValue(map) => Ok(Self::KeyValue(
                 SyntaxKeyValueDeclaration::from_map(name.clone(), map)?,
             )),
@@ -95,6 +89,11 @@ impl SyntaxDeclaration {
             RawNotaDatatype::PipeBrace(sequence) => Ok(Self::Struct(
                 SyntaxStructDeclaration::from_self_named(name, sequence)?,
             )),
+            RawNotaDatatype::Vector(_) | RawNotaDatatype::Record(_) => {
+                Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: raw.syntax_description(),
+                })
+            }
         }
     }
 }
@@ -116,14 +115,6 @@ impl SyntaxStructDeclaration {
 
     pub fn is_newtype(&self) -> bool {
         self.fields.len() == 1
-    }
-
-    fn from_vector(name: Name, sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
-        let mut fields = Vec::new();
-        for (index, item) in sequence.items().iter().enumerate() {
-            fields.push(SyntaxField::from_vector_item(index, item)?);
-        }
-        Ok(Self { name, fields })
     }
 
     fn from_self_named(
@@ -166,19 +157,6 @@ impl SyntaxField {
         &self.reference
     }
 
-    fn from_vector_item(index: usize, item: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        if let RawNotaDatatype::Record(sequence) = item {
-            if sequence.items().len() == 2 {
-                return Self::from_named_pair(index, &sequence.items()[0], &sequence.items()[1]);
-            }
-        }
-        let reference = SyntaxReference::from_raw(item)?;
-        Ok(Self {
-            name: reference.derived_field_name(index),
-            reference,
-        })
-    }
-
     fn from_named_pair(
         index: usize,
         name_item: &RawNotaDatatype,
@@ -210,10 +188,6 @@ impl SyntaxEnumDeclaration {
 
     pub fn variants(&self) -> &[SyntaxVariant] {
         &self.variants
-    }
-
-    fn from_record(name: Name, sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
-        Self::from_variant_items(name, sequence.items())
     }
 
     fn from_self_named(
@@ -409,16 +383,6 @@ impl SyntaxReference {
 
     fn with_positional_fallback(self, _index: usize) -> Self {
         self
-    }
-
-    fn derived_field_name(&self, index: usize) -> Name {
-        match self {
-            Self::Plain(name) => Name::new(name.field_name()),
-            Self::Vector(inner) | Self::Optional(inner) => inner.derived_field_name(index),
-            Self::InlineStruct(declaration) => Name::new(declaration.name().field_name()),
-            Self::InlineEnum(declaration) => Name::new(declaration.name().field_name()),
-            Self::Map(_, _) => Name::new(format!("field{}", index + 1)),
-        }
     }
 }
 

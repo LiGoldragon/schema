@@ -1,6 +1,6 @@
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry,
-    Name, SchemaEngine, SchemaIdentity, SchemaMacro, SchemaPackage, TypeDeclaration,
+    Name, SchemaEngine, SchemaIdentity, SchemaMacro, SchemaPackage, TypeDeclaration, TypeReference,
 };
 
 #[test]
@@ -44,8 +44,9 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 }
 
 #[test]
-fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
-    let source = "() () { Entry [Topic Kind] Kind (Decision Constraint) }";
+fn pipe_declarations_lower_to_structs_and_enums() {
+    let source =
+        "() () { Entry {| Entry topic Topic kind Kind |} Kind (| Kind Decision Constraint |) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -59,7 +60,7 @@ fn square_brackets_lower_to_structs_and_parentheses_lower_to_enums() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
-    let source = "() () { (Entry [Topic Kind]) }";
+    let source = "() () { (Entry {| Entry topic Topic kind Kind |}) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespaces are key-value maps only");
@@ -72,7 +73,8 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even() {
-    let source = "() () { (Entry [Topic Kind]) (Kind (Decision Constraint)) }";
+    let source =
+        "() () { (Entry {| Entry topic Topic kind Kind |}) (Kind (| Kind Decision Constraint |)) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespace keys must be symbols");
@@ -85,7 +87,7 @@ fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even()
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "((Record schema:spirit:Entry)) () { schema:spirit:Topic [String] schema:spirit:Entry [schema:spirit:Topic] }";
+    let source = "((Record schema:spirit:Entry)) () { schema:spirit:Topic {| schema:spirit:Topic string String |} schema:spirit:Entry {| schema:spirit:Entry topic schema:spirit:Topic |} }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
@@ -321,7 +323,8 @@ fn macro_lowering_receives_macro_position() {
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source = "() () { Entry [RecordIdentifier Description] }";
+    let source =
+        "() () { Entry {| Entry recordIdentifier RecordIdentifier description Description |} }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -387,8 +390,7 @@ fn default_engine_dispatches_through_registered_macros() {
             .any(|binding| binding == "SchemaStructDefinition::*Fields")
     );
     assert!(context.expanded_templates().iter().any(|template| {
-        template
-            == "SchemaStructDefinition -> (Type (Struct Entry [Topics Kind Description Magnitude]))"
+        template == "SchemaStructDefinition -> (Type (Struct Entry [topics Topics kind Kind description Description magnitude Magnitude]))"
     }));
     assert!(context.expanded_templates().iter().any(|template| {
         template == "SchemaEnumDefinition -> (Type (Enum Kind (Decision Principle Correction Clarification Constraint)))"
@@ -477,6 +479,56 @@ fn brace_body_is_not_enum_sugar_inside_namespace() {
         error,
         schema_next::SchemaError::MacroDidNotMatch { .. }
     ));
+}
+
+#[test]
+fn pipe_declaration_flat_field_pairs_lower_through_default_engine() {
+    let source =
+        "() () { Entry {| Entry recordIdentifier RecordIdentifier description Description |} }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("pipe declaration lowers");
+    let TypeDeclaration::Struct(entry) = &asschema.namespace()[0] else {
+        panic!("entry should be a struct");
+    };
+
+    assert_eq!(entry.fields[0].name, Name::new("record_identifier"));
+    assert_eq!(
+        entry.fields[0].reference,
+        TypeReference::Plain(Name::new("RecordIdentifier"))
+    );
+    assert_eq!(entry.fields[1].name, Name::new("description"));
+}
+
+#[test]
+fn inline_pipe_declaration_creates_ordered_namespace_type() {
+    let source = "() () { Entry {| Entry receipt {| Receipt recordIdentifier RecordIdentifier |} later Receipt |} }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("inline declaration lowers");
+
+    assert_eq!(
+        asschema
+            .namespace()
+            .iter()
+            .map(|declaration| declaration.name().as_str())
+            .collect::<Vec<_>>(),
+        vec!["Receipt", "Entry"]
+    );
+
+    let TypeDeclaration::Struct(entry) = &asschema.namespace()[1] else {
+        panic!("entry should be a struct");
+    };
+    assert_eq!(entry.fields[0].name, Name::new("receipt"));
+    assert_eq!(
+        entry.fields[0].reference,
+        TypeReference::Plain(Name::new("Receipt"))
+    );
+    assert_eq!(entry.fields[1].name, Name::new("later"));
+    assert_eq!(
+        entry.fields[1].reference,
+        TypeReference::Plain(Name::new("Receipt"))
+    );
 }
 
 #[test]

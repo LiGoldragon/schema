@@ -65,7 +65,7 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
 /// the pair-style positive path.
 #[test]
 fn design_example_namespace_brace_is_pair_style_key_value_map() {
-    let source = "() () { Topic [String] Kind (Decision Constraint) }";
+    let source = "() () { Topic {| Topic string String |} Kind (| Kind Decision Constraint |) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("pair-style namespace lowers");
@@ -78,11 +78,11 @@ fn design_example_namespace_brace_is_pair_style_key_value_map() {
     assert_eq!(names, vec!["Topic", "Kind"]);
 
     let TypeDeclaration::Newtype(topic) = &asschema.namespace()[0] else {
-        panic!("Topic [String] should lower as a newtype (single-field struct)");
+        panic!("Topic should lower as a newtype (single-field struct)");
     };
     assert_eq!(topic.fields.len(), 1);
     let TypeDeclaration::Enum(kind) = &asschema.namespace()[1] else {
-        panic!("Kind (Decision Constraint) should lower as an enum");
+        panic!("Kind should lower as an enum");
     };
     let variant_names: Vec<&str> = kind
         .variants
@@ -114,7 +114,7 @@ fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
 
     // The captures FIRE — feed a minimal schema where the struct macro
     // matches one declaration and observe the recorded binding names.
-    let source = "() () { Entry [Topic Description] }";
+    let source = "() () { Entry {| Entry topic Topic description Description |} }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -248,7 +248,7 @@ fn design_example_default_engine_has_two_macro_layers() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "((Record Entry)) (Accepted) { Entry [Description] }";
+    let source = "((Record Entry)) (Accepted) { Entry {| Entry description Description |} }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -278,7 +278,7 @@ fn design_example_schema_lowering_records_source_structure_header() {
             (StructureShape::Atom, 0),
             (StructureShape::Brace, 2),
             (StructureShape::Atom, 0),
-            (StructureShape::SquareBracket, 1),
+            (StructureShape::PipeBrace, 3),
         ],
     );
     assert_ne!(header.packed_word(), 0, "header packs into a u64 word");
@@ -367,7 +367,7 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
 /// variants. The old star suffix is gone from authored schema.
 #[test]
 fn design_example_same_name_payload_variant_uses_explicit_payload() {
-    let source = "((Record Record)) ((Recorded Recorded)) { Record [Description] Recorded [RecordIdentifier] }";
+    let source = "((Record Record)) ((Recorded Recorded)) { Record {| Record description Description |} Recorded {| Recorded recordIdentifier RecordIdentifier |} }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("explicit same-name variants lower");
@@ -418,7 +418,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let asschema = engine
         .lower_source(
-            "() () { Topic StringNewtype Topics [(items (Bag Topic))] }",
+            "() () { Topic StringNewtype Topics {| Topics items (Bag Topic) |} }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");
@@ -450,15 +450,15 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
         ((Record Entry) (Observe Query))
         ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
         {
-          NexusAction ((Record Entry) (Observe Query))
-          NexusResult ((Accepted RecordIdentifier) (Observed RecordSet))
-          SemaCommand ((Record Entry) (Observe Query))
-          SemaResponse ((Recorded RecordIdentifier) (Observed RecordSet))
-          Topic [String]
-          RecordIdentifier [Integer]
-          Entry [Topic]
-          Query [Topic]
-          RecordSet [(Vec Entry)]
+          NexusAction (| NexusAction (Record Entry) (Observe Query) |)
+          NexusResult (| NexusResult (Accepted RecordIdentifier) (Observed RecordSet) |)
+          SemaCommand (| SemaCommand (Record Entry) (Observe Query) |)
+          SemaResponse (| SemaResponse (Recorded RecordIdentifier) (Observed RecordSet) |)
+          Topic {| Topic string String |}
+          RecordIdentifier {| RecordIdentifier integer Integer |}
+          Entry {| Entry topic Topic |}
+          Query {| Query topic Topic |}
+          RecordSet {| RecordSet entries (Vec Entry) |}
         }
     ";
     let asschema = SchemaEngine::default()

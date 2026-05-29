@@ -114,6 +114,15 @@ bracket form as text. Parentheses are raw record/struct structure; they become
 tagged schema nodes only when the expected type is `SchemaNode` or another
 tag-plus-payload struct.*
 
+*Authored schema declarations use the pipe delimiter family. A namespace entry
+declares a struct with `Type {| Type field Reference ... |}` and an enum with
+`Type (| Type Variant (Variant Payload) ... |)`. Plain `[]` and `()` remain
+legal NOTA values, but they are not the declaration syntax for a schema
+datatype. Lowercase/camelCase items inside a pipe-brace declaration are field
+names; PascalCase items are reusable schema type names. Inline pipe
+declarations at a reference position introduce a local reusable PascalCase
+type before the containing declaration, preserving left-to-right order.*
+
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.
 
