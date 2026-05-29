@@ -66,6 +66,27 @@ through the hand-written declarative macro reader. The near target is to lower
 the core macro schema to asschema data, emit its Rust type, and make the macro
 registry consume a typed macro table value instead of bespoke parser structs.
 
+## At-Sigil Declaration Target
+
+The implemented syntax layer still accepts the pipe-family declarations
+`Name {| Name ... |}` and `Name (| Name ... |)`. That is now transitional.
+The target authored syntax is name-first `@` binding:
+
+- `Name@{ ... }` lowers to the same struct declaration data.
+- `Name@( ... )` lowers to the same enum declaration data.
+- `name@Type` binds a field/member name to a reference or nested declaration.
+
+The `@` marker belongs to declaration binding. It is not a macro-call marker;
+schema-node macro calls remain tagged values read against a known expected
+type. The root `.schema` object is the exception: its struct type is known from
+the filename and its positions, so it is written as the root value rather than
+wrapped in `RootName@{...}`.
+
+Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
+`(Map (Key Value))` still lower at reference positions to `TypeReference`
+data. If a composite appears unnamed as a struct field, the field/type name can
+be derived from the composite shape when it does not collide.
+
 ## Schema Package Entry
 
 `SchemaPackage` is the first crate-local module loader. It expects a crate root
@@ -111,13 +132,14 @@ module schema and checking that the imported type is declared there.
   input, output, and namespace, with optional leading imports. The macro
   engine lowers all three planes uniformly; the runtime meaning differs after
   lowering.
-- Pipe-parentheses define authored enum declarations. A named enum definition
-  is `Name (| Name Variant (Variant Payload) ... |)`.
+- Pipe-parentheses currently define authored enum declarations in the
+  implementation. The target replacement is `Name@(Variant (Variant Payload)
+  ...)`.
 - Braces are key/value maps only. They are not enum sugar.
-- Pipe-braces define authored struct declarations. A named struct definition
-  is `Name {| Name field Reference ... |}`; the one-field form is a newtype
-  struct. Lowercase/camelCase items inside the pipe-brace are field names.
-  PascalCase items are schema type names.
+- Pipe-braces currently define authored struct declarations in the
+  implementation. The target replacement is `Name@{ field@Reference ... }`;
+  the one-field form remains a newtype struct. Lowercase/camelCase names bind
+  fields. PascalCase names declare or reference schema types.
 - Plain square brackets are NOTA vector/bracket structure. They may appear as
   macro payload data or value data, but they are not the authored declaration
   syntax for a schema datatype.

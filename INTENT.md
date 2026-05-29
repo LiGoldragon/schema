@@ -123,6 +123,21 @@ names; PascalCase items are reusable schema type names. Inline pipe
 declarations at a reference position introduce a local reusable PascalCase
 type before the containing declaration, preserving left-to-right order.*
 
+*The pipe-family declaration syntax above is now a transitional implementation
+surface, not the target authored syntax. The target declaration syntax is
+name-first with `@` binding the name to the delimiter shape:
+`Name@{ ... }` declares a struct-like shape, `Name@( ... )` declares an
+enum-like shape, and `name@Type` binds a member to a referenced type. The `@`
+is a declaration/binding sigil, not the macro-call sigil rejected by the
+schema-node model. The schema root is always the known root struct whose name
+comes from the filename, so it does not need a delimiter or `@` wrapper.*
+
+*For `Name@( ... )`, composite references are resolved at the assembled-schema
+reference layer: recognized type-reference heads such as `Vec`, `Optional`,
+and `Map` remain composite references, while a named non-composite declaration
+shape lowers as an enum. Unnamed composites used as fields may derive names
+such as `vec_of_entry` / `VecOfEntry` when there is no conflict.*
+
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.
 
