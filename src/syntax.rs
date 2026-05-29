@@ -124,16 +124,31 @@ impl SyntaxStructDeclaration {
         let items = sequence.items();
         let declared_name = SyntaxDeclaredName::from_items(items)?;
         declared_name.must_match(expected_name)?;
-        if (items.len() - 1) % 2 != 0 {
-            return Err(SchemaError::ExpectedRawFieldPairCount {
-                declaration: expected_name.as_str().to_owned(),
-                found: items.len() - 1,
-            });
-        }
-
         let mut fields = Vec::new();
-        for (index, pair) in items[1..].chunks_exact(2).enumerate() {
-            fields.push(SyntaxField::from_named_pair(index, &pair[0], &pair[1])?);
+        let mut index = 1;
+        while index < items.len() {
+            if let Some(field) = SyntaxField::from_binding(index - 1, &items[index])? {
+                fields.push(field);
+                index += 1;
+                continue;
+            }
+            if let Some(field) = SyntaxField::from_explicit_pair(index - 1, &items[index])? {
+                fields.push(field);
+                index += 1;
+                continue;
+            }
+            let Some(reference_item) = items.get(index + 1) else {
+                return Err(SchemaError::ExpectedRawFieldPairCount {
+                    declaration: expected_name.as_str().to_owned(),
+                    found: items.len() - 1,
+                });
+            };
+            fields.push(SyntaxField::from_named_pair(
+                index - 1,
+                &items[index],
+                reference_item,
+            )?);
+            index += 2;
         }
         Ok(Self {
             name: expected_name.clone(),
@@ -172,6 +187,46 @@ impl SyntaxField {
             name: Name::new(field_name),
             reference: reference.with_positional_fallback(index),
         })
+    }
+
+    fn from_binding(index: usize, item: &RawNotaDatatype) -> Result<Option<Self>, SchemaError> {
+        let Some(text) = item.as_atom() else {
+            return Ok(None);
+        };
+        let Some(binding) = SyntaxBinding::from_text(text) else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            name: binding.name,
+            reference: SyntaxReference::Plain(binding.reference).with_positional_fallback(index),
+        }))
+    }
+
+    fn from_explicit_pair(
+        index: usize,
+        item: &RawNotaDatatype,
+    ) -> Result<Option<Self>, SchemaError> {
+        let Some(sequence) = item.as_record() else {
+            return Ok(None);
+        };
+        if sequence.items().len() != 2 {
+            return Ok(None);
+        }
+        let Some(field_name) = sequence.items()[0].as_atom() else {
+            return Ok(None);
+        };
+        if !field_name
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_lowercase())
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            name: Name::new(field_name),
+            reference: SyntaxReference::from_raw(&sequence.items()[1])?
+                .with_positional_fallback(index),
+        }))
     }
 }
 
@@ -226,6 +281,12 @@ impl SyntaxVariant {
 
     fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
         if let Some(name) = raw.as_atom() {
+            if let Some(binding) = SyntaxBinding::from_text(name) {
+                return Ok(Self {
+                    name: binding.name,
+                    payload: Some(SyntaxReference::Plain(binding.reference)),
+                });
+            }
             return Ok(Self {
                 name: Name::new(name),
                 payload: None,
@@ -252,6 +313,25 @@ impl SyntaxVariant {
         Ok(Self {
             name: Name::new(name),
             payload: Some(SyntaxReference::from_raw(&sequence.items()[1])?),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SyntaxBinding {
+    name: Name,
+    reference: Name,
+}
+
+impl SyntaxBinding {
+    fn from_text(text: &str) -> Option<Self> {
+        let (name, reference) = text.split_once('@')?;
+        if name.is_empty() || reference.is_empty() || reference.contains('@') {
+            return None;
+        }
+        Some(Self {
+            name: Name::new(name),
+            reference: Name::new(reference),
         })
     }
 }

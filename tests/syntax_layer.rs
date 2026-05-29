@@ -50,7 +50,7 @@ fn typed_composite_objects_are_read_from_parenthesis_records() {
 }
 
 #[test]
-fn pipe_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
+fn at_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/schema.schema");
     let input = enum_declaration(&schema, "SpiritInput");
 
@@ -71,7 +71,7 @@ fn pipe_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
 }
 
 #[test]
-fn pipe_brace_at_datatype_declaration_position_creates_struct_field_lists() {
+fn at_brace_at_datatype_declaration_position_creates_struct_field_lists() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/schema.schema");
     let text = struct_named(&schema, "Text");
 
@@ -96,7 +96,7 @@ fn plain_square_bracket_datatype_declarations_are_rejected() {
 }
 
 #[test]
-fn pipe_declaration_name_must_match_namespace_key() {
+fn at_declaration_name_must_match_namespace_key() {
     let source = fs::read_to_string("tests/fixtures/syntax-layer/name-mismatch.schema").unwrap();
     let error = SyntaxSchema::from_path_and_source(
         "tests/fixtures/syntax-layer/name-mismatch.schema",

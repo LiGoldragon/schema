@@ -114,23 +114,19 @@ bracket form as text. Parentheses are raw record/struct structure; they become
 tagged schema nodes only when the expected type is `SchemaNode` or another
 tag-plus-payload struct.*
 
-*Authored schema declarations use the pipe delimiter family. A namespace entry
-declares a struct with `Type {| Type field Reference ... |}` and an enum with
-`Type (| Type Variant (Variant Payload) ... |)`. Plain `[]` and `()` remain
-legal NOTA values, but they are not the declaration syntax for a schema
-datatype. Lowercase/camelCase items inside a pipe-brace declaration are field
-names; PascalCase items are reusable schema type names. Inline pipe
-declarations at a reference position introduce a local reusable PascalCase
-type before the containing declaration, preserving left-to-right order.*
+*Authored schema declarations use name-first `@` binding. A namespace entry
+declares a struct with `Type Type@{ field@Reference ... }` and an enum with
+`Type Type@(Variant Variant@Payload ...)`. Plain `[]` and `()` remain legal
+NOTA values, but they are not the declaration syntax for a schema datatype.
+Lowercase/camelCase member names bind fields; PascalCase names declare or
+reference schema types. The `@` is a declaration/binding sigil, not the
+macro-call sigil rejected by the schema-node model. The schema root is always
+the known root struct whose name comes from the filename, so it does not need
+a delimiter or `@` wrapper.*
 
-*The pipe-family declaration syntax above is now a transitional implementation
-surface, not the target authored syntax. The target declaration syntax is
-name-first with `@` binding the name to the delimiter shape:
-`Name@{ ... }` declares a struct-like shape, `Name@( ... )` declares an
-enum-like shape, and `name@Type` binds a member to a referenced type. The `@`
-is a declaration/binding sigil, not the macro-call sigil rejected by the
-schema-node model. The schema root is always the known root struct whose name
-comes from the filename, so it does not need a delimiter or `@` wrapper.*
+*The earlier pipe-family declaration syntax remains a compatibility surface
+in the parser and macro engine while existing fixtures migrate. It is not the
+authored-schema target.*
 
 *For `Name@( ... )`, composite references are resolved at the assembled-schema
 reference layer: recognized type-reference heads such as `Vec`, `Optional`,

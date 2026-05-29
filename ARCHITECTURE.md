@@ -66,15 +66,15 @@ through the hand-written declarative macro reader. The near target is to lower
 the core macro schema to asschema data, emit its Rust type, and make the macro
 registry consume a typed macro table value instead of bespoke parser structs.
 
-## At-Sigil Declaration Target
+## At-Binding Declaration Syntax
 
-The implemented syntax layer still accepts the pipe-family declarations
-`Name {| Name ... |}` and `Name (| Name ... |)`. That is now transitional.
-The target authored syntax is name-first `@` binding:
+The authored syntax is name-first `@` binding:
 
 - `Name@{ ... }` lowers to the same struct declaration data.
 - `Name@( ... )` lowers to the same enum declaration data.
-- `name@Type` binds a field/member name to a reference or nested declaration.
+- `name@Type` binds a field/member name to a reference.
+- `name@(Composite Type)` binds a field/member name to a structural reference
+  without losing the referenced object's parentheses.
 
 The `@` marker belongs to declaration binding. It is not a macro-call marker;
 schema-node macro calls remain tagged values read against a known expected
@@ -86,6 +86,10 @@ Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`
 data. If a composite appears unnamed as a struct field, the field/type name can
 be derived from the composite shape when it does not collide.
+
+The pipe-family forms `Name {| Name ... |}` and `Name (| Name ... |)` remain a
+compatibility surface because older fixtures and lower-layer tests still use
+the recursive pipe blocks. New authored schema should use `@`.
 
 ## Schema Package Entry
 
@@ -132,14 +136,13 @@ module schema and checking that the imported type is declared there.
   input, output, and namespace, with optional leading imports. The macro
   engine lowers all three planes uniformly; the runtime meaning differs after
   lowering.
-- Pipe-parentheses currently define authored enum declarations in the
-  implementation. The target replacement is `Name@(Variant (Variant Payload)
-  ...)`.
+- `Name@(...)` defines authored enum declarations. The older
+  `Name (| Name ... |)` pipe-parenthesis form is compatibility syntax.
 - Braces are key/value maps only. They are not enum sugar.
-- Pipe-braces currently define authored struct declarations in the
-  implementation. The target replacement is `Name@{ field@Reference ... }`;
-  the one-field form remains a newtype struct. Lowercase/camelCase names bind
-  fields. PascalCase names declare or reference schema types.
+- `Name@{ field@Reference ... }` defines authored struct declarations; the
+  one-field form remains a newtype struct. Lowercase/camelCase names bind
+  fields. PascalCase names declare or reference schema types. The older
+  `Name {| Name ... |}` pipe-brace form is compatibility syntax.
 - Plain square brackets are NOTA vector/bracket structure. They may appear as
   macro payload data or value data, but they are not the authored declaration
   syntax for a schema datatype.
@@ -206,13 +209,13 @@ new delimiter contract without skipping into the older macro engine:
 1. `RawSchemaFile` parses a `.schema` file as legal NOTA and preserves raw
    delimiter objects.
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
-3. Pipe-braces at datatype declaration position are struct field lists.
+3. `@` braces at datatype declaration position are struct field lists.
    Plain square brackets are rejected there.
 4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
-5. `(| Name ... |)` is an enum declaration and `{| Name ... |}` is a struct
-   declaration. The first item must match the namespace key, so the raw map key
-   and the self-named declaration cannot silently drift.
+5. `Name@(...)` is an enum declaration and `Name@{...}` is a struct
+   declaration. The declared name must match the namespace key, so the raw map
+   key and the self-named declaration cannot silently drift.
 
 The proof fixture is `tests/fixtures/syntax-layer/schema.schema`; the tests in
 `tests/syntax_layer.rs` assert the raw-to-syntax result directly.

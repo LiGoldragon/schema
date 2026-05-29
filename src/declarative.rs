@@ -820,9 +820,11 @@ impl<'template> AssembledFields<'template> {
 
     fn starts_flat_field_pair(&self, index: usize) -> bool {
         self.objects[index].demote_to_string().is_some_and(|name| {
-            name.chars()
-                .next()
-                .is_some_and(|character| character.is_ascii_lowercase())
+            !name.contains('@')
+                && name
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_ascii_lowercase())
         })
     }
 }
@@ -864,6 +866,12 @@ impl<'template> AssembledField<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<FieldDeclaration, SchemaError> {
+        if let Some(binding) = AssembledBinding::from_block(self.object) {
+            return Ok(FieldDeclaration {
+                name: Name::new(binding.name.field_name()),
+                reference: TypeReference::from_name(binding.reference),
+            });
+        }
         if let Some(reference_object) = self.paired_reference {
             let field_name = self.object.schema_name()?;
             let reference =
@@ -979,6 +987,12 @@ impl<'template> AssembledVariant<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
+        if let Some(binding) = AssembledBinding::from_block(self.object) {
+            return Ok(EnumVariant {
+                name: binding.name,
+                payload: Some(TypeReference::from_name(binding.reference)),
+            });
+        }
         if self.object.is_parenthesis() {
             self.lower_parenthesis(registry, context)
         } else if self.object.qualifies_as_pascal_case_symbol() {
@@ -1019,6 +1033,26 @@ impl<'template> AssembledVariant<'template> {
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AssembledBinding {
+    name: Name,
+    reference: Name,
+}
+
+impl AssembledBinding {
+    fn from_block(block: &Block) -> Option<Self> {
+        let text = block.demote_to_string()?;
+        let (name, reference) = text.split_once('@')?;
+        if name.is_empty() || reference.is_empty() || reference.contains('@') {
+            return None;
+        }
+        Some(Self {
+            name: Name::new(name),
+            reference: Name::new(reference),
+        })
     }
 }
 
