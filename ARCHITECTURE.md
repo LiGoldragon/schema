@@ -172,8 +172,9 @@ module schema and checking that the imported type is declared there.
 - Schema names may be qualified with single colons (`crate:module:Type`). The
   local part drives derived field names; the full name remains available for
   global disambiguation and future import resolution.
-- Root namespace braces are key/value maps only. Authored declarations use
-  `Name Body`; parenthesized `(Name Body)` entries inside braces are rejected.
+- Root namespace braces hold self-named declaration objects such as
+  `Entry@{...}` and `Kind@[...]`. Redundant `Entry Entry@{...}` key/value
+  pairs and parenthesized `(Name Body)` entries are rejected.
 - Schema objects are the shared language for Signal, Nexus, SEMA,
   upgrade, and mail-event surfaces. Signal is the wire/message plane,
   Nexus is the execution-IO plane for internal effects, external calls, and
@@ -211,11 +212,11 @@ module schema and checking that the imported type is declared there.
   `optionalCache@(Optional Cache)`. Enum-variant payloads, root input/output
   variant payloads, and import sources all lower their type through
   `TypeReference::from_block`.
-- Inline pipe declarations at a type-reference position lower to a `Plain`
-  reference and insert their declaration before the containing declaration in
-  `Asschema.namespace`. This makes `Entry {| Entry receipt {| Receipt ... |}
-  later Receipt |}` declare `Receipt` first and then `Entry`, so later fields
-  can reuse the inline PascalCase type by name.
+- Inline PascalCase at-declarations at a type-reference position lower to a
+  `Plain` reference and insert a private declaration before the containing
+  public declaration in `Asschema.namespace`. This makes
+  `Entry@{ Receipt@{ ... } later@Receipt }` declare private `Receipt` first
+  and then public `Entry`, so later fields can reuse the inline type by name.
 - `SchemaNode` is the data model for macro calls before execution. It reads a
   parenthesized object as a tagged/data-carrying node: first object is the tag,
   second object is the data. This prevents macro invocation from being a hidden
