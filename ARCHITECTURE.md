@@ -54,6 +54,18 @@ Tests now prove the endpoint by asserting the Rust data directly:
 later serialized assembled schema format must be designed from the raw-NOTA
 floor rather than reviving the obsolete vector-record fixture shape.
 
+## Core Macro Schema
+
+`schemas/core.schema` is the schema-level description of the macro substrate.
+It declares macro pattern and template bodies as typed object trees: captures,
+rest captures, atoms, delimiter nodes, and ordered child vectors. That makes
+the macro shape itself schema data instead of a string blob.
+
+The current built-in registry still reads `schemas/builtin-macros.schema`
+through the hand-written declarative macro reader. The near target is to lower
+the core macro schema to asschema data, emit its Rust type, and make the macro
+registry consume a typed macro table value instead of bespoke parser structs.
+
 ## Schema Package Entry
 
 `SchemaPackage` is the first crate-local module loader. It expects a crate root

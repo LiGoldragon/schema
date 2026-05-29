@@ -137,3 +137,8 @@ Current implementation target:
 - The context records which macros ran as diagnostics. Correctness tests prove
   lowering through the produced `Asschema` data, not by treating trace strings
   as a side-channel witness.
+- `schemas/core.schema` describes macro pattern/template payloads as typed
+  schema data (`MacroPatternObject`, `MacroTemplateObject`, delimiter nodes,
+  captures, atoms), not opaque strings. The built-in macro registry is not yet
+  loaded from that asschema data; that is the next step toward fully
+  serializable macro tables.
