@@ -7,9 +7,17 @@
   BuiltinMacroDefinitions {| BuiltinMacroDefinitions schemaMacro SchemaMacro |}
   SchemaMacro {| SchemaMacro macroName MacroName macroPosition MacroPosition macroPattern MacroPattern macroTemplate MacroTemplate |}
   MacroName {| MacroName string String |}
-  MacroPattern {| MacroPattern string String |}
-  MacroTemplate {| MacroTemplate string String |}
-  MacroBinding (| MacroBinding SingleCapture RestCapture |)
+  MacroPattern {| MacroPattern object MacroPatternObject |}
+  MacroPatternObjects {| MacroPatternObjects values (Vec MacroPatternObject) |}
+  MacroPatternObject (| MacroPatternObject (Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroPatternDelimited) |)
+  MacroPatternDelimited {| MacroPatternDelimited delimiter MacroDelimiter children MacroPatternObjects |}
+  MacroTemplate {| MacroTemplate object MacroTemplateObject |}
+  MacroTemplateObjects {| MacroTemplateObjects values (Vec MacroTemplateObject) |}
+  MacroTemplateObject (| MacroTemplateObject (Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroTemplateDelimited) |)
+  MacroTemplateDelimited {| MacroTemplateDelimited delimiter MacroDelimiter children MacroTemplateObjects |}
+  MacroCaptureName {| MacroCaptureName string String |}
+  MacroAtom {| MacroAtom string String |}
+  MacroDelimiter (| MacroDelimiter SquareBracket Brace Parenthesis PipeParenthesis PipeBrace |)
   MacroPosition (| MacroPosition RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference |)
   MacroShape (| MacroShape BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol |)
   MacroOutputKind (| MacroOutputKind Imports RootEnum Types Type Fields Variants Reference References AssembledSchema |)

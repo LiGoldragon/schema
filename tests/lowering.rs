@@ -248,6 +248,79 @@ fn core_schema_describes_default_builtin_macro_positions() {
             "TypeReference",
         ]
     );
+
+    let TypeDeclaration::Newtype(macro_pattern) = asschema
+        .type_named("MacroPattern")
+        .expect("macro pattern newtype")
+    else {
+        panic!("MacroPattern should be a newtype");
+    };
+    assert_eq!(
+        macro_pattern.fields[0]
+            .reference
+            .plain_name()
+            .expect("macro pattern object reference")
+            .as_str(),
+        "MacroPatternObject"
+    );
+
+    let TypeDeclaration::Enum(macro_pattern_object) = asschema
+        .type_named("MacroPatternObject")
+        .expect("macro pattern object enum")
+    else {
+        panic!("MacroPatternObject should be an enum");
+    };
+    assert_eq!(
+        macro_pattern_object
+            .variants
+            .iter()
+            .map(|variant| {
+                (
+                    variant.name.as_str(),
+                    variant
+                        .payload
+                        .as_ref()
+                        .and_then(|payload| payload.plain_name())
+                        .map(Name::as_str),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("Capture", Some("MacroCaptureName")),
+            ("RestCapture", Some("MacroCaptureName")),
+            ("Atom", Some("MacroAtom")),
+            ("Delimited", Some("MacroPatternDelimited")),
+        ]
+    );
+
+    let TypeDeclaration::Enum(macro_template_object) = asschema
+        .type_named("MacroTemplateObject")
+        .expect("macro template object enum")
+    else {
+        panic!("MacroTemplateObject should be an enum");
+    };
+    assert_eq!(
+        macro_template_object
+            .variants
+            .iter()
+            .map(|variant| {
+                (
+                    variant.name.as_str(),
+                    variant
+                        .payload
+                        .as_ref()
+                        .and_then(|payload| payload.plain_name())
+                        .map(Name::as_str),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("Capture", Some("MacroCaptureName")),
+            ("RestCapture", Some("MacroCaptureName")),
+            ("Atom", Some("MacroAtom")),
+            ("Delimited", Some("MacroTemplateDelimited")),
+        ]
+    );
 }
 
 #[test]
@@ -350,90 +423,78 @@ fn field_names_are_derived_from_type_names() {
 }
 
 #[test]
-fn default_engine_dispatches_through_registered_macros() {
+fn default_engine_lowers_through_registered_structural_forms() {
     let source = include_str!("../schemas/spirit-min.schema");
-    let mut context = MacroContext::default();
-
-    SchemaEngine::default()
-        .lower_source_with_context(source, SchemaIdentity::new("spirit", "0.1.0"), &mut context)
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("spirit", "0.1.0"))
         .expect("schema lowers through macros");
 
+    let input = asschema.root_named("Input").expect("input root");
     assert_eq!(
-        context
-            .macros_applied()
+        input
+            .enum_declaration()
+            .variants
             .iter()
-            .map(String::as_str)
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Record", "Observe"]
+    );
+
+    let output = asschema.root_named("Output").expect("output root");
+    assert_eq!(
+        output
+            .enum_declaration()
+            .variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["RecordAccepted", "RecordsObserved"]
+    );
+
+    let entry = asschema
+        .namespace()
+        .iter()
+        .find(|declaration| declaration.name().as_str() == "Entry")
+        .expect("entry declaration");
+    let TypeDeclaration::Struct(entry) = entry else {
+        panic!("entry should lower as a struct");
+    };
+    assert_eq!(
+        entry
+            .fields
+            .iter()
+            .map(|field| (
+                field.name.as_str(),
+                field.reference.plain_name().map(Name::as_str)
+            ))
             .collect::<Vec<_>>(),
         vec![
-            "RootInput",
-            "SchemaEnumVariants",
-            "RootOutput",
-            "SchemaEnumVariants",
-            "RootNamespace",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaStructDefinition",
-            "SchemaStructFields",
-            "SchemaEnumDefinition",
-            "SchemaEnumVariants",
-            "SchemaEnumDefinition",
-            "SchemaEnumVariants",
+            ("topics", Some("Topics")),
+            ("kind", Some("Kind")),
+            ("description", Some("Description")),
+            ("magnitude", Some("Magnitude")),
         ]
     );
-    assert!(
-        context
-            .bindings_seen()
-            .iter()
-            .any(|binding| binding == "SchemaStructDefinition::Name")
-    );
-    assert!(
-        context
-            .bindings_seen()
-            .iter()
-            .any(|binding| binding == "SchemaStructDefinition::*Fields")
-    );
-    assert!(context.expanded_templates().iter().any(|template| {
-        template == "SchemaStructDefinition -> (Type (Struct Entry [topics Topics kind Kind description Description magnitude Magnitude]))"
-    }));
-    assert!(context.expanded_templates().iter().any(|template| {
-        template == "SchemaEnumDefinition -> (Type (Enum Kind (Decision Principle Correction Clarification Constraint)))"
-    }));
+
+    let kind = asschema
+        .namespace()
+        .iter()
+        .find(|declaration| declaration.name().as_str() == "Kind")
+        .expect("kind declaration");
+    let TypeDeclaration::Enum(kind) = kind else {
+        panic!("kind should lower as an enum");
+    };
     assert_eq!(
-        context.positions_seen(),
-        &[
-            MacroPosition::RootInput,
-            MacroPosition::EnumVariants,
-            MacroPosition::RootOutput,
-            MacroPosition::EnumVariants,
-            MacroPosition::RootNamespace,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::StructFields,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::EnumVariants,
-            MacroPosition::NamespaceDeclaration,
-            MacroPosition::EnumVariants,
+        kind.variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Decision",
+            "Principle",
+            "Correction",
+            "Clarification",
+            "Constraint",
         ]
     );
 }
