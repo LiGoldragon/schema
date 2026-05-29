@@ -450,10 +450,10 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
         ((Record Entry) (Observe Query))
         ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
         {
-          NexusAction (| NexusAction (Record Entry) (Observe Query) |)
-          NexusResult (| NexusResult (Accepted RecordIdentifier) (Observed RecordSet) |)
-          SemaCommand (| SemaCommand (Record Entry) (Observe Query) |)
-          SemaResponse (| SemaResponse (Recorded RecordIdentifier) (Observed RecordSet) |)
+          NexusInput (| NexusInput (Signal Input) (Sema SemaOutput) |)
+          NexusOutput (| NexusOutput (Sema SemaInput) (Signal Output) |)
+          SemaInput (| SemaInput (Record Entry) (Observe Query) |)
+          SemaOutput (| SemaOutput (Recorded RecordIdentifier) (Observed RecordSet) |)
           Topic {| Topic string String |}
           RecordIdentifier {| RecordIdentifier integer Integer |}
           Entry {| Entry topic Topic |}
@@ -473,7 +473,7 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
         .iter()
         .map(|declaration| declaration.name().as_str())
         .collect();
-    for plane_type in ["NexusAction", "NexusResult", "SemaCommand", "SemaResponse"] {
+    for plane_type in ["NexusInput", "NexusOutput", "SemaInput", "SemaOutput"] {
         assert!(
             names.contains(&plane_type),
             "{plane_type} is declared as schema data, not a hidden runtime enum",
