@@ -116,23 +116,27 @@ tag-plus-payload struct.*
 
 *Authored schema declarations use name-first `@` binding. A namespace entry
 declares a struct with `Type Type@{ field@Reference ... }` and an enum with
-`Type Type@(Variant Variant@Payload ...)`. Plain `[]` and `()` remain legal
-NOTA values, but they are not the declaration syntax for a schema datatype.
-Lowercase/camelCase member names bind fields; PascalCase names declare or
-reference schema types. The `@` is a declaration/binding sigil, not the
-macro-call sigil rejected by the schema-node model. The schema root is always
-the known root struct whose name comes from the filename, so it does not need
-a delimiter or `@` wrapper.*
+`Type Type@[Variant Variant@Payload ...]`. Plain `[]` and `()` remain legal
+NOTA values, but only the `@[` binding form is the declaration syntax for a
+schema enum datatype; parentheses remain the composite/type-reference and
+macro-call argument form (`(Vec Entry)`, `(Optional Kind)`, `(Map (Key
+Value))`). Lowercase/camelCase member names bind fields; PascalCase names
+declare or reference schema types. The `@` is a declaration/binding sigil, not
+the macro-call sigil rejected by the schema-node model. The schema root is
+always the known root struct whose name comes from the filename, so it does
+not need a delimiter or `@` wrapper.*
 
 *The earlier pipe-family declaration syntax remains a compatibility surface
 in the parser and macro engine while existing fixtures migrate. It is not the
 authored-schema target.*
 
-*For `Name@( ... )`, composite references are resolved at the assembled-schema
-reference layer: recognized type-reference heads such as `Vec`, `Optional`,
-and `Map` remain composite references, while a named non-composite declaration
-shape lowers as an enum. Unnamed composites used as fields may derive names
-such as `vec_of_entry` / `VecOfEntry` when there is no conflict.*
+*For `name@( ... )`, the parenthesized body is resolved at the
+assembled-schema reference layer: recognized type-reference heads such as
+`Vec`, `Optional`, and `Map` remain composite references, and future user macro
+heads can use the same argument shape. Enum declarations use `Name@[...]`
+instead, so declaration shape and composite/reference shape are no longer
+overloaded. Unnamed composites used as fields may derive names such as
+`vec_of_entry` / `VecOfEntry` when there is no conflict.*
 
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.

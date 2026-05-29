@@ -71,7 +71,7 @@ registry consume a typed macro table value instead of bespoke parser structs.
 The authored syntax is name-first `@` binding:
 
 - `Name@{ ... }` lowers to the same struct declaration data.
-- `Name@( ... )` lowers to the same enum declaration data.
+- `Name@[ ... ]` lowers to enum declaration data.
 - `name@Type` binds a field/member name to a reference.
 - `name@(Composite Type)` binds a field/member name to a structural reference
   without losing the referenced object's parentheses.
@@ -89,7 +89,10 @@ be derived from the composite shape when it does not collide.
 
 The pipe-family forms `Name {| Name ... |}` and `Name (| Name ... |)` remain a
 compatibility surface because older fixtures and lower-layer tests still use
-the recursive pipe blocks. New authored schema should use `@`.
+the recursive pipe blocks. `Name@(...)` also remains accepted as an enum
+declaration compatibility shape, but new authored schema should use `Name@[]`
+so parentheses stay reserved for composite/reference and macro-call argument
+objects.
 
 ## Schema Package Entry
 
@@ -136,8 +139,8 @@ module schema and checking that the imported type is declared there.
   input, output, and namespace, with optional leading imports. The macro
   engine lowers all three planes uniformly; the runtime meaning differs after
   lowering.
-- `Name@(...)` defines authored enum declarations. The older
-  `Name (| Name ... |)` pipe-parenthesis form is compatibility syntax.
+- `Name@[...]` defines authored enum declarations. The older
+  `Name@(...)` and `Name (| Name ... |)` forms are compatibility syntax.
 - Braces are key/value maps only. They are not enum sugar.
 - `Name@{ field@Reference ... }` defines authored struct declarations; the
   one-field form remains a newtype struct. Lowercase/camelCase names bind
@@ -186,9 +189,9 @@ module schema and checking that the imported type is declared there.
   is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
   text parser.
 - Collection references reach every reference position. Struct fields are
-  written as lower-case field/type pairs inside a pipe-brace declaration:
-  `serviceVector (Vec Service)`, `byTopic (Map (Topic RecordIdentifier))`,
-  `optionalCache (Optional Cache)`. Enum-variant payloads, root input/output
+  written as `field@(Composite Reference)` inside an at-brace declaration:
+  `serviceVector@(Vec Service)`, `byTopic@(Map (Topic RecordIdentifier))`,
+  `optionalCache@(Optional Cache)`. Enum-variant payloads, root input/output
   variant payloads, and import sources all lower their type through
   `TypeReference::from_block`.
 - Inline pipe declarations at a type-reference position lower to a `Plain`
@@ -213,7 +216,7 @@ new delimiter contract without skipping into the older macro engine:
    Plain square brackets are rejected there.
 4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
-5. `Name@(...)` is an enum declaration and `Name@{...}` is a struct
+5. `Name@[...]` is an enum declaration and `Name@{...}` is a struct
    declaration. The declared name must match the namespace key, so the raw map
    key and the self-named declaration cannot silently drift.
 

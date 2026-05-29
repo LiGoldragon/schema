@@ -4,10 +4,10 @@
   Topic Topic@{ text@Text }
   Topics Topics@{ values@(Vec Topic) }
   TopicIndex TopicIndex@{ entries@(Map (Topic Identifier)) }
-  Kind Kind@(Decision Principle Correction Clarification Constraint)
+  Kind Kind@[Decision Principle Correction Clarification Constraint]
   Entry Entry@{ topics@Topics kind@Kind description@Text related@TopicIndex maybeTopic@(Optional Topic) }
   RecordQuery RecordQuery@{ topics@(Vec Topic) maximumCount@Integer }
   RecordReply RecordReply@{ entries@(Vec Entry) }
-  SpiritInput SpiritInput@(Record@Entry Observe@RecordQuery Ping)
-  SpiritOutput SpiritOutput@(Recorded@Identifier Observed@RecordReply Pong)
+  SpiritInput SpiritInput@[Record@Entry Observe@RecordQuery Ping]
+  SpiritOutput SpiritOutput@[Recorded@Identifier Observed@RecordReply Pong]
 }

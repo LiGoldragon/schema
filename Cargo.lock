@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "nota-next"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#3ba7810d4770efcc41375071ef18891a5f078789"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f95102e0c33fdf9d51e1f2e44ea247d32ebb2538"
 dependencies = [
  "nota-next-derive",
 ]
@@ -13,7 +13,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#3ba7810d4770efcc41375071ef18891a5f078789"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f95102e0c33fdf9d51e1f2e44ea247d32ebb2538"
 dependencies = [
  "proc-macro2",
  "quote",
