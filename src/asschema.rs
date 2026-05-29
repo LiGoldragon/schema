@@ -173,8 +173,9 @@ pub struct EnumVariant {
 ///
 /// `String`, `Integer`, and `Boolean` are reserved scalar leaves.
 /// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
-/// `Map`, and `Optional` carry inner references. These are read from
-/// typed NOTA datatype objects: `(Vec T)` lowers to `Vector<T>`,
+/// `Map`, and `Optional` carry inner references. These are Schema
+/// type-reference objects read over nota-next's parsed structure:
+/// `(Vec T)` lowers to `Vector<T>`,
 /// `(Map (K V))` lowers to `Map<K, V>`, and `(Optional T)` lowers to
 /// `Optional<T>`. Parentheses with other heads remain available for
 /// user-declared type-reference macros.
@@ -243,7 +244,7 @@ impl TypeReference {
     /// a `TypeReference`.
     ///
     /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. Typed NOTA datatype objects lower at this
+    /// lowers to `Plain`. Schema type-reference objects lower at this
     /// position: `(Vec T)` -> `Vector`, `(Map (K V))` -> `Map`, and
     /// `(Optional T)` -> `Optional`. The inner positions recurse, so
     /// `(Vec (Optional Topic))` and `(Map (NodeName (Vec Service)))`

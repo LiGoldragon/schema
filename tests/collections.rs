@@ -1,7 +1,8 @@
 //! Collection + Option type references.
 //!
 //! A struct field or enum-variant payload can now wrap its referenced
-//! type in a collection or option. The surface forms are typed NOTA:
+//! type in a collection or option. The surface forms are Schema
+//! type-reference objects:
 //! `(Vec T)`, `(Map (K V))`, and `(Optional T)`. They lower to
 //! `TypeReference::Vector / Map / Optional`. Bare-symbol fields keep
 //! the declared-name shape, while reserved scalar names lower to

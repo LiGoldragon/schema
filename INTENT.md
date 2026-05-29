@@ -65,17 +65,18 @@ that later code will act on: sent message events, Nexus mail, SEMA work, SEMA
 replies, and processed message events. A schema lowering that collapses those
 objects into untyped procedural steps has lost intent.*
 
-*A type at a reference position may be a collection or option, not only a
-bare name. Square brackets remain raw NOTA vector structure and schema field
-lists; they are not the schema syntax for declaring a `Vec` type. The typed
-NOTA data objects are `(Vec T)`, `(Map (K V))`, and `(Optional T)`, lowering to
-`Vector`, `Map`, and `Optional` in assembled schema. The inner positions
-recurse, so `(Vec (Optional Topic))` and `(Map (NodeName (Vec Service)))`
-nest. Collection references appear at every reference position: struct
-fields, enum-variant payloads, root input/output variant payloads, and import
-sources. User-declared macros may still appear at type-reference positions,
-but the built-in composite type objects belong to the NOTA datatype layer
-that schema reads.*
+*NOTA owns raw structure and serialization shapes; Schema owns the type-name
+vocabulary. Square brackets remain raw NOTA vector structure and schema field
+lists; they are not the syntax for declaring a `Vec` type. Schema type-reference
+objects include `(Vec T)`, `(Map (K V))`, and `(Optional T)`, lowering to
+`Vector`, `Map`, and `Optional` in assembled schema, alongside scalar
+type-reference names such as `String`, `Integer`, and `Boolean`. The inner
+positions recurse, so `(Vec (Optional Topic))` and
+`(Map (NodeName (Vec Service)))` nest. Collection references appear at every
+reference position: struct fields, enum-variant payloads, root input/output
+variant payloads, and import sources. User-declared macros may still appear at
+type-reference positions, but built-in type-name keywords are Schema
+vocabulary, not raw NOTA vocabulary.*
 
 *Reserved scalar pass-throughs belong in assembled schema, not only in Rust
 emission. `String`, `Integer`, and `Boolean` lower to scalar `TypeReference`
@@ -97,10 +98,10 @@ Current tests assert that typed data directly rather than preserving assembled
 schema text fixtures.*
 
 *A core schema file can be read one layer lower than schema lowering: as raw
-NOTA datatype data. In that mode the root struct name is derived from the
+NOTA object data. In that mode the root struct name is derived from the
 filename, mirroring Rust modules, and the file does not restate that root
 name. The root body is a native brace key/value map of datatype names to raw
-NOTA datatype objects.*
+NOTA objects.*
 
 *.schema files are NOTA documents. Every `.schema` fixture used to prove a
 schema-language behavior must first be legal and parseable by `nota-next`

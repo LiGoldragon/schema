@@ -133,14 +133,16 @@ module schema and checking that the imported type is declared there.
   "a declared type by name." `TypeReference::from_block` lowers a bare scalar
   symbol to its scalar variant, a different bare PascalCase symbol to `Plain`,
   `(Vec T)` to `Vector`, `(Map (K V))` to `Map`, and `(Optional T)` to
-  `Optional`. The inner positions recurse, so `(Vec (Optional Topic))` and
+  `Optional`. These names are Schema type-reference vocabulary over
+  nota-next's already-parsed structures, not raw NOTA keywords. The inner
+  positions recurse, so `(Vec (Optional Topic))` and
   `(Map (String (Vec Service)))` nest. Parentheses with another head are
   dispatched to the user macro registry. An unknown head or wrong native
   argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
   is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
   text parser.
 - Collection references reach every reference position. Struct fields accept a
-  typed NOTA type-reference object directly (`(Vec Service)`,
+  Schema type-reference object directly (`(Vec Service)`,
   `(Map (Topic RecordIdentifier))`, `(Optional Cache)`) and derive a field name
   from that reference. The explicit lower-case pair `(fieldName TypeReference)`
   remains only as an escape hatch for uncommon field names. Enum-variant
@@ -161,7 +163,7 @@ new delimiter contract without skipping into the older macro engine:
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
 3. Square brackets at datatype declaration position are struct field lists.
    They do not mean `Vec`.
-4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are typed NOTA datatype
+4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
 5. `(| Name ... |)` is an enum declaration and `{| Name ... |}` is a struct
    declaration. The first item must match the namespace key, so the raw map key
