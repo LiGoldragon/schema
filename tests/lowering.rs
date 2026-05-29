@@ -85,7 +85,7 @@ fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even()
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "((Record schema:spirit:Entry)) () { schema:spirit:Topic [Text] schema:spirit:Entry [schema:spirit:Topic] }";
+    let source = "((Record schema:spirit:Entry)) () { schema:spirit:Topic [String] schema:spirit:Entry [schema:spirit:Topic] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");

@@ -12,7 +12,7 @@
   Variants [VariantDeclaration]
   VariantDeclaration [Name Payload]
   Payload (Unit (Carries TypeReference))
-  TypeReference (Text Integer Boolean (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference))
+  TypeReference (String Integer Boolean (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference))
   TypeReferencePair [TypeReference TypeReference]
-  Name [Text]
+  Name [String]
 }

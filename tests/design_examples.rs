@@ -65,7 +65,7 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
 /// the pair-style positive path.
 #[test]
 fn design_example_namespace_brace_is_pair_style_key_value_map() {
-    let source = "() () { Topic [Text] Kind (Decision Constraint) }";
+    let source = "() () { Topic [String] Kind (Decision Constraint) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("pair-style namespace lowers");
@@ -78,7 +78,7 @@ fn design_example_namespace_brace_is_pair_style_key_value_map() {
     assert_eq!(names, vec!["Topic", "Kind"]);
 
     let TypeDeclaration::Newtype(topic) = &asschema.namespace()[0] else {
-        panic!("Topic [Text] should lower as a newtype (single-field struct)");
+        panic!("Topic [String] should lower as a newtype (single-field struct)");
     };
     assert_eq!(topic.fields.len(), 1);
     let TypeDeclaration::Enum(kind) = &asschema.namespace()[1] else {
@@ -402,9 +402,9 @@ fn design_example_same_name_payload_variant_uses_explicit_payload() {
 fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let user_macros = DeclarativeMacroLibrary::from_source(
         "
-        (SchemaMacro TextNewtype NamespaceDeclaration
-          ($Name TextNewtype)
-          (Type (Struct $Name [Text])))
+        (SchemaMacro StringNewtype NamespaceDeclaration
+          ($Name StringNewtype)
+          (Type (Struct $Name [String])))
         (SchemaMacro Bag TypeReference
           (Bag $Type)
           (Reference (Vector $Type)))
@@ -418,15 +418,15 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let asschema = engine
         .lower_source(
-            "() () { Topic TextNewtype Topics [(items (Bag Topic))] }",
+            "() () { Topic StringNewtype Topics [(items (Bag Topic))] }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");
 
     let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
-        panic!("TextNewtype macro creates a newtype");
+        panic!("StringNewtype macro creates a newtype");
     };
-    assert_eq!(topic.fields[0].reference, TypeReference::Text);
+    assert_eq!(topic.fields[0].reference, TypeReference::String);
     let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
     else {
         panic!("single-field Topics should be a newtype");
@@ -454,7 +454,7 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
           NexusResult ((Accepted RecordIdentifier) (Observed RecordSet))
           SemaCommand ((Record Entry) (Observe Query))
           SemaResponse ((Recorded RecordIdentifier) (Observed RecordSet))
-          Topic [Text]
+          Topic [String]
           RecordIdentifier [Integer]
           Entry [Topic]
           Query [Topic]

@@ -23,8 +23,8 @@ output Output
 namespace
   newtype CommitSequence = Integer
   newtype DatabaseDigest = Integer
-  newtype ActorIdentifier = Text
-  newtype SocketPath = Text
+  newtype ActorIdentifier = String
+  newtype SocketPath = String
   enum SignalRequest
     RecordIntent(RecordIntent)
     ObserveIntent(ObserveIntent)
@@ -120,9 +120,9 @@ namespace
     description: Description
     magnitude: Magnitude
     actor_identifier: ActorIdentifier
-  newtype Topic = Text
+  newtype Topic = String
   newtype Topics = Vec<Topic>
-  newtype Description = Text
+  newtype Description = String
   enum Kind
     Decision
     Principle

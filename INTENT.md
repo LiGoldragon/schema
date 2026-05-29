@@ -78,9 +78,12 @@ but the built-in composite type objects belong to the NOTA datatype layer
 that schema reads.*
 
 *Reserved scalar pass-throughs belong in assembled schema, not only in Rust
-emission. `Text`, `Integer`, and `Boolean` lower to scalar `TypeReference`
+emission. `String`, `Integer`, and `Boolean` lower to scalar `TypeReference`
 variants; `Plain(Name)` is reserved for declared schema types and importable
-namespace names. Scalar names cannot be re-declared in a schema namespace.*
+namespace names. Scalar names cannot be re-declared in a schema namespace.
+`Bool` is not a scalar spelling, and `Text` is not required as a scalar floor
+right now; a schema may still declare `Text` as its own string newtype when it
+needs that domain noun.*
 
 *Cross-crate schema imports are resolved through Cargo-exposed dependency
 schema directories, not duplicated locally. A schema import source uses the

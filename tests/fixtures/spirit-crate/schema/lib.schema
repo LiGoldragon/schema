@@ -1,9 +1,9 @@
 ((Record Entry) (Observe Query))
 ((RecordAccepted RecordIdentifier) (RecordsObserved RecordSet))
 {
-  Topic [Text]
+  Topic [String]
   Topics [(Vec Topic)]
-  Description [Text]
+  Description [String]
   RecordIdentifier [Integer]
   Entry [Topics Kind Description Magnitude]
   Query [Topic Kind]

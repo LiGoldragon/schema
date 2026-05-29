@@ -12,8 +12,8 @@
 {
   CommitSequence [Integer]
   DatabaseDigest [Integer]
-  ActorIdentifier [Text]
-  SocketPath [Text]
+  ActorIdentifier [String]
+  SocketPath [String]
   SignalRequest ((RecordIntent RecordIntent) (ObserveIntent ObserveIntent) (SubscribeIntent SubscribeIntent))
   SignalReply ((RecordAccepted RecordAccepted) (ObservationReturned ObservationReturned) (SubscriptionStarted SubscriptionStarted))
   NexusRequest ((PushSignal PushSignal) (PushSemaResult PushSemaResult) ResolveMail ExpireMail)
@@ -50,9 +50,9 @@
   MessageCommitted [CommitSequence]
   MessageFailed [RejectionReason]
   Entry [Topics Kind Description Magnitude ActorIdentifier]
-  Topic [Text]
+  Topic [String]
   Topics [(Vec Topic)]
-  Description [Text]
+  Description [String]
   Kind (Decision Principle Correction Clarification Constraint Observation Question)
   Magnitude (Minimum VeryLow Low Medium High VeryHigh Maximum)
   Query [Topics (kinds (Vec Kind)) (limit (Optional Integer))]

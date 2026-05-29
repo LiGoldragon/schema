@@ -171,7 +171,7 @@ pub struct EnumVariant {
 /// A type at a reference position — a struct field's type, an enum
 /// variant's payload, or an import source.
 ///
-/// `Text`, `Integer`, and `Boolean` are reserved scalar leaves.
+/// `String`, `Integer`, and `Boolean` are reserved scalar leaves.
 /// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
 /// `Map`, and `Optional` carry inner references. These are read from
 /// typed NOTA datatype objects: `(Vec T)` lowers to `Vector<T>`,
@@ -180,7 +180,7 @@ pub struct EnumVariant {
 /// user-declared type-reference macros.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeReference {
-    Text,
+    String,
     Integer,
     Boolean,
     Plain(Name),
@@ -199,7 +199,7 @@ impl TypeReference {
 
     pub fn from_name(name: Name) -> Self {
         match name.as_str() {
-            "Text" => Self::Text,
+            "String" => Self::String,
             "Integer" => Self::Integer,
             "Boolean" => Self::Boolean,
             _ => Self::Plain(name),
@@ -207,12 +207,12 @@ impl TypeReference {
     }
 
     pub fn is_reserved_scalar_name(name: &Name) -> bool {
-        matches!(name.as_str(), "Text" | "Integer" | "Boolean")
+        matches!(name.as_str(), "String" | "Integer" | "Boolean")
     }
 
     pub fn scalar_name(&self) -> Option<&'static str> {
         match self {
-            Self::Text => Some("Text"),
+            Self::String => Some("String"),
             Self::Integer => Some("Integer"),
             Self::Boolean => Some("Boolean"),
             Self::Plain(_) | Self::Vector(_) | Self::Map(..) | Self::Optional(_) => None,
@@ -225,7 +225,7 @@ impl TypeReference {
     pub fn plain_name(&self) -> Option<&Name> {
         match self {
             Self::Plain(name) => Some(name),
-            Self::Text
+            Self::String
             | Self::Integer
             | Self::Boolean
             | Self::Vector(_)

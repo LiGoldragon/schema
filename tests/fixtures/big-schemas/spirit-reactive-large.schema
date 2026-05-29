@@ -13,10 +13,10 @@
  (Rejected Rejection)
  (Indexed IndexReceipt))
 {
-  Topic [Text]
+  Topic [String]
   Topics [(Vec Topic)]
-  Description [Text]
-  AgentName [Text]
+  Description [String]
+  AgentName [String]
   Timestamp [Integer]
   RecordIdentifier [Integer]
   SubscriptionToken [Integer]

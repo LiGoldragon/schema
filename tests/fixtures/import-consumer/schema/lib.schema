@@ -2,6 +2,6 @@
 ((Observe Query))
 ((Marked DatabaseMarker))
 {
-  Topic [Text]
+  Topic [String]
   Query [Topic]
 }

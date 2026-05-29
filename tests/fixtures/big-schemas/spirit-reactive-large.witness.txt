@@ -24,10 +24,10 @@ output Output
   Rejected(Rejection)
   Indexed(IndexReceipt)
 namespace
-  newtype Topic = Text
+  newtype Topic = String
   newtype Topics = Vec<Topic>
-  newtype Description = Text
-  newtype AgentName = Text
+  newtype Description = String
+  newtype AgentName = String
   newtype Timestamp = Integer
   newtype RecordIdentifier = Integer
   newtype SubscriptionToken = Integer

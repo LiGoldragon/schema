@@ -868,7 +868,7 @@ impl<'template> AssembledField<'template> {
 
     fn derived_name_for_reference(&self, reference: &TypeReference) -> Name {
         match reference {
-            TypeReference::Text => Name::new("text"),
+            TypeReference::String => Name::new("string"),
             TypeReference::Integer => Name::new("integer"),
             TypeReference::Boolean => Name::new("boolean"),
             TypeReference::Plain(name) => Name::new(name.field_name()),

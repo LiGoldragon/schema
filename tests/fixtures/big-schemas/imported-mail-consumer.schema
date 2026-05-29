@@ -10,10 +10,10 @@
  (Committed CommitSequence)
  (Rejected Rejection))
 {
-  Topic [Text]
+  Topic [String]
   Topics [(Vec Topic)]
-  Description [Text]
-  AgentName [Text]
+  Description [String]
+  AgentName [String]
   RecordIdentifier [Integer]
   Rejection [Description]
   Entry [Topics Description AgentName DatabaseMarker]
