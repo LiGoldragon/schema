@@ -57,9 +57,9 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 }
 
 #[test]
-fn pipe_declarations_lower_to_structs_and_enums() {
+fn at_declarations_lower_to_structs_and_enums() {
     let source =
-        "() () { Entry {| Entry topic Topic kind Kind |} Kind (| Kind Decision Constraint |) }";
+        "Input@[] Output@[] { Entry@{ topic@Topic kind@Kind } Kind@[Decision Constraint] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -73,34 +73,34 @@ fn pipe_declarations_lower_to_structs_and_enums() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
-    let source = "() () { (Entry {| Entry topic Topic kind Kind |}) }";
+    let source = "Input@[] Output@[] { (Entry Entry@{ topic@Topic kind@Kind }) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("brace namespaces are key-value maps only");
-
-    assert_eq!(
-        error,
-        schema_next::SchemaError::ExpectedEvenMapEntries { found: 1 }
-    );
-}
-
-#[test]
-fn brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even() {
-    let source =
-        "() () { (Entry {| Entry topic Topic kind Kind |}) (Kind (| Kind Decision Constraint |)) }";
-    let error = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("brace namespace keys must be symbols");
+        .expect_err("brace namespaces contain self-named declarations only");
 
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedSymbol { .. }
+        schema_next::SchemaError::ExpectedDelimiter { .. }
+            | schema_next::SchemaError::MacroDidNotMatch { .. }
+    ));
+}
+
+#[test]
+fn brace_namespace_rejects_redundant_key_value_declarations() {
+    let source = "Input@[] Output@[] { Entry Entry@{ topic@Topic kind@Kind } }";
+    let error = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("namespace declarations must be self-named objects");
+
+    assert!(matches!(
+        error,
+        schema_next::SchemaError::ExpectedDelimiter { .. }
     ));
 }
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "((Record schema:spirit:Entry)) () { schema:spirit:Topic {| schema:spirit:Topic string String |} schema:spirit:Entry {| schema:spirit:Entry topic schema:spirit:Topic |} }";
+    let source = "Input@[Record@schema:spirit:Entry] Output@[] { schema:spirit:Topic@{ string@String } schema:spirit:Entry@{ topic@schema:spirit:Topic } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
@@ -338,7 +338,6 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
             "SchemaEnumDefinition",
             "SchemaStructFields",
             "SchemaEnumVariants",
-            "SchemaEnumVariantsSquare",
         ]
     );
 
@@ -410,8 +409,7 @@ fn macro_lowering_receives_macro_position() {
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source =
-        "() () { Entry {| Entry recordIdentifier RecordIdentifier description Description |} }";
+    let source = "Input@[] Output@[] { Entry@{ recordIdentifier@RecordIdentifier description@Description } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -506,7 +504,10 @@ fn schema_engine_can_be_built_from_a_macro_registry() {
     registry.register(RejectingRootImports);
     let engine = SchemaEngine::with_registry(registry);
     let error = engine
-        .lower_source("{} () () {}", SchemaIdentity::new("example", "0.1.0"))
+        .lower_source(
+            "{} Input@[] Output@[] {}",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
         .expect_err("custom registry should reject");
 
     assert_eq!(
@@ -545,24 +546,23 @@ impl SchemaMacro for RejectingRootImports {
 
 #[test]
 fn brace_body_is_not_enum_sugar_inside_namespace() {
-    let source = "() () { Routing {ToInbox Address ToOutbox Address} }";
+    let source = "Input@[] Output@[] { Routing {ToInbox Address ToOutbox Address} }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace values are maps, not enum sugar");
 
     assert!(matches!(
         error,
-        schema_next::SchemaError::MacroDidNotMatch { .. }
+        schema_next::SchemaError::ExpectedDelimiter { .. }
     ));
 }
 
 #[test]
-fn pipe_declaration_flat_field_pairs_lower_through_default_engine() {
-    let source =
-        "() () { Entry {| Entry recordIdentifier RecordIdentifier description Description |} }";
+fn at_declaration_field_pairs_lower_through_default_engine() {
+    let source = "Input@[] Output@[] { Entry@{ recordIdentifier@RecordIdentifier description@Description } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("pipe declaration lowers");
+        .expect("at declaration lowers");
     let TypeDeclaration::Struct(entry) = &asschema.namespace()[0] else {
         panic!("entry should be a struct");
     };
@@ -576,8 +576,8 @@ fn pipe_declaration_flat_field_pairs_lower_through_default_engine() {
 }
 
 #[test]
-fn inline_pipe_declaration_creates_ordered_namespace_type() {
-    let source = "() () { Entry {| Entry receipt {| Receipt recordIdentifier RecordIdentifier |} later Receipt |} }";
+fn inline_at_declaration_creates_ordered_namespace_type() {
+    let source = "Input@[] Output@[] { Entry@{ Receipt@{ recordIdentifier@RecordIdentifier } later@Receipt } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline declaration lowers");
@@ -607,30 +607,29 @@ fn inline_pipe_declaration_creates_ordered_namespace_type() {
 }
 
 #[test]
-fn root_enum_rejects_labeled_input_and_output_positions() {
+fn root_enum_requires_named_input_and_output_declarations() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[Input Record@Entry] [] {}",
+            "[Record@Entry] Output@[] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
-        .expect_err("root input label should be rejected");
-    assert_eq!(
+        .expect_err("bare input root should be rejected");
+    assert!(matches!(
         error,
-        schema_next::SchemaError::RootEnumLabelForbidden {
-            label: "Input".to_owned()
-        }
-    );
+        schema_next::SchemaError::MacroDidNotMatch { .. }
+    ));
 
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [Output Accepted@Receipt] {}",
+            "Input@[] Reply@[Accepted@Receipt] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
-        .expect_err("root output label should be rejected");
+        .expect_err("root output must be named Output");
     assert_eq!(
         error,
-        schema_next::SchemaError::RootEnumLabelForbidden {
-            label: "Output".to_owned()
+        schema_next::SchemaError::RootEnumNameMismatch {
+            expected: "Output".to_owned(),
+            found: "Reply".to_owned(),
         }
     );
 }

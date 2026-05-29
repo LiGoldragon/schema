@@ -1,6 +1,7 @@
-() ()
+Input@[]
+Output@[]
 {
-  CommitSequence {| CommitSequence integer Integer |}
-  StateDigest {| StateDigest integer Integer |}
-  DatabaseMarker {| DatabaseMarker commitSequence CommitSequence stateDigest StateDigest |}
+  CommitSequence@{ integer@Integer }
+  StateDigest@{ integer@Integer }
+  DatabaseMarker@{ commitSequence@CommitSequence stateDigest@StateDigest }
 }

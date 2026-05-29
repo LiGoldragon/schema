@@ -5,10 +5,10 @@ use crate::{
         Asschema, EnumDeclaration, EnumVariant, ImportDeclaration, Name, TypeDeclaration,
         TypeReference,
     },
-    declarative::DeclarativeMacroLibrary,
+    declarative::{AssembledVariants, DeclarativeMacroLibrary},
     macros::{
-        MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
-        MacroPosition, MacroRegistry, SchemaBlockExt, SchemaMacro,
+        MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPosition,
+        MacroRegistry, SchemaBlockExt, SchemaMacro,
     },
     resolution::ImportResolver,
 };
@@ -62,6 +62,10 @@ pub enum SchemaError {
     ExpectedEnumVariant,
     RootEnumLabelForbidden {
         label: String,
+    },
+    RootEnumNameMismatch {
+        expected: String,
+        found: String,
     },
     MalformedSchemaNode {
         found: String,
@@ -555,34 +559,15 @@ impl<'schema> NamespaceBlock<'schema> {
         context: &mut MacroContext,
     ) -> Result<Vec<TypeDeclaration>, SchemaError> {
         let mut declarations = Vec::new();
-        if self.object.holds_root_objects() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: self.object.holds_root_objects(),
-            });
-        }
-        for index in (0..self.object.holds_root_objects()).step_by(2) {
-            let name = self
-                .object
-                .root_object_at(index)
-                .expect("index within namespace object count")
-                .schema_name()?;
+        for declaration_object in self.object.root_objects() {
+            let name = NamespaceDeclarationBlock::new(declaration_object).name()?;
             if TypeReference::is_reserved_scalar_name(&name) {
                 return Err(SchemaError::ReservedScalarTypeName {
                     name: name.as_str().to_owned(),
                 });
             }
-            let pair = MacroPair {
-                name: self
-                    .object
-                    .root_object_at(index)
-                    .expect("index within namespace object count"),
-                definition: self
-                    .object
-                    .root_object_at(index + 1)
-                    .expect("index within namespace object count"),
-            };
             self.push_declaration(
-                MacroObject::Pair(pair),
+                MacroObject::Block(declaration_object),
                 registry,
                 context,
                 &mut declarations,
@@ -615,6 +600,26 @@ impl<'schema> NamespaceBlock<'schema> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct NamespaceDeclarationBlock<'schema> {
+    object: &'schema Block,
+}
+
+impl<'schema> NamespaceDeclarationBlock<'schema> {
+    fn new(object: &'schema Block) -> Self {
+        Self { object }
+    }
+
+    fn name(&self) -> Result<Name, SchemaError> {
+        self.object
+            .root_object_at(0)
+            .ok_or(SchemaError::ExpectedDelimiter {
+                expected: "self-named namespace declaration",
+            })?
+            .schema_name()
+    }
+}
+
 #[derive(Clone, Debug)]
 struct RootEnumMacro {
     signature: MacroSignature,
@@ -624,7 +629,7 @@ struct RootEnumMacro {
 impl RootEnumMacro {
     fn new(name: &'static str, position: MacroPosition, enum_name: &'static str) -> Self {
         Self {
-            signature: MacroSignature::new(name, position, "( )"),
+            signature: MacroSignature::new(name, position, "Name@[ ]"),
             enum_name,
         }
     }
@@ -639,7 +644,7 @@ impl SchemaMacro for RootEnumMacro {
         self.signature.accepts_position(position)
             && object
                 .block()
-                .is_some_and(|object| object.is_parenthesis() || object.is_square_bracket())
+                .is_some_and(|object| object.is_pipe_parenthesis())
     }
 
     fn lower(
@@ -654,7 +659,7 @@ impl SchemaMacro for RootEnumMacro {
             expected: self.signature.expected_delimiter(),
         })?;
         let root_enum = RootEnumBlock::new(object, self.enum_name);
-        root_enum.reject_labeled_root()?;
+        root_enum.require_named_root()?;
         let name = root_enum.name();
         let variants = root_enum.variants(registry, context)?;
         Ok(MacroOutput::RootEnum(EnumDeclaration { name, variants }))
@@ -676,18 +681,21 @@ impl<'schema> RootEnumBlock<'schema> {
         Name::new(self.enum_name)
     }
 
-    fn reject_labeled_root(&self) -> Result<(), SchemaError> {
-        if self
+    fn require_named_root(&self) -> Result<(), SchemaError> {
+        let declared = self
             .object
             .root_object_at(0)
             .and_then(Block::demote_to_string)
-            .is_some_and(|label| label == self.enum_name)
-        {
-            return Err(SchemaError::RootEnumLabelForbidden {
-                label: self.enum_name.to_owned(),
-            });
+            .ok_or_else(|| SchemaError::ExpectedDelimiter {
+                expected: "root enum name",
+            })?;
+        if declared == self.enum_name {
+            return Ok(());
         }
-        Ok(())
+        Err(SchemaError::RootEnumNameMismatch {
+            expected: self.enum_name.to_owned(),
+            found: declared.to_owned(),
+        })
     }
 
     fn variants(
@@ -695,16 +703,6 @@ impl<'schema> RootEnumBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        match registry.lower(
-            MacroObject::Block(self.object),
-            MacroPosition::EnumVariants,
-            context,
-        )? {
-            MacroOutput::Variants(variants) => Ok(variants),
-            _ => Err(SchemaError::UnexpectedMacroOutput {
-                macro_name: "EnumVariants".to_owned(),
-                expected: "variants",
-            }),
-        }
+        AssembledVariants::new(&self.object.root_objects()[1..]).lower(registry, context)
     }
 }

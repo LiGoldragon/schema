@@ -1,23 +1,23 @@
 { DatabaseMarker marker-core:mail:DatabaseMarker
   CommitSequence marker-core:mail:CommitSequence }
-((Record Entry)
- (Observe Query)
- (Mark DatabaseMarker)
- (Commit CommitSequence))
-((Recorded RecordReceipt)
- (Observed RecordSet)
- (Marked DatabaseMarker)
- (Committed CommitSequence)
- (Rejected Rejection))
+Input@[Record@Entry
+ Observe@Query
+ Mark@DatabaseMarker
+ Commit@CommitSequence]
+Output@[Recorded@RecordReceipt
+ Observed@RecordSet
+ Marked@DatabaseMarker
+ Committed@CommitSequence
+ Rejected@Rejection]
 {
-  Topic {| Topic string String |}
-  Topics {| Topics values (Vec Topic) |}
-  Description {| Description string String |}
-  AgentName {| AgentName string String |}
-  RecordIdentifier {| RecordIdentifier integer Integer |}
-  Rejection {| Rejection description Description |}
-  Entry {| Entry topics Topics description Description agentName AgentName databaseMarker DatabaseMarker |}
-  Query {| Query topics Topics limit (Optional Integer) |}
-  RecordReceipt {| RecordReceipt recordIdentifier RecordIdentifier databaseMarker DatabaseMarker commitSequence CommitSequence |}
-  RecordSet {| RecordSet records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) |}
+  Topic@{ string@String }
+  Topics@{ values@(Vec Topic) }
+  Description@{ string@String }
+  AgentName@{ string@String }
+  RecordIdentifier@{ integer@Integer }
+  Rejection@{ description@Description }
+  Entry@{ topics@Topics description@Description agentName@AgentName databaseMarker@DatabaseMarker }
+  Query@{ topics@Topics limit@(Optional Integer) }
+  RecordReceipt@{ recordIdentifier@RecordIdentifier databaseMarker@DatabaseMarker commitSequence@CommitSequence }
+  RecordSet@{ records@(Vec Entry) byTopic@(Map (Topic RecordIdentifier)) }
 }

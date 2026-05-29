@@ -1,18 +1,19 @@
-() ()
+Input@[]
+Output@[]
 {
-  Schema {| Schema input Input output Output namespace Namespace |}
-  Imports {| Imports importDeclaration ImportDeclaration |}
-  Namespace {| Namespace typeDeclaration TypeDeclaration |}
-  ImportDeclaration {| ImportDeclaration name Name typeReference TypeReference |}
-  TypeDeclaration (| TypeDeclaration (Struct StructDeclaration) (Enum EnumDeclaration) (Newtype StructDeclaration) |)
-  StructDeclaration {| StructDeclaration name Name fields Fields |}
-  Fields {| Fields fieldDeclaration FieldDeclaration |}
-  FieldDeclaration {| FieldDeclaration name Name typeReference TypeReference |}
-  EnumDeclaration {| EnumDeclaration name Name variants Variants |}
-  Variants {| Variants variantDeclaration VariantDeclaration |}
-  VariantDeclaration {| VariantDeclaration name Name payload Payload |}
-  Payload (| Payload Unit (Carries TypeReference) |)
-  TypeReference (| TypeReference String Integer Boolean Path (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference) |)
-  TypeReferencePair {| TypeReferencePair key TypeReference value TypeReference |}
-  Name {| Name string String |}
+  Schema@{ input@Input output@Output namespace@Namespace }
+  Imports@{ importDeclaration@ImportDeclaration }
+  Namespace@{ typeDeclaration@TypeDeclaration }
+  ImportDeclaration@{ name@Name typeReference@TypeReference }
+  TypeDeclaration@[Struct@StructDeclaration Enum@EnumDeclaration Newtype@StructDeclaration]
+  StructDeclaration@{ name@Name fields@Fields }
+  Fields@{ fieldDeclaration@FieldDeclaration }
+  FieldDeclaration@{ name@Name typeReference@TypeReference }
+  EnumDeclaration@{ name@Name variants@Variants }
+  Variants@{ variantDeclaration@VariantDeclaration }
+  VariantDeclaration@{ name@Name payload@Payload }
+  Payload@[Unit Carries@TypeReference]
+  TypeReference@[String Integer Boolean Path Plain@Name Vector@TypeReference Map@TypeReferencePair Optional@TypeReference]
+  TypeReferencePair@{ key@TypeReference value@TypeReference }
+  Name@{ string@String }
 }

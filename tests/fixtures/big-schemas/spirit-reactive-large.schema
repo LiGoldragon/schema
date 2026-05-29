@@ -1,38 +1,38 @@
-((Record Entry)
- (Correct Correction)
- (Observe Query)
- (Watch WatchRequest)
- (Unwatch SubscriptionToken)
+Input@[Record@Entry
+ Correct@Correction
+ Observe@Query
+ Watch@WatchRequest
+ Unwatch@SubscriptionToken
  Reindex
- Compact)
-((Recorded RecordReceipt)
- (Corrected CorrectionReceipt)
- (Observed RecordSet)
- (Watching SubscriptionReceipt)
- (Unwatched SubscriptionReceipt)
- (Rejected Rejection)
- (Indexed IndexReceipt))
+ Compact]
+Output@[Recorded@RecordReceipt
+ Corrected@CorrectionReceipt
+ Observed@RecordSet
+ Watching@SubscriptionReceipt
+ Unwatched@SubscriptionReceipt
+ Rejected@Rejection
+ Indexed@IndexReceipt]
 {
-  Topic {| Topic string String |}
-  Topics {| Topics values (Vec Topic) |}
-  Description {| Description string String |}
-  AgentName {| AgentName string String |}
-  Timestamp {| Timestamp integer Integer |}
-  RecordIdentifier {| RecordIdentifier integer Integer |}
-  SubscriptionToken {| SubscriptionToken integer Integer |}
-  CommitSequence {| CommitSequence integer Integer |}
-  DatabaseDigest {| DatabaseDigest integer Integer |}
-  Magnitude (| Magnitude Minimum VeryLow Low Medium High VeryHigh Maximum |)
-  Kind (| Kind Decision Principle Correction Clarification Constraint Observation Question |)
-  RejectionReason (| RejectionReason Malformed Unauthorized Conflict Unsupported StaleVersion |)
-  Entry {| Entry topics Topics kind Kind description Description magnitude Magnitude agentName AgentName timestamp Timestamp |}
-  Correction {| Correction recordIdentifier RecordIdentifier description Description magnitude Magnitude agentName AgentName timestamp Timestamp |}
-  Query {| Query topics Topics kinds (Vec Kind) limit (Optional Integer) |}
-  WatchRequest {| WatchRequest topics Topics kinds (Vec Kind) agentName AgentName |}
-  RecordReceipt {| RecordReceipt recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest |}
-  CorrectionReceipt {| CorrectionReceipt recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest |}
-  RecordSet {| RecordSet records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) |}
-  SubscriptionReceipt {| SubscriptionReceipt subscriptionToken SubscriptionToken commitSequence CommitSequence |}
-  Rejection {| Rejection rejectionReason RejectionReason description Description |}
-  IndexReceipt {| IndexReceipt commitSequence CommitSequence databaseDigest DatabaseDigest |}
+  Topic@{ string@String }
+  Topics@{ values@(Vec Topic) }
+  Description@{ string@String }
+  AgentName@{ string@String }
+  Timestamp@{ integer@Integer }
+  RecordIdentifier@{ integer@Integer }
+  SubscriptionToken@{ integer@Integer }
+  CommitSequence@{ integer@Integer }
+  DatabaseDigest@{ integer@Integer }
+  Magnitude@[Minimum VeryLow Low Medium High VeryHigh Maximum]
+  Kind@[Decision Principle Correction Clarification Constraint Observation Question]
+  RejectionReason@[Malformed Unauthorized Conflict Unsupported StaleVersion]
+  Entry@{ topics@Topics kind@Kind description@Description magnitude@Magnitude agentName@AgentName timestamp@Timestamp }
+  Correction@{ recordIdentifier@RecordIdentifier description@Description magnitude@Magnitude agentName@AgentName timestamp@Timestamp }
+  Query@{ topics@Topics kinds@(Vec Kind) limit@(Optional Integer) }
+  WatchRequest@{ topics@Topics kinds@(Vec Kind) agentName@AgentName }
+  RecordReceipt@{ recordIdentifier@RecordIdentifier commitSequence@CommitSequence databaseDigest@DatabaseDigest }
+  CorrectionReceipt@{ recordIdentifier@RecordIdentifier commitSequence@CommitSequence databaseDigest@DatabaseDigest }
+  RecordSet@{ records@(Vec Entry) byTopic@(Map (Topic RecordIdentifier)) }
+  SubscriptionReceipt@{ subscriptionToken@SubscriptionToken commitSequence@CommitSequence }
+  Rejection@{ rejectionReason@RejectionReason description@Description }
+  IndexReceipt@{ commitSequence@CommitSequence databaseDigest@DatabaseDigest }
 }
