@@ -8,9 +8,9 @@ mod resolution;
 mod syntax;
 
 pub use asschema::{
-    Asschema, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name, SchemaNode,
-    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StructDeclaration, TypeDeclaration,
-    TypeReference,
+    Asschema, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
+    RootDeclaration, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
+    StructDeclaration, TypeDeclaration, TypeReference,
 };
 pub use declarative::{DeclarativeMacroLibrary, MacroDefinition};
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};

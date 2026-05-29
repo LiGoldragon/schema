@@ -50,10 +50,10 @@ fn assert_big_fixture(name: &str, source: &str, resolver: Option<ImportResolver>
             .lower_source_with_context(source, identity, &mut context)
             .expect("big schema lowers"),
     };
-    assert_asschema_data_shape(name, &asschema, &context);
+    assert_asschema_data_shape(name, &asschema);
 }
 
-fn assert_asschema_data_shape(name: &str, asschema: &Asschema, context: &MacroContext) {
+fn assert_asschema_data_shape(name: &str, asschema: &Asschema) {
     assert_eq!(
         asschema.identity().component().as_str(),
         format!("example:{name}")
@@ -67,21 +67,22 @@ fn assert_asschema_data_shape(name: &str, asschema: &Asschema, context: &MacroCo
         !asschema.output().variants.is_empty(),
         "{name} should lower typed output variants"
     );
+    assert_eq!(
+        asschema.roots().len(),
+        2,
+        "{name} should lower root enums into root declarations"
+    );
+    assert!(
+        asschema.root_named("Input").is_some(),
+        "{name} should expose Input as a root declaration"
+    );
+    assert!(
+        asschema.root_named("Output").is_some(),
+        "{name} should expose Output as a root declaration"
+    );
     assert!(
         !asschema.namespace().is_empty(),
         "{name} should lower typed namespace declarations"
-    );
-    assert!(
-        context.macros_applied().iter().any(|name| {
-            name.contains("Struct") || name.contains("Enum") || name == "RootNamespace"
-        }),
-        "{name} should exercise schema macro lowering"
-    );
-    assert!(
-        context.positions_seen().iter().any(|position| {
-            position.as_str() == "RootNamespace" || position.as_str() == "NamespaceDeclaration"
-        }),
-        "{name} should record structural macro positions"
     );
     match name {
         "spirit-reactive-large" => {

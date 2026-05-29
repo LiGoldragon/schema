@@ -134,5 +134,6 @@ Current implementation target:
   hard-coded macro fields.
 - A macro consumes a typed `MacroObject` at a `MacroPosition`; namespace
   declarations are pairs, while root sections are blocks.
-- The context records which macros ran. Tests use that trace as the witness
-  that Spirit schema lowering is really macro-dispatched.
+- The context records which macros ran as diagnostics. Correctness tests prove
+  lowering through the produced `Asschema` data, not by treating trace strings
+  as a side-channel witness.

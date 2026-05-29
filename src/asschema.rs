@@ -60,8 +60,7 @@ pub struct Asschema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
-    input: EnumDeclaration,
-    output: EnumDeclaration,
+    roots: Vec<RootDeclaration>,
     namespace: Vec<TypeDeclaration>,
 }
 
@@ -78,8 +77,7 @@ impl Asschema {
             identity,
             imports,
             resolved_imports,
-            input,
-            output,
+            roots: vec![RootDeclaration::new(input), RootDeclaration::new(output)],
             namespace,
         }
     }
@@ -101,15 +99,25 @@ impl Asschema {
     }
 
     pub fn input(&self) -> &EnumDeclaration {
-        &self.input
+        &self.roots[0].enum_declaration
     }
 
     pub fn output(&self) -> &EnumDeclaration {
-        &self.output
+        &self.roots[1].enum_declaration
     }
 
     pub fn input_and_output(&self) -> [&EnumDeclaration; 2] {
-        [&self.input, &self.output]
+        [self.input(), self.output()]
+    }
+
+    pub fn roots(&self) -> &[RootDeclaration] {
+        &self.roots
+    }
+
+    pub fn root_named(&self, name: &str) -> Option<&RootDeclaration> {
+        self.roots
+            .iter()
+            .find(|declaration| declaration.name().as_str() == name)
     }
 
     pub fn namespace(&self) -> &[TypeDeclaration] {
@@ -120,6 +128,25 @@ impl Asschema {
         self.namespace
             .iter()
             .find(|declaration| declaration.name().as_str() == name)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootDeclaration {
+    pub enum_declaration: EnumDeclaration,
+}
+
+impl RootDeclaration {
+    pub fn new(enum_declaration: EnumDeclaration) -> Self {
+        Self { enum_declaration }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.enum_declaration.name
+    }
+
+    pub fn enum_declaration(&self) -> &EnumDeclaration {
+        &self.enum_declaration
     }
 }
 

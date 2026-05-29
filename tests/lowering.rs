@@ -11,6 +11,19 @@ fn lowers_spirit_schema_into_ordered_asschema() {
         .expect("schema lowers");
 
     assert_eq!(asschema.imports().len(), 0);
+    assert_eq!(asschema.roots().len(), 2);
+    assert_eq!(asschema.roots()[0].name().as_str(), "Input");
+    assert_eq!(asschema.roots()[1].name().as_str(), "Output");
+    assert_eq!(
+        asschema
+            .root_named("Input")
+            .expect("input root")
+            .enum_declaration()
+            .variants[0]
+            .name
+            .as_str(),
+        "Record"
+    );
     assert_eq!(asschema.input().name.as_str(), "Input");
     assert_eq!(asschema.input().variants[0].name.as_str(), "Record");
     assert_eq!(

@@ -76,11 +76,13 @@ module schema and checking that the imported type is declared there.
 - `MacroRegistry` is the engine dispatch path for schema sections and nested
   type-body lowering. Concrete macro fields on `SchemaEngine` or root macros
   are not the design.
-- `MacroContext` records positions and applied macro names so tests can prove
-  lowering used the macro path.
+- `MacroContext` records positions and applied macro names as diagnostics.
+  Tests prove lowering by asserting on typed `Asschema` data, not by treating
+  trace strings as the load-bearing witness.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
-- `Asschema` stores declarations in `Vec` order; lookup maps are derived.
+- `Asschema` stores root declarations and namespace declarations in `Vec`
+  order; lookup maps are derived.
 - Active code does not keep assembled-schema text fixtures. The current
   serialized file-level witness is `.schema`, parsed as NOTA first and then
   lowered.
