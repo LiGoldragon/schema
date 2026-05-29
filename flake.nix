@@ -26,7 +26,6 @@
         schemaFilter = path: type:
           type == "regular" && (
             pkgs.lib.hasSuffix ".schema" path
-            || pkgs.lib.hasSuffix ".witness.txt" path
           );
         sourceFilter = path: type:
           type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);
@@ -63,6 +62,10 @@
             touch $out
           '';
           no-nested-root-enum-examples = pkgs.runCommand "schema-next-no-nested-root-enum-examples" { } ''
+            if find ${src} -name '*.witness.txt' -print -quit | grep .; then
+              echo "line-format .witness.txt goldens must not remain in schema-next" >&2
+              exit 1
+            fi
             if grep -R -n -E '^\s*\((Input|Output) \(' ${src}/schemas ${src}/tests/fixtures; then
               echo "schema examples must not reintroduce labeled Input/Output root enums" >&2
               exit 1
