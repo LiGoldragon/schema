@@ -172,7 +172,7 @@ pub struct EnumVariant {
 /// A type at a reference position — a struct field's type, an enum
 /// variant's payload, or an import source.
 ///
-/// `String`, `Integer`, and `Boolean` are reserved scalar leaves.
+/// `String`, `Integer`, `Boolean`, and `Path` are reserved scalar leaves.
 /// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
 /// `Map`, and `Optional` carry inner references. These are Schema
 /// type-reference objects read over nota-next's parsed structure:
@@ -185,6 +185,7 @@ pub enum TypeReference {
     String,
     Integer,
     Boolean,
+    Path,
     Plain(Name),
     Vector(Box<TypeReference>),
     Map(Box<TypeReference>, Box<TypeReference>),
@@ -204,12 +205,13 @@ impl TypeReference {
             "String" => Self::String,
             "Integer" => Self::Integer,
             "Boolean" => Self::Boolean,
+            "Path" => Self::Path,
             _ => Self::Plain(name),
         }
     }
 
     pub fn is_reserved_scalar_name(name: &Name) -> bool {
-        matches!(name.as_str(), "String" | "Integer" | "Boolean")
+        matches!(name.as_str(), "String" | "Integer" | "Boolean" | "Path")
     }
 
     pub fn scalar_name(&self) -> Option<&'static str> {
@@ -217,6 +219,7 @@ impl TypeReference {
             Self::String => Some("String"),
             Self::Integer => Some("Integer"),
             Self::Boolean => Some("Boolean"),
+            Self::Path => Some("Path"),
             Self::Plain(_) | Self::Vector(_) | Self::Map(..) | Self::Optional(_) => None,
         }
     }
@@ -230,6 +233,7 @@ impl TypeReference {
             Self::String
             | Self::Integer
             | Self::Boolean
+            | Self::Path
             | Self::Vector(_)
             | Self::Map(..)
             | Self::Optional(_) => None,

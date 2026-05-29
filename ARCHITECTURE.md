@@ -50,7 +50,7 @@ structure with higher schema semantics.
 
 Tests now prove the endpoint by asserting the Rust data directly:
 `TypeDeclaration::{Struct, Enum, Newtype}` and
-`TypeReference::{String, Integer, Boolean, Plain, Vector, Optional, Map}`. A
+`TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`. A
 later serialized assembled schema format must be designed from the raw-NOTA
 floor rather than reviving the obsolete vector-record fixture shape.
 
@@ -131,9 +131,9 @@ module schema and checking that the imported type is declared there.
   `schema-rust-next` can emit a `pub use` alias and keep one type identity
   across the crate boundary.
 - `TypeReference` at a reference position is an enum:
-  `String`, `Integer`, `Boolean`, `Plain(Name)`, `Vector(Box<TypeReference>)`,
+  `String`, `Integer`, `Boolean`, `Path`, `Plain(Name)`, `Vector(Box<TypeReference>)`,
   `Map(Box, Box)`, and `Optional(Box<TypeReference>)`. `String`, `Integer`,
-  and `Boolean` are reserved scalar leaves, so they are not user namespace
+  `Boolean`, and `Path` are reserved scalar leaves, so they are not user namespace
   declarations and cannot be shadowed by schema types. `Plain(Name)` now means
   "a declared type by name." `TypeReference::from_block` lowers a bare scalar
   symbol to its scalar variant, a different bare PascalCase symbol to `Plain`,

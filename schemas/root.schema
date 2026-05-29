@@ -12,7 +12,7 @@
   Variants {| Variants variantDeclaration VariantDeclaration |}
   VariantDeclaration {| VariantDeclaration name Name payload Payload |}
   Payload (| Payload Unit (Carries TypeReference) |)
-  TypeReference (| TypeReference String Integer Boolean (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference) |)
+  TypeReference (| TypeReference String Integer Boolean Path (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference) |)
   TypeReferencePair {| TypeReferencePair key TypeReference value TypeReference |}
   Name {| Name string String |}
 }

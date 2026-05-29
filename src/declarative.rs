@@ -923,6 +923,7 @@ impl<'template> AssembledField<'template> {
             TypeReference::String => Name::new("string"),
             TypeReference::Integer => Name::new("integer"),
             TypeReference::Boolean => Name::new("boolean"),
+            TypeReference::Path => Name::new("path"),
             TypeReference::Plain(name) => Name::new(name.field_name()),
             TypeReference::Vector(inner) => {
                 Name::new(format!("{}_vector", self.derived_name_for_reference(inner)))

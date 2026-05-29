@@ -43,8 +43,9 @@ fn vec_field_lowers_to_vector_reference() {
 
 #[test]
 fn scalar_field_names_lower_to_reserved_references() {
-    let asschema =
-        lower("() () { Entry {| Entry string String integer Integer boolean Boolean |} }");
+    let asschema = lower(
+        "() () { Entry {| Entry string String integer Integer boolean Boolean path Path |} }",
+    );
     let fields = struct_fields(&asschema, "Entry");
     assert_eq!(fields[0].name.as_str(), "string");
     assert_eq!(fields[0].reference, TypeReference::String);
@@ -52,12 +53,14 @@ fn scalar_field_names_lower_to_reserved_references() {
     assert_eq!(fields[1].reference, TypeReference::Integer);
     assert_eq!(fields[2].name.as_str(), "boolean");
     assert_eq!(fields[2].reference, TypeReference::Boolean);
+    assert_eq!(fields[3].name.as_str(), "path");
+    assert_eq!(fields[3].reference, TypeReference::Path);
 }
 
 #[test]
 fn scalar_references_nest_inside_collections() {
     let asschema = lower(
-        "() () { Query {| Query optionalInteger (Optional Integer) stringVector (Vec String) booleanByString (Map (String Boolean)) |} }",
+        "() () { Query {| Query optionalInteger (Optional Integer) stringVector (Vec String) booleanByString (Map (String Boolean)) optionalPath (Optional Path) |} }",
     );
     let fields = struct_fields(&asschema, "Query");
     assert_eq!(
@@ -74,6 +77,10 @@ fn scalar_references_nest_inside_collections() {
             Box::new(TypeReference::String),
             Box::new(TypeReference::Boolean)
         )
+    );
+    assert_eq!(
+        fields[3].reference,
+        TypeReference::Optional(Box::new(TypeReference::Path))
     );
 }
 

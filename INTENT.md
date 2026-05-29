@@ -70,7 +70,7 @@ vocabulary. Square brackets remain raw NOTA vector structure and schema field
 lists; they are not the syntax for declaring a `Vec` type. Schema type-reference
 objects include `(Vec T)`, `(Map (K V))`, and `(Optional T)`, lowering to
 `Vector`, `Map`, and `Optional` in assembled schema, alongside scalar
-type-reference names such as `String`, `Integer`, and `Boolean`. The inner
+type-reference names such as `String`, `Integer`, `Boolean`, and `Path`. The inner
 positions recurse, so `(Vec (Optional Topic))` and
 `(Map (NodeName (Vec Service)))` nest. Collection references appear at every
 reference position: struct fields, enum-variant payloads, root input/output
@@ -79,7 +79,7 @@ type-reference positions, but built-in type-name keywords are Schema
 vocabulary, not raw NOTA vocabulary.*
 
 *Reserved scalar pass-throughs belong in assembled schema, not only in Rust
-emission. `String`, `Integer`, and `Boolean` lower to scalar `TypeReference`
+emission. `String`, `Integer`, `Boolean`, and `Path` lower to scalar `TypeReference`
 variants; `Plain(Name)` is reserved for declared schema types and importable
 namespace names. Scalar names cannot be re-declared in a schema namespace.
 `Bool` is not a scalar spelling, and `Text` is not required as a scalar floor
