@@ -2,8 +2,7 @@ use nota_next::{Block, Document};
 
 use crate::{
     asschema::{
-        Asschema, EnumDeclaration, EnumVariant, ImportDeclaration, Name, TypeDeclaration,
-        TypeReference,
+        Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name, TypeReference,
     },
     declarative::{AssembledVariants, DeclarativeMacroLibrary},
     macros::{
@@ -328,7 +327,7 @@ impl SchemaEngine {
         &self,
         object: &Block,
         context: &mut MacroContext,
-    ) -> Result<Vec<TypeDeclaration>, SchemaError> {
+    ) -> Result<Vec<Declaration>, SchemaError> {
         match self.registry.lower(
             MacroObject::Block(object),
             MacroPosition::RootNamespace,
@@ -557,7 +556,7 @@ impl<'schema> NamespaceBlock<'schema> {
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
-    ) -> Result<Vec<TypeDeclaration>, SchemaError> {
+    ) -> Result<Vec<Declaration>, SchemaError> {
         let mut declarations = Vec::new();
         for declaration_object in self.object.root_objects() {
             let name = NamespaceDeclarationBlock::new(declaration_object).name()?;
@@ -581,13 +580,13 @@ impl<'schema> NamespaceBlock<'schema> {
         object: MacroObject<'schema>,
         registry: &MacroRegistry,
         context: &mut MacroContext,
-        declarations: &mut Vec<TypeDeclaration>,
+        declarations: &mut Vec<Declaration>,
     ) -> Result<(), SchemaError> {
         let inline_start = context.inline_declaration_count();
         match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
             MacroOutput::Type(declaration) => {
                 declarations.extend(context.drain_inline_declarations_from(inline_start));
-                declarations.push(declaration);
+                declarations.push(Declaration::public(declaration));
             }
             _ => {
                 return Err(SchemaError::UnexpectedMacroOutput {
@@ -662,7 +661,7 @@ impl SchemaMacro for RootEnumMacro {
         root_enum.require_named_root()?;
         let name = root_enum.name();
         let variants = root_enum.variants(registry, context)?;
-        Ok(MacroOutput::RootEnum(EnumDeclaration { name, variants }))
+        Ok(MacroOutput::RootEnum(EnumDeclaration::new(name, variants)))
     }
 }
 

@@ -1,7 +1,7 @@
 use nota_next::{Block, StructureHeader};
 
 use crate::{
-    Asschema, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, SchemaError,
+    Asschema, Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, SchemaError,
     TypeDeclaration, TypeReference,
 };
 
@@ -97,7 +97,7 @@ pub struct MacroContext {
     bindings_seen: Vec<String>,
     expanded_templates: Vec<String>,
     structure_headers: Vec<StructureHeader>,
-    inline_declarations: Vec<TypeDeclaration>,
+    inline_declarations: Vec<Declaration>,
 }
 
 impl MacroContext {
@@ -130,7 +130,7 @@ impl MacroContext {
         self.structure_headers.push(header);
     }
 
-    pub(crate) fn remember_inline_declaration(&mut self, declaration: TypeDeclaration) {
+    pub(crate) fn remember_inline_declaration(&mut self, declaration: Declaration) {
         self.inline_declarations.push(declaration);
     }
 
@@ -138,7 +138,7 @@ impl MacroContext {
         self.inline_declarations.len()
     }
 
-    pub(crate) fn drain_inline_declarations_from(&mut self, index: usize) -> Vec<TypeDeclaration> {
+    pub(crate) fn drain_inline_declarations_from(&mut self, index: usize) -> Vec<Declaration> {
         self.inline_declarations.drain(index..).collect()
     }
 
@@ -162,7 +162,7 @@ impl MacroContext {
         &self.structure_headers
     }
 
-    pub fn inline_declarations(&self) -> &[TypeDeclaration] {
+    pub fn inline_declarations(&self) -> &[Declaration] {
         &self.inline_declarations
     }
 }
@@ -172,7 +172,7 @@ pub enum MacroOutput {
     Asschema(Asschema),
     Imports(Vec<ImportDeclaration>),
     RootEnum(EnumDeclaration),
-    Types(Vec<TypeDeclaration>),
+    Types(Vec<Declaration>),
     Type(TypeDeclaration),
     Fields(Vec<FieldDeclaration>),
     Variants(Vec<crate::EnumVariant>),

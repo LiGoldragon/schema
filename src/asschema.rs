@@ -61,7 +61,7 @@ pub struct Asschema {
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
     roots: Vec<RootDeclaration>,
-    namespace: Vec<TypeDeclaration>,
+    namespace: Vec<Declaration>,
 }
 
 impl Asschema {
@@ -71,7 +71,7 @@ impl Asschema {
         resolved_imports: Vec<super::ResolvedImport>,
         input: EnumDeclaration,
         output: EnumDeclaration,
-        namespace: Vec<TypeDeclaration>,
+        namespace: Vec<Declaration>,
     ) -> Self {
         Self {
             identity,
@@ -120,7 +120,7 @@ impl Asschema {
             .find(|declaration| declaration.name().as_str() == name)
     }
 
-    pub fn namespace(&self) -> &[TypeDeclaration] {
+    pub fn namespace(&self) -> &[Declaration] {
         &self.namespace
     }
 
@@ -128,6 +128,7 @@ impl Asschema {
         self.namespace
             .iter()
             .find(|declaration| declaration.name().as_str() == name)
+            .map(Declaration::value)
     }
 }
 
@@ -156,6 +157,54 @@ pub struct ImportDeclaration {
     pub source: TypeReference,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Visibility {
+    Public,
+    Private,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Declaration {
+    visibility: Visibility,
+    name: Name,
+    value: TypeDeclaration,
+}
+
+impl Declaration {
+    pub fn public(value: TypeDeclaration) -> Self {
+        Self::new(Visibility::Public, value)
+    }
+
+    pub fn private(value: TypeDeclaration) -> Self {
+        Self::new(Visibility::Private, value)
+    }
+
+    fn new(visibility: Visibility, value: TypeDeclaration) -> Self {
+        let name = value.name().clone();
+        Self {
+            visibility,
+            name,
+            value,
+        }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.visibility == Visibility::Private
+    }
+
+    pub fn value(&self) -> &TypeDeclaration {
+        &self.value
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeDeclaration {
     Struct(StructDeclaration),
@@ -175,7 +224,71 @@ impl TypeDeclaration {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructDeclaration {
     pub name: Name,
-    pub fields: Vec<FieldDeclaration>,
+    pub fields: StructFieldMap,
+}
+
+impl StructDeclaration {
+    pub fn new(name: Name, fields: Vec<FieldDeclaration>) -> Self {
+        Self {
+            name,
+            fields: StructFieldMap::new(fields),
+        }
+    }
+}
+
+/// Ordered key/value representation of a struct definition in asschema.
+///
+/// A struct declaration's long-form data is a brace-map shape:
+/// each field name is the key and each `TypeReference` is the value.
+/// The Rust storage preserves source order because rkyv layout and
+/// generated struct field order are load-bearing, but the object is
+/// semantically a field-name -> type-reference map.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructFieldMap {
+    entries: Vec<FieldDeclaration>,
+}
+
+impl StructFieldMap {
+    pub fn new(entries: Vec<FieldDeclaration>) -> Self {
+        Self { entries }
+    }
+
+    pub fn entries(&self) -> &[FieldDeclaration] {
+        &self.entries
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, FieldDeclaration> {
+        self.entries.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn first(&self) -> Option<&FieldDeclaration> {
+        self.entries.first()
+    }
+}
+
+impl std::ops::Deref for StructFieldMap {
+    type Target = [FieldDeclaration];
+
+    fn deref(&self) -> &Self::Target {
+        self.entries()
+    }
+}
+
+impl<'fields> IntoIterator for &'fields StructFieldMap {
+    type Item = &'fields FieldDeclaration;
+    type IntoIter = std::slice::Iter<'fields, FieldDeclaration>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -188,6 +301,12 @@ pub struct FieldDeclaration {
 pub struct EnumDeclaration {
     pub name: Name,
     pub variants: Vec<EnumVariant>,
+}
+
+impl EnumDeclaration {
+    pub fn new(name: Name, variants: Vec<EnumVariant>) -> Self {
+        Self { name, variants }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -338,14 +457,15 @@ impl TypeReference {
     ) -> Result<Self, SchemaError> {
         let name = Self::inline_declaration_name(objects, "inline struct declaration")?;
         let fields = AssembledFields::new(&objects[1..]).lower(registry, context)?;
-        let declaration = StructDeclaration {
-            name: name.clone(),
-            fields,
-        };
+        let declaration = StructDeclaration::new(name.clone(), fields);
         if declaration.fields.len() == 1 {
-            context.remember_inline_declaration(TypeDeclaration::Newtype(declaration));
+            context.remember_inline_declaration(Declaration::private(TypeDeclaration::Newtype(
+                declaration,
+            )));
         } else {
-            context.remember_inline_declaration(TypeDeclaration::Struct(declaration));
+            context.remember_inline_declaration(Declaration::private(TypeDeclaration::Struct(
+                declaration,
+            )));
         }
         Ok(Self::Plain(name))
     }
@@ -357,10 +477,9 @@ impl TypeReference {
     ) -> Result<Self, SchemaError> {
         let name = Self::inline_declaration_name(objects, "inline enum declaration")?;
         let variants = AssembledVariants::new(&objects[1..]).lower(registry, context)?;
-        context.remember_inline_declaration(TypeDeclaration::Enum(EnumDeclaration {
-            name: name.clone(),
-            variants,
-        }));
+        context.remember_inline_declaration(Declaration::private(TypeDeclaration::Enum(
+            EnumDeclaration::new(name.clone(), variants),
+        )));
         Ok(Self::Plain(name))
     }
 

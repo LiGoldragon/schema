@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use schema_next::{
-    Asschema, EnumDeclaration, ImportResolver, MacroContext, SchemaEngine, SchemaIdentity,
-    TypeDeclaration,
+    Asschema, Declaration, EnumDeclaration, ImportResolver, MacroContext, SchemaEngine,
+    SchemaIdentity, TypeDeclaration,
 };
 
 #[test]
@@ -107,13 +107,15 @@ fn assert_asschema_data_shape(name: &str, asschema: &Asschema) {
     }
 }
 
-fn assert_has_type(declarations: &[TypeDeclaration], name: &str) {
-    let found = declarations.iter().any(|declaration| match declaration {
-        TypeDeclaration::Struct(declaration) | TypeDeclaration::Newtype(declaration) => {
-            declaration.name.as_str() == name
-        }
-        TypeDeclaration::Enum(declaration) => declaration.name.as_str() == name,
-    });
+fn assert_has_type(declarations: &[Declaration], name: &str) {
+    let found = declarations
+        .iter()
+        .any(|declaration| match declaration.value() {
+            TypeDeclaration::Struct(declaration) | TypeDeclaration::Newtype(declaration) => {
+                declaration.name.as_str() == name
+            }
+            TypeDeclaration::Enum(declaration) => declaration.name.as_str() == name,
+        });
     assert!(found, "missing namespace type {name}");
 }
 

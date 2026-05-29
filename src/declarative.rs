@@ -732,7 +732,7 @@ impl<'template> AssembledType<'template> {
                 });
             }
         };
-        let declaration = StructDeclaration { name, fields };
+        let declaration = StructDeclaration::new(name, fields);
         if declaration.fields.len() == 1 {
             Ok(TypeDeclaration::Newtype(declaration))
         } else {
@@ -761,7 +761,7 @@ impl<'template> AssembledType<'template> {
                 });
             }
         };
-        Ok(TypeDeclaration::Enum(EnumDeclaration { name, variants }))
+        Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
     }
 
     fn child(

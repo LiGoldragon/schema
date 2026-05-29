@@ -1,6 +1,7 @@
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry,
     Name, SchemaEngine, SchemaIdentity, SchemaMacro, SchemaPackage, TypeDeclaration, TypeReference,
+    Visibility,
 };
 
 #[test]
@@ -65,10 +66,13 @@ fn at_declarations_lower_to_structs_and_enums() {
         .expect("schema lowers");
 
     assert!(matches!(
-        asschema.namespace()[0],
+        asschema.namespace()[0].value(),
         TypeDeclaration::Struct(_)
     ));
-    assert!(matches!(asschema.namespace()[1], TypeDeclaration::Enum(_)));
+    assert!(matches!(
+        asschema.namespace()[1].value(),
+        TypeDeclaration::Enum(_)
+    ));
 }
 
 #[test]
@@ -119,11 +123,11 @@ fn colon_qualified_names_lower_as_schema_names() {
         asschema.namespace()[1].name().namespace_segments(),
         vec!["schema", "spirit", "Entry"]
     );
-    let TypeDeclaration::Newtype(topic) = &asschema.namespace()[0] else {
+    let TypeDeclaration::Newtype(topic) = asschema.namespace()[0].value() else {
         panic!("topic should be a newtype");
     };
     assert_eq!(topic.name.local_part(), "Topic");
-    let TypeDeclaration::Newtype(entry) = &asschema.namespace()[1] else {
+    let TypeDeclaration::Newtype(entry) = asschema.namespace()[1].value() else {
         panic!("single-field entry should be a newtype");
     };
     assert_eq!(entry.fields[0].name, Name::new("topic"));
@@ -194,6 +198,30 @@ fn root_schema_describes_the_schema_root_type() {
             ("Struct", Some("StructDeclaration")),
             ("Enum", Some("EnumDeclaration")),
             ("Newtype", Some("StructDeclaration")),
+        ]
+    );
+
+    let TypeDeclaration::Enum(declaration) = asschema
+        .type_named("Declaration")
+        .expect("declaration enum")
+    else {
+        panic!("Declaration should be an enum");
+    };
+    assert_eq!(
+        declaration
+            .variants
+            .iter()
+            .map(|variant| (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| payload.plain_name().expect("plain payload").as_str())
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Public", Some("NamedTypeDeclaration")),
+            ("Private", Some("NamedTypeDeclaration")),
         ]
     );
 }
@@ -413,7 +441,7 @@ fn field_names_are_derived_from_type_names() {
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
-    let TypeDeclaration::Struct(entry) = &asschema.namespace()[0] else {
+    let TypeDeclaration::Struct(entry) = asschema.namespace()[0].value() else {
         panic!("entry should be a struct");
     };
 
@@ -455,7 +483,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         .iter()
         .find(|declaration| declaration.name().as_str() == "Entry")
         .expect("entry declaration");
-    let TypeDeclaration::Struct(entry) = entry else {
+    let TypeDeclaration::Struct(entry) = entry.value() else {
         panic!("entry should lower as a struct");
     };
     assert_eq!(
@@ -480,7 +508,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         .iter()
         .find(|declaration| declaration.name().as_str() == "Kind")
         .expect("kind declaration");
-    let TypeDeclaration::Enum(kind) = kind else {
+    let TypeDeclaration::Enum(kind) = kind.value() else {
         panic!("kind should lower as an enum");
     };
     assert_eq!(
@@ -563,7 +591,7 @@ fn at_declaration_field_pairs_lower_through_default_engine() {
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("at declaration lowers");
-    let TypeDeclaration::Struct(entry) = &asschema.namespace()[0] else {
+    let TypeDeclaration::Struct(entry) = asschema.namespace()[0].value() else {
         panic!("entry should be a struct");
     };
 
@@ -586,12 +614,15 @@ fn inline_at_declaration_creates_ordered_namespace_type() {
         asschema
             .namespace()
             .iter()
-            .map(|declaration| declaration.name().as_str())
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
             .collect::<Vec<_>>(),
-        vec!["Receipt", "Entry"]
+        vec![
+            ("Receipt", Visibility::Private),
+            ("Entry", Visibility::Public),
+        ]
     );
 
-    let TypeDeclaration::Struct(entry) = &asschema.namespace()[1] else {
+    let TypeDeclaration::Struct(entry) = asschema.namespace()[1].value() else {
         panic!("entry should be a struct");
     };
     assert_eq!(entry.fields[0].name, Name::new("receipt"));

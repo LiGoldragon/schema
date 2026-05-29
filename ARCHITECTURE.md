@@ -49,10 +49,22 @@ surface has been removed from active code because it confused raw NOTA bracket
 structure with higher schema semantics.
 
 Tests now prove the endpoint by asserting the Rust data directly:
+`Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,
 `TypeDeclaration::{Struct, Enum, Newtype}` and
 `TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`. A
 later serialized assembled schema format must be designed from the raw-NOTA
 floor rather than reviving the obsolete vector-record fixture shape.
+
+Namespace declarations are assembled as ordinary data-carrying visibility
+objects: `(Public Name Value)` for exported top-level types and
+`(Private Name Value)` for module-local types. The Rust storage keeps a
+dedicated `Declaration` struct today, but the canonical data shape is the same:
+visibility, declared name, and type value.
+
+A struct value in asschema is a field-name -> type-reference map. The Rust
+`StructFieldMap` stores the map in source order because generated Rust field
+order and rkyv layout are load-bearing, but the semantic object is the brace
+map shape that `Name@{ field@Type ... }` expands into.
 
 ## Core Macro Schema
 
@@ -87,12 +99,17 @@ Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 data. If a composite appears unnamed as a struct field, the field/type name can
 be derived from the composite shape when it does not collide.
 
-The pipe-family forms `Name {| Name ... |}` and `Name (| Name ... |)` remain a
-compatibility surface because older fixtures and lower-layer tests still use
-the recursive pipe blocks. `Name@(...)` also remains accepted as an enum
-declaration compatibility shape, but new authored schema should use `Name@[]`
-so parentheses stay reserved for composite/reference and macro-call argument
-objects.
+Inline PascalCase declarations are private by default. For example,
+`Entry@{ Receipt@{ recordIdentifier@RecordIdentifier } later@Receipt }`
+inserts `Receipt` into the module-local declaration table as private, derives
+the field name `receipt`, and lets the later field reference the same local
+type. Top-level declarations are public by default.
+
+The pipe-family forms `Name {| Name ... |}` and `Name (| Name ... |)` are a
+legacy compatibility surface only. `Name@(...)` also remains accepted as an
+enum declaration compatibility shape, but new authored schema should use
+`Name@[]` so parentheses stay reserved for composite/reference and macro-call
+argument objects.
 
 ## Schema Package Entry
 
@@ -121,14 +138,14 @@ module schema and checking that the imported type is declared there.
   trace strings as the load-bearing witness.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
-- `Asschema` stores root declarations and namespace declarations in `Vec`
-  order; lookup maps are derived.
+- `Asschema` stores root declarations and visibility-tagged namespace
+  declarations in `Vec` order; lookup maps are derived.
 - Active code does not keep assembled-schema text fixtures. The current
   serialized file-level witness is `.schema`, parsed as NOTA first and then
   lowered.
 - The root schema is positional. Current MVP shape:
-  - field 1: input enum body, for example `((Record Entry) Reindex)`
-  - field 2: output enum body, for example `((Recorded Receipt) (Rejected Rejection))`
+  - field 1: named input root enum, for example `Input@[Record@Entry Reindex]`
+  - field 2: named output root enum, for example `Output@[Recorded@Receipt Rejected@Rejection]`
   - field 3: namespace map `{ }`
   - optional leading field: imports map `{ Local dependency-crate:module:Type }`
 - Input and output roots are actor reaction languages. They declare

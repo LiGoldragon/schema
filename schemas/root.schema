@@ -3,11 +3,13 @@ Output@[]
 {
   Schema@{ input@Input output@Output namespace@Namespace }
   Imports@{ importDeclaration@ImportDeclaration }
-  Namespace@{ typeDeclaration@TypeDeclaration }
+  Namespace@{ declaration@(Vec Declaration) }
   ImportDeclaration@{ name@Name typeReference@TypeReference }
+  Declaration@[Public@NamedTypeDeclaration Private@NamedTypeDeclaration]
+  NamedTypeDeclaration@{ name@Name value@TypeDeclaration }
   TypeDeclaration@[Struct@StructDeclaration Enum@EnumDeclaration Newtype@StructDeclaration]
-  StructDeclaration@{ name@Name fields@Fields }
-  Fields@{ fieldDeclaration@FieldDeclaration }
+  StructDeclaration@{ name@Name fields@StructFieldMap }
+  StructFieldMap@{ fieldDeclaration@(Vec FieldDeclaration) }
   FieldDeclaration@{ name@Name typeReference@TypeReference }
   EnumDeclaration@{ name@Name variants@Variants }
   Variants@{ variantDeclaration@VariantDeclaration }

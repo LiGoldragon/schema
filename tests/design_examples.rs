@@ -82,11 +82,11 @@ fn design_example_namespace_brace_contains_self_named_declarations() {
         .collect();
     assert_eq!(names, vec!["Topic", "Kind"]);
 
-    let TypeDeclaration::Newtype(topic) = &asschema.namespace()[0] else {
+    let TypeDeclaration::Newtype(topic) = asschema.namespace()[0].value() else {
         panic!("Topic should lower as a newtype (single-field struct)");
     };
     assert_eq!(topic.fields.len(), 1);
-    let TypeDeclaration::Enum(kind) = &asschema.namespace()[1] else {
+    let TypeDeclaration::Enum(kind) = asschema.namespace()[1].value() else {
         panic!("Kind should lower as an enum");
     };
     let variant_names: Vec<&str> = kind

@@ -115,16 +115,29 @@ tagged schema nodes only when the expected type is `SchemaNode` or another
 tag-plus-payload struct.*
 
 *Authored schema declarations use name-first `@` binding. A namespace entry
-declares a struct with `Type Type@{ field@Reference ... }` and an enum with
-`Type Type@[Variant Variant@Payload ...]`. Plain `[]` and `()` remain legal
-NOTA values, but only the `@[` binding form is the declaration syntax for a
-schema enum datatype; parentheses remain the composite/type-reference and
-macro-call argument form (`(Vec Entry)`, `(Optional Kind)`, `(Map (Key
-Value))`). Lowercase/camelCase member names bind fields; PascalCase names
-declare or reference schema types. The `@` is a declaration/binding sigil, not
-the macro-call sigil rejected by the schema-node model. The schema root is
-always the known root struct whose name comes from the filename, so it does
-not need a delimiter or `@` wrapper.*
+declares a struct with `Type@{ field@Reference ... }` and an enum with
+`Type@[Variant Variant@Payload ...]`. Plain `[]` and `()` remain legal NOTA
+values, but only the `@[` binding form is the declaration syntax for a schema
+enum datatype; parentheses remain the composite/type-reference and macro-call
+argument form (`(Vec Entry)`, `(Optional Kind)`, `(Map (Key Value))`).
+Lowercase/camelCase member names bind fields; PascalCase names declare or
+reference schema types. The `@` is a declaration/binding sigil, not the
+macro-call sigil rejected by the schema-node model. The schema root is always
+the known root struct whose name comes from the filename, so it does not need a
+delimiter or `@` wrapper.*
+
+*Assembled schema namespace entries are visibility-tagged data objects. The
+canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
+the first payload field carrying the declared name and the second payload field
+carrying the struct/enum/newtype value. Top-level authored declarations lower
+to public declarations. Inline PascalCase declarations lower to private,
+module-local declarations, derive their field name from the type name, and may
+be referenced later in the same module.*
+
+*A struct declaration's assembled value is a key/value map from field name to
+type reference. The implementation may preserve source order internally for
+Rust field order and rkyv layout, but the semantic object is a brace map:
+field key -> type-reference value.*
 
 *The earlier pipe-family declaration syntax remains a compatibility surface
 in the parser and macro engine while existing fixtures migrate. It is not the
