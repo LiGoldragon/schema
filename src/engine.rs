@@ -637,7 +637,9 @@ impl SchemaMacro for RootEnumMacro {
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
         self.signature.accepts_position(position)
-            && object.block().is_some_and(|object| object.is_parenthesis())
+            && object
+                .block()
+                .is_some_and(|object| object.is_parenthesis() || object.is_square_bracket())
     }
 
     fn lower(

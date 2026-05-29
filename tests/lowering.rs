@@ -338,6 +338,7 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
             "SchemaEnumDefinition",
             "SchemaStructFields",
             "SchemaEnumVariants",
+            "SchemaEnumVariantsSquare",
         ]
     );
 
@@ -609,7 +610,7 @@ fn inline_pipe_declaration_creates_ordered_namespace_type() {
 fn root_enum_rejects_labeled_input_and_output_positions() {
     let error = SchemaEngine::default()
         .lower_source(
-            "(Input ((Record Entry))) () {}",
+            "[Input Record@Entry] [] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect_err("root input label should be rejected");
@@ -622,7 +623,7 @@ fn root_enum_rejects_labeled_input_and_output_positions() {
 
     let error = SchemaEngine::default()
         .lower_source(
-            "() (Output ((Accepted Receipt))) {}",
+            "[] [Output Accepted@Receipt] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect_err("root output label should be rejected");

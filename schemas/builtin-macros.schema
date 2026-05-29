@@ -13,3 +13,7 @@
 (SchemaMacro SchemaEnumVariants EnumVariants
   ($*Variants)
   (Variants $*Variants))
+
+(SchemaMacro SchemaEnumVariantsSquare EnumVariants
+  [$*Variants]
+  (Variants $*Variants))

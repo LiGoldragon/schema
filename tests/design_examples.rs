@@ -194,8 +194,9 @@ fn design_example_default_engine_has_two_macro_layers() {
             "SchemaEnumDefinition",
             "SchemaStructFields",
             "SchemaEnumVariants",
+            "SchemaEnumVariantsSquare",
         ],
-        "four declarative structural macros loaded from builtin-macros.schema",
+        "declarative structural macros loaded from builtin-macros.schema",
     );
 
     let positions: Vec<MacroPosition> = library
@@ -209,6 +210,7 @@ fn design_example_default_engine_has_two_macro_layers() {
             MacroPosition::NamespaceDeclaration,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,
+            MacroPosition::EnumVariants,
             MacroPosition::EnumVariants,
         ],
         "declarative macros target the structural inner positions",
@@ -334,12 +336,12 @@ fn design_example_schema_node_macro_call_is_tagged_data() {
     );
 }
 
-/// Illustrates: root enum payloads are authored directly under the
-/// root enum name. Payload-carrying variants use parenthesized
-/// variant objects; unit variants use bare symbols.
+/// Illustrates: root enum payloads are authored directly inside the
+/// known root enum body. Payload-carrying variants use `Variant@Payload`;
+/// unit variants use bare symbols.
 #[test]
 fn design_example_root_enum_uses_direct_variant_shapes() {
-    let source = "((Record Entry) Drop) () {}";
+    let source = "[Record@Entry Drop] [] {}";
 
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
