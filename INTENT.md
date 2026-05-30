@@ -179,6 +179,12 @@ while the stack converges, but the target split is: nota-next owns structural
 macro-node dispatch and typed matches/captures; schema-next registers the
 schema vocabulary and lowers matches into assembled-schema fragments.*
 
+*Schema-next's structural macro-node cases are expressed through nota-next
+macro-node data. Schema still owns schema positions such as
+`NamespaceDeclaration`, `StructFields`, and `EnumVariants`, but the accepted
+shapes are `nota-next` patterns with named captures. Schema-next remains the
+semantic consumer that lowers those matches into assembled-schema fragments.*
+
 *For `name@( ... )`, the parenthesized body is resolved at the
 assembled-schema reference layer: recognized type-reference heads such as
 `Vec`, `Optional`, and `Map` remain composite references, and future user macro

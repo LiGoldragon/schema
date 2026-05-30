@@ -9,7 +9,10 @@
    first-two-level witness emitted by the NOTA delimiter pass.
 3. `SchemaEngine` validates the root object count.
 4. `MacroRegistry` dispatches position-aware macros for imports, input enum,
-   output enum, namespace declarations, struct fields, and enum variants.
+   output enum, namespace declarations, struct fields, and enum variants. Its
+   structural expectations are `nota-next` macro-node definitions: schema-next
+   supplies schema positions and handlers, while nota-next supplies pattern
+   matching, named captures, and no-match diagnostics.
 5. `Asschema` is emitted as the ordered macro-free endpoint.
 
 ## Raw Core Schema Reading
@@ -150,19 +153,14 @@ bracket bodies.
 
 ## Macro Node Structural Matching
 
-`MacroNodeDefinition` is the data model for "what can appear here." Each
-definition names its `MacroPosition`, dispatch mode, and structural cases.
-Those cases are data-bearing objects, not comments:
+`MacroNodeDefinition` is the schema-side wrapper for "what can appear here."
+Its structural cases are `nota-next::MacroNodeDefinition` values: each case is
+a serializable pattern over atoms, delimiters, literals, rest captures, and
+named captures. Schema-next contributes the schema `MacroPosition` and the
+handler that turns a match into an `Asschema` fragment; nota-next owns the
+shape matcher.
 
-- `MacroNodeCase` names one accepted shape.
-- `MacroNodeBlockConstraint` matches delimiter and object-count predicates.
-- `MacroNodePairConstraint` matches a key constraint plus a value constraint.
-- `MacroNodeKeyConstraint` captures symbol, PascalCase, camelCase, and
-  sigil-suffix key variants.
-- `MacroNodeValueConstraint` captures delimiter values, type-reference-like
-  values, and the `*` same-type marker.
-
-The namespace declaration node now makes the strict brace model executable:
+The namespace declaration node makes the strict brace model executable:
 
 ```nota
 Entry { Topics * }     ; symbol key + brace value -> struct declaration case
@@ -170,18 +168,19 @@ Kind [Decision]        ; symbol key + bracket value -> enum declaration case
 Topic String           ; symbol key + reference value -> newtype declaration case
 ```
 
-`KeyValueDeclarationMacro::matches` delegates to that node definition instead
-of merely checking "is this a pair." When no registered macro matches at a
-node position with known cases, `SchemaError::UnsupportedMacroNodeStructure`
-reports the position, expected cases, and actual shape. Type-reference
-positions retain their existing `UnknownTypeReferenceForm` path so unknown
-collection heads remain precise.
+`KeyValueDeclarationMacro::matches` delegates through the nota-next pattern
+registry instead of merely checking "is this a pair." When no registered macro
+matches at a node position with known cases,
+`SchemaError::UnsupportedMacroNodeStructure` reports the schema position,
+expected macro-node cases, and actual shape using the nota-next no-match
+diagnostic. Type-reference positions retain their existing
+`UnknownTypeReferenceForm` path so unknown collection heads remain precise.
 
-This is the schema-next implementation floor for the broader NOTA-layer macro
-vision. The final mechanism belongs in `nota-next` as reusable macro-node
-dispatch returning typed matches/captures; schema-next is the first consumer
-and currently hosts the bootstrap cases so the running schema stack can keep
-moving while that lower layer is extracted.
+Schema-next is now a consumer of the NOTA-layer macro mechanism for structural
+cases. The remaining convergence work is to route successful nota-next
+`MacroMatch` captures directly into schema handlers, then load the schema macro
+vocabulary from serialized Asschema data instead of constructing the bootstrap
+registry in Rust.
 
 ## Schema Package Entry
 

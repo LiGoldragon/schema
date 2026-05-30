@@ -20,12 +20,15 @@ pub use declarative::{
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
 pub use macros::{
-    MacroContext, MacroDispatch, MacroNodeBlockConstraint, MacroNodeCase, MacroNodeDefinition,
-    MacroNodeDelimiter, MacroNodeKeyConstraint, MacroNodeObjectConstraint, MacroNodeObjectCount,
-    MacroNodePairConstraint, MacroNodeValueConstraint, MacroObject, MacroOutput, MacroPair,
+    MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
     MacroPosition, MacroRegistry, SchemaMacro,
 };
 pub use module::{SchemaModuleSource, SchemaPackage};
+pub use nota_next::{
+    AtomCase, AtomShape, CaptureName, DelimitedShape, MacroCandidate,
+    MacroDelimiter as NotaMacroDelimiter, MacroNodeDefinition as NotaMacroNodeDefinition,
+    MacroObjectCount, Pattern, PatternElement, PositionPredicate, SigilPosition, SigilSpec,
+};
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use syntax::{
