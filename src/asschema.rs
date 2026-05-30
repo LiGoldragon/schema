@@ -1,6 +1,9 @@
 use std::fmt;
 
-use nota_next::{Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
+use nota_next::{
+    AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaEncode,
+    NotaSource, NotaString,
+};
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
@@ -8,18 +11,7 @@ use crate::{
     macros::{BlockDebug, SchemaBlockExt},
 };
 
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    PartialEq,
-)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Name(String);
 
 impl Name {
@@ -57,6 +49,26 @@ impl Name {
             }
         }
         output
+    }
+
+    pub fn qualifies_as_symbol_name(&self) -> bool {
+        AtomClassification::classify(self.as_str()) == AtomClassification::SymbolCandidate
+    }
+}
+
+impl NotaDecode for Name {
+    fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
+        NotaBlock::new(block).parse_string().map(Self::new)
+    }
+}
+
+impl NotaEncode for Name {
+    fn to_nota(&self) -> String {
+        if self.qualifies_as_symbol_name() {
+            self.as_str().to_owned()
+        } else {
+            NotaString::new(self.as_str()).format()
+        }
     }
 }
 

@@ -98,6 +98,12 @@ itself live data: it must read/write legal NOTA through the shared NOTA codec
 and read/write binary rkyv bytes. Rust emission consumes that assembled data
 object, not hidden parser state or hand-kept assembled-schema text fixtures.*
 
+*Asschema names are schema symbols, not ordinary string text. A single name
+string that qualifies as a NOTA symbol candidate must emit as a bare symbol
+(`Entry`, `schema:spirit:Entry`), not as a bracket string (`[Entry]`). Bracket
+strings remain the fallback for non-symbol text and for actual `String`
+values.*
+
 *A core schema file can be read one layer lower than schema lowering: as raw
 NOTA object data. In that mode the root struct name is derived from the
 filename, mirroring Rust modules, and the file does not restate that root

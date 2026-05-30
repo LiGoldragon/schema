@@ -58,6 +58,13 @@ The previous checked-in assembled-schema text fixture surface stays removed:
 the live serialized form comes from the typed data object, not from hand-kept
 golden `.asschema` text.
 
+Asschema names emit through their own `Name` codec, not through the ordinary
+`String` codec. A symbol-safe name is written bare (`Entry`,
+`schema:spirit:Entry`) so declarations and references read as schema symbols;
+only non-symbol names fall back to bracket-string text. Actual `String`
+type-reference values still use the normal NOTA string surface at value
+positions.
+
 Namespace declarations are assembled as ordinary data-carrying visibility
 objects: `(Public Name Value)` for exported top-level types and
 `(Private Name Value)` for module-local types. The Rust storage keeps a

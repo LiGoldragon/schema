@@ -1,7 +1,9 @@
 use std::path::Path;
 
-use nota_next::Document;
-use schema_next::{ImportResolver, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
+use nota_next::{Document, NotaEncode};
+use schema_next::{
+    ImportResolver, Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference,
+};
 
 #[test]
 fn asschema_data_model_is_built_from_real_schema_fixture() {
@@ -101,16 +103,30 @@ fn asschema_is_a_live_nota_and_rkyv_data_artifact() {
     let bytes = asschema
         .to_binary_bytes()
         .expect("asschema encodes as rkyv bytes");
-    let from_binary = schema_next::Asschema::from_binary_bytes(&bytes)
-        .expect("asschema decodes from rkyv bytes");
+    let from_binary =
+        schema_next::Asschema::from_binary_bytes(&bytes).expect("asschema decodes from rkyv bytes");
     assert_eq!(from_binary, asschema);
 
     assert!(
-        nota.contains("(Public [Entry] (Struct ([Entry]"),
+        nota.contains("(Public Entry (Struct (Entry"),
         "the assembled artifact carries visibility, names, and type declarations as data: {nota}"
     );
     assert!(
-        nota.contains("(Vector (Plain [Entry]))"),
+        nota.contains("(Vector (Plain Entry))"),
         "schema Vec sugar must be gone; assembled schema carries Vector data: {nota}"
+    );
+}
+
+#[test]
+fn asschema_names_emit_symbol_safe_strings_as_bare_symbols() {
+    assert_eq!(Name::new("Entry").to_nota(), "Entry");
+    assert_eq!(
+        Name::new("schema:spirit:Entry").to_nota(),
+        "schema:spirit:Entry"
+    );
+    assert_eq!(
+        Name::new("not a symbol").to_nota(),
+        "[not a symbol]",
+        "non-symbol names still fall back to NOTA string form"
     );
 }
