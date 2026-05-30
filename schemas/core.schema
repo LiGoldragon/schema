@@ -1,25 +1,25 @@
-Input@[]
-Output@[]
+[]
+[]
 {
-  CoreSchema@{ @BuiltinMacroPositions @BuiltinMacroShapes @BuiltinMacroOutputs @BuiltinMacroDefinitions }
-  BuiltinMacroPositions@{ macroPosition@(Vec MacroPosition) }
-  BuiltinMacroShapes@{ macroShape@(Vec MacroShape) }
-  BuiltinMacroOutputs@{ macroOutputKind@(Vec MacroOutputKind) }
-  BuiltinMacroDefinitions@{ schemaMacro@(Vec SchemaMacro) }
-  SchemaMacro@{ @MacroName @MacroPosition @MacroPattern @MacroTemplate }
-  MacroName@String
-  MacroPattern@{ object@MacroPatternObject }
-  MacroPatternObjects@{ values@(Vec MacroPatternObject) }
-  MacroPatternObject@[Capture@MacroCaptureName RestCapture@MacroCaptureName Atom@MacroAtom Delimited@MacroPatternDelimited]
-  MacroPatternDelimited@{ delimiter@MacroDelimiter @MacroPatternObjects }
-  MacroTemplate@{ object@MacroTemplateObject }
-  MacroTemplateObjects@{ values@(Vec MacroTemplateObject) }
-  MacroTemplateObject@[Capture@MacroCaptureName RestCapture@MacroCaptureName Atom@MacroAtom Delimited@MacroTemplateDelimited]
-  MacroTemplateDelimited@{ delimiter@MacroDelimiter @MacroTemplateObjects }
-  MacroCaptureName@String
-  MacroAtom@String
-  MacroDelimiter@[SquareBracket Brace Parenthesis PipeParenthesis PipeBrace]
-  MacroPosition@[RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference]
-  MacroShape@[BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol]
-  MacroOutputKind@[Imports RootEnum Types Type Fields Variants Reference References AssembledSchema]
+  CoreSchema { BuiltinMacroPositions * BuiltinMacroShapes * BuiltinMacroOutputs * BuiltinMacroDefinitions * }
+  BuiltinMacroPositions { macroPosition (Vec MacroPosition) }
+  BuiltinMacroShapes { macroShape (Vec MacroShape) }
+  BuiltinMacroOutputs { macroOutputKind (Vec MacroOutputKind) }
+  BuiltinMacroDefinitions { schemaMacro (Vec SchemaMacro) }
+  SchemaMacro { MacroName * MacroPosition * MacroPattern * MacroTemplate * }
+  MacroName String
+  MacroPattern MacroPatternObject
+  MacroPatternObjects { values (Vec MacroPatternObject) }
+  MacroPatternObject [Capture@ MacroCaptureName RestCapture@ MacroCaptureName Atom@ MacroAtom Delimited@ MacroPatternDelimited]
+  MacroPatternDelimited { delimiter MacroDelimiter MacroPatternObjects * }
+  MacroTemplate MacroTemplateObject
+  MacroTemplateObjects { values (Vec MacroTemplateObject) }
+  MacroTemplateObject [Capture@ MacroCaptureName RestCapture@ MacroCaptureName Atom@ MacroAtom Delimited@ MacroTemplateDelimited]
+  MacroTemplateDelimited { delimiter MacroDelimiter MacroTemplateObjects * }
+  MacroCaptureName String
+  MacroAtom String
+  MacroDelimiter [SquareBracket Brace Parenthesis PipeParenthesis PipeBrace]
+  MacroPosition [RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference]
+  MacroShape [BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol]
+  MacroOutputKind [Imports RootEnum Types Type Fields Variants Reference References AssembledSchema]
 }

@@ -127,18 +127,19 @@ bracket form as text. Parentheses are raw record/struct structure; they become
 tagged schema nodes only when the expected type is `SchemaNode` or another
 tag-plus-payload struct.*
 
-*Authored schema declarations use name-first `@` binding. A namespace entry
-declares a struct with `Type@{ @Reference explicit@Reference ... }` and an
-enum with `Type@[Variant @SameNamePayload Variant@Payload ...]`. Plain `[]`
-and `()` remain legal NOTA values, but only the `@[` binding form is the
-declaration syntax for a schema enum datatype; parentheses remain the
-composite/type-reference and macro-call argument form (`(Vec Entry)`,
-`(Optional Kind)`, `(Map (Key Value))`). Lowercase/camelCase member names bind
-explicit fields; `@PascalCase` derives a field or data-carrying variant from
-an existing type. PascalCase names declare or reference schema types. The `@`
-is a declaration/binding sigil, not the macro-call sigil rejected by the
-schema-node model. The schema root is always the known root struct whose name
-comes from the filename, so it does not need a delimiter or `@` wrapper.*
+*Authored schema braces are strict key/value maps. Namespace braces contain
+`TypeName Value` pairs, not self-named single objects; struct braces contain
+`fieldName TypeReference` pairs. A PascalCase key followed by `*` is the
+derived-member shorthand: `Topics *` lowers to field `topics` with type
+`Topics`. Root input/output positions are known by the schema reader and are
+written as bare bracket bodies such as `[Record@ Entry]` or `[]`, never
+`Input@[]` / `Output@[]` at the root. Square-bracket namespace values define
+enum bodies; brace namespace values define struct field maps; atom or
+parenthesized reference values define newtypes (`Topic String`,
+`Topics (Vec Topic)`). Parentheses remain the composite/type-reference and
+macro-call argument form (`(Vec Entry)`, `(Optional Kind)`,
+`(Map (Key Value))`). The older self-named `Type@{...}` / `Type@[...]` surface
+is compatibility syntax while fixtures migrate, not the target structure.*
 
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
@@ -158,9 +159,9 @@ not a one-field map with an invented field name. The intended long-form
 notation is `(Public Topic { String })`, not `(Public Topic { text String })`,
 and Rust emission treats it as a real tuple newtype.*
 
-*The earlier pipe-family declaration syntax remains a compatibility surface
-in the parser and macro engine while existing fixtures migrate. It is not the
-authored-schema target.*
+*The earlier pipe-family declaration syntax and the self-named `@` declaration
+syntax remain compatibility surfaces in the parser and macro engine while
+existing fixtures migrate. They are not the authored-schema target.*
 
 *For `name@( ... )`, the parenthesized body is resolved at the
 assembled-schema reference layer: recognized type-reference heads such as

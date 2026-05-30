@@ -59,8 +59,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 
 #[test]
 fn at_declarations_lower_to_structs_and_enums() {
-    let source =
-        "Input@[] Output@[] { Entry@{ topic@Topic kind@Kind } Kind@[Decision Constraint] }";
+    let source = "[] [] { Entry { topic Topic kind Kind } Kind [Decision Constraint] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -77,7 +76,7 @@ fn at_declarations_lower_to_structs_and_enums() {
 
 #[test]
 fn simple_newtype_declarations_lower_to_single_contained_reference() {
-    let source = "Input@[] Output@[] { Topic@String Topics@{ (Vec Topic) } }";
+    let source = "[] [] { Topic String Topics (Vec Topic) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("newtype forms lower");
@@ -116,7 +115,7 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
     let source = "Input@[] Output@[] { Entry Entry@{ topic@Topic kind@Kind } }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("namespace declarations must be self-named objects");
+        .expect_err("namespace declarations must be key/value pairs without duplicated names");
 
     assert!(matches!(
         error,
@@ -126,7 +125,7 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "Input@[Record@schema:spirit:Entry] Output@[] { schema:spirit:Topic@{ string@String } schema:spirit:Entry@{ topic@schema:spirit:Topic } }";
+    let source = "[Record@ schema:spirit:Entry] [] { schema:spirit:Topic String schema:spirit:Entry schema:spirit:Topic }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
@@ -462,7 +461,7 @@ fn macro_lowering_receives_macro_position() {
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source = "Input@[] Output@[] { Entry@{ recordIdentifier@RecordIdentifier description@Description } }";
+    let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
@@ -606,13 +605,13 @@ fn brace_body_is_not_enum_sugar_inside_namespace() {
 
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedDelimiter { .. }
+        schema_next::SchemaError::ExpectedSyntaxReferenceArity { .. }
     ));
 }
 
 #[test]
 fn at_declaration_field_pairs_lower_through_default_engine() {
-    let source = "Input@[] Output@[] { Entry@{ recordIdentifier@RecordIdentifier description@Description } }";
+    let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("at declaration lowers");
@@ -728,16 +727,14 @@ fn inline_at_declaration_creates_ordered_namespace_type() {
 
 #[test]
 fn root_enum_requires_named_input_and_output_declarations() {
-    let error = SchemaEngine::default()
+    let asschema = SchemaEngine::default()
         .lower_source(
-            "[Record@Entry] Output@[] {}",
+            "[Record@ Entry] [] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
-        .expect_err("bare input root should be rejected");
-    assert!(matches!(
-        error,
-        schema_next::SchemaError::MacroDidNotMatch { .. }
-    ));
+        .expect("bare input root lowers because the root position names it");
+    assert_eq!(asschema.input().name.as_str(), "Input");
+    assert_eq!(asschema.input().variants[0].name.as_str(), "Record");
 
     let error = SchemaEngine::default()
         .lower_source(

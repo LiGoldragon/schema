@@ -81,7 +81,7 @@ visibility, declared name, and type value.
 A struct value in asschema is a field-name -> type-reference map. The Rust
 `StructFieldMap` stores the map in source order because generated Rust field
 order and rkyv layout are load-bearing, but the semantic object is the brace
-map shape that `Name@{ @Type field@OtherType ... }` expands into.
+map shape that authored `{ field Type TypeName * }` struct bodies lower into.
 
 A newtype value in asschema is a single contained type reference, not a
 one-field struct map with an invented field name. Its long form is
@@ -109,42 +109,44 @@ Rust type, and replace the hand-written `MacroLibraryData` projection with the
 schema-emitted macro table type directly. The macro table is already real
 serializable data; the remaining loop is making its Rust noun schema-emitted.
 
-## At-Binding Declaration Syntax
+## Strict Key/Value Schema Syntax
 
-The authored syntax is name-first `@` binding:
+The authored syntax preserves NOTA brace meaning: every brace is a key/value
+map. Schema sugar may shorten values, but it must not turn a brace entry into
+a single self-named object.
 
-- `Name@{ ... }` lowers to the same struct declaration data.
-- `Name@[ ... ]` lowers to enum declaration data.
-- `@Type` inside a struct body binds a field/member by deriving the field name
-  from the already-defined type (`@Topics` -> `topics: Topics`).
-- `@Type` inside an enum body creates a data-carrying variant whose variant
-  name and payload type are both `Type`.
-- `name@Type` explicitly binds a field/member name to a reference.
-- `name@(Composite Type)` binds a field/member name to a structural reference
-  without losing the referenced object's parentheses.
+- Root input/output positions are known by the schema reader and are written
+  as bare bracket bodies: `[]`, `[Record@ Entry]`, or
+  `[(Record Entry) Observe]`. The root does not say `Input@[]` or
+  `Output@[]`.
+- Namespace braces contain `TypeName Value` pairs. `Topic String` and
+  `Topics (Vec Topic)` are newtype declarations; `Entry { topic Topic }` is a
+  struct declaration; `Kind [Decision Correction]` is an enum declaration.
+- Struct braces contain field-name -> type-reference pairs. `topic Topic` is
+  explicit. `Topics *` derives the field name from an already-defined type and
+  lowers to `topics: Topics`.
+- Enum bodies are bracket/vector structure. Data variants may use the current
+  pair sugar `Record@ Entry` or the parenthesized long form `(Record Entry)`.
 
-The `@` marker belongs to declaration binding. It is not a macro-call marker;
-schema-node macro calls remain tagged values read against a known expected
-type. The root `.schema` object is the exception: its struct type is known from
-the filename and its positions, so it is written as the root value rather than
-wrapped in `RootName@{...}`.
+The `@` marker on an enum variant key is a key-side type cue for a
+data-carrying variant. It is not a macro-call marker; schema-node macro calls
+remain tagged values read against a known expected type.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`
 data. If a composite appears unnamed as a struct field, the field/type name can
 be derived from the composite shape when it does not collide.
 
-Inline PascalCase declarations are private by default. For example,
-`Entry@{ Receipt@{ recordIdentifier@RecordIdentifier } later@Receipt }`
-inserts `Receipt` into the module-local declaration table as private, derives
-the field name `receipt`, and lets the later field reference the same local
-type. Top-level declarations are public by default.
+Inline PascalCase declarations remain a compatibility feature during the
+syntax migration. The target model still distinguishes public top-level
+declarations from private module-local declarations, but the strict
+key/value surface must represent those inline declarations as pairs rather
+than as single brace entries.
 
-The pipe-family forms `Name {| Name ... |}` and `Name (| Name ... |)` are a
-legacy compatibility surface only. `Name@(...)` also remains accepted as an
-enum declaration compatibility shape, but new authored schema should use
-`Name@[]` so parentheses stay reserved for composite/reference and macro-call
-argument objects.
+The pipe-family forms `Name {| Name ... |}` / `Name (| Name ... |)` and the
+self-named `Name@{...}` / `Name@[...]` forms are legacy compatibility
+surfaces only. New authored schema uses brace key/value pairs and bare root
+bracket bodies.
 
 ## Schema Package Entry
 
@@ -179,9 +181,9 @@ module schema and checking that the imported type is declared there.
   `Asschema` can serialize itself to NOTA and rkyv after lowering, and tests
   read those serialized forms back through the same typed object.
 - The root schema is positional. Current MVP shape:
-  - field 1: named input root enum, for example `Input@[Record@Entry Reindex]`
-  - field 2: named output root enum, for example `Output@[Recorded@Receipt Rejected@Rejection]`
-  - field 3: namespace map `{ }`
+  - field 1: input root enum body, for example `[Record@ Entry Reindex]`
+  - field 2: output root enum body, for example `[Recorded@ Receipt Rejected@ Rejection]`
+  - field 3: namespace map `{ TypeName Value ... }`
   - optional leading field: imports map `{ Local dependency-crate:module:Type }`
 - Input and output roots are actor reaction languages. They declare
   the variants a component can receive and emit; the Rust emission
@@ -191,16 +193,16 @@ module schema and checking that the imported type is declared there.
   input, output, and namespace, with optional leading imports. The macro
   engine lowers all three planes uniformly; the runtime meaning differs after
   lowering.
-- `Name@[...]` defines authored enum declarations. The older
-  `Name@(...)` and `Name (| Name ... |)` forms are compatibility syntax.
+- A namespace key followed by a square-bracket value defines an enum
+  declaration: `Kind [Decision Correction]`. The older `Name@[...]`,
+  `Name@(...)`, and `Name (| Name ... |)` forms are compatibility syntax.
 - Braces are key/value maps only. They are not enum sugar.
-- `Name@{ @Reference field@Reference ... }` defines authored struct
-  declarations. `@Reference` derives the field name from an existing type;
-  explicit `field@Reference` remains available when the field name differs.
-  The one-reference form lowers to an asschema newtype, represented as a
-  single contained type rather than a field-name map. Lowercase/camelCase names
-  bind fields. PascalCase names declare or reference schema types. The older
-  `Name {| Name ... |}` pipe-brace form is compatibility syntax.
+- A namespace key followed by a brace value defines a struct declaration:
+  `Entry { topic Topic Topics * }`. `TypeName *` derives the field name from
+  an existing type; explicit `field TypeReference` remains available when the
+  field name differs. A namespace key followed by an atom or parenthesized
+  reference defines a newtype: `Topic String`, `Topics (Vec Topic)`. The older
+  `Name@{...}` and `Name {| Name ... |}` forms are compatibility syntax.
 - Plain square brackets are NOTA vector/bracket structure. They may appear as
   macro payload data or value data, but they are not the authored declaration
   syntax for a schema datatype.
@@ -210,9 +212,10 @@ module schema and checking that the imported type is declared there.
 - Schema names may be qualified with single colons (`crate:module:Type`). The
   local part drives derived field names; the full name remains available for
   global disambiguation and future import resolution.
-- Root namespace braces hold self-named declaration objects such as
-  `Entry@{...}` and `Kind@[...]`. Redundant `Entry Entry@{...}` key/value
-  pairs and parenthesized `(Name Body)` entries are rejected.
+- Root namespace braces hold key/value declaration pairs such as
+  `Entry { topic Topic }` and `Kind [Decision Correction]`. Redundant
+  `Entry Entry@{...}` key/value pairs and parenthesized `(Name Body)` entries
+  are rejected.
 - Schema objects are the shared language for Signal, Nexus, SEMA,
   upgrade, and mail-event surfaces. Signal is the wire/message plane,
   Nexus is the execution-IO plane for internal effects, external calls, and
@@ -262,19 +265,21 @@ module schema and checking that the imported type is declared there.
 
 ## Syntax Schema Layer
 
-`SyntaxSchema` is the typed layer directly above `RawSchemaFile`. It proves the
-new delimiter contract without skipping into the older macro engine:
+`SyntaxSchema` is the typed layer directly above `RawSchemaFile`. It currently
+preserves the older self-named `@` declaration surface for raw-layer
+experiments while the macro engine migrates to strict key/value authored
+schema:
 
 1. `RawSchemaFile` parses a `.schema` file as legal NOTA and preserves raw
    delimiter objects.
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
-3. `@` braces at datatype declaration position are struct field lists.
+3. `@` braces at datatype declaration position are legacy struct field lists.
    Plain square brackets are rejected there.
 4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
-5. `Name@[...]` is an enum declaration and `Name@{...}` is a struct
-   declaration. The declared name must match the namespace key, so the raw map
-   key and the self-named declaration cannot silently drift.
+5. `Name@[...]` is a legacy enum declaration and `Name@{...}` is a legacy
+   struct declaration. The declared name must match the namespace key, so the
+   raw map key and the self-named declaration cannot silently drift.
 
 The proof fixture is `tests/fixtures/syntax-layer/schema.schema`; the tests in
 `tests/syntax_layer.rs` assert the raw-to-syntax result directly.

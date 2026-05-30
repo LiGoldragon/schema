@@ -292,7 +292,7 @@ fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
         registry.register_box(schema_macro);
     }
 
-    let document = Document::parse("{| Entry Topic Kind |}").expect("macro input parses");
+    let document = Document::parse("{| Entry Topic * Kind * |}").expect("macro input parses");
     let object = document.root_object_at(0).expect("macro input root");
     let output = registry
         .lower(

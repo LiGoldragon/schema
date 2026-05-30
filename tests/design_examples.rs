@@ -21,7 +21,7 @@ use schema_next::{
 /// namespace). A leading import map makes the 4-root form.
 #[test]
 fn design_example_schema_document_has_three_roots_or_four_with_imports() {
-    let too_few = "Input@[] Output@[]";
+    let too_few = "[] []";
     let error = SchemaEngine::default()
         .lower_source(too_few, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("two root objects should fail");
@@ -33,7 +33,7 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
         }
     );
 
-    let too_many = "{} Input@[] Output@[] {} {}";
+    let too_many = "{} [] [] {} {}";
     let error = SchemaEngine::default()
         .lower_source(too_many, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("five root objects should fail");
@@ -46,34 +46,28 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
     );
 
     SchemaEngine::default()
-        .lower_source(
-            "Input@[] Output@[] {}",
-            SchemaIdentity::new("example", "0.1.0"),
-        )
+        .lower_source("[] [] {}", SchemaIdentity::new("example", "0.1.0"))
         .expect("three-root no-import schema lowers");
     SchemaEngine::default()
-        .lower_source(
-            "{} Input@[] Output@[] {}",
-            SchemaIdentity::new("example", "0.1.0"),
-        )
+        .lower_source("{} [] [] {}", SchemaIdentity::new("example", "0.1.0"))
         .expect("four-root import schema lowers");
 }
 
-/// Illustrates: the schema namespace contains self-named
-/// declarations. The declaration object carries its own name through
-/// `Name@Delimiter`, so the namespace does not repeat a key before
-/// each declaration.
+/// Illustrates: the schema namespace is an honest brace key/value map.
+/// Each declaration is two objects: the type name key and the definition
+/// value. The declaration no longer repeats its name inside a self-named
+/// `Name@Delimiter` object.
 ///
 /// This is the positive complement of
 /// `brace_namespace_rejects_parenthesized_named_objects` in
 /// `lowering.rs` — that test PROVES the rejection; this test PROVES
 /// the pair-style positive path.
 #[test]
-fn design_example_namespace_brace_contains_self_named_declarations() {
-    let source = "Input@[] Output@[] { Topic@{ string@String } Kind@[Decision Constraint] }";
+fn design_example_namespace_brace_contains_key_value_declarations() {
+    let source = "[] [] { Topic String Kind [Decision Constraint] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("self-named namespace lowers");
+        .expect("key/value namespace lowers");
 
     let names: Vec<&str> = asschema
         .namespace()
@@ -118,7 +112,9 @@ fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
     assert_eq!(struct_definition.capture_names(), vec!["$Name", "$*Fields"]);
 
     // The captures FIRE — feed a minimal schema where the struct macro
-    // matches one declaration and observe the recorded binding names.
+    // matches one legacy declaration and observe the recorded binding
+    // names. The production namespace path now uses key/value pairs;
+    // this test is specifically about the declarative macro library.
     let source = "Input@[] Output@[] { Entry@{ topic@Topic description@Description } }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
@@ -224,7 +220,7 @@ fn design_example_default_engine_has_two_macro_layers() {
     // `MacroRegistry::with_schema_defaults`. Observed indirectly:
     // when the default engine processes a schema, all four ROOT
     // macro names appear in the applied trace.
-    let source = "Input@[] Output@[] {}";
+    let source = "[] [] {}";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -253,7 +249,7 @@ fn design_example_default_engine_has_two_macro_layers() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "Input@[Record@Entry] Output@[Accepted] { Entry@{ description@Description } }";
+    let source = "[Record@ Entry] [Accepted] { Entry { description Description } }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -277,12 +273,12 @@ fn design_example_schema_lowering_records_source_structure_header() {
         observed,
         vec![
             (StructureShape::Document, 3),
-            (StructureShape::PipeParenthesis, 2),
+            (StructureShape::SquareBracket, 2),
             (StructureShape::Atom, 0),
             (StructureShape::Atom, 0),
-            (StructureShape::PipeParenthesis, 2),
+            (StructureShape::SquareBracket, 1),
             (StructureShape::Atom, 0),
-            (StructureShape::Atom, 0),
+            (StructureShape::Brace, 2),
             (StructureShape::Unknown, 15),
         ],
     );
@@ -340,11 +336,11 @@ fn design_example_schema_node_macro_call_is_tagged_data() {
 }
 
 /// Illustrates: root enum payloads are authored directly inside the
-/// known root enum body. Payload-carrying variants use `Variant@Payload`;
+/// known root enum body. Payload-carrying variants use `Variant@ Payload`;
 /// unit variants use bare symbols.
 #[test]
 fn design_example_root_enum_uses_direct_variant_shapes() {
-    let source = "Input@[Record@Entry Drop] Output@[] {}";
+    let source = "[Record@ Entry Drop] [] {}";
 
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
@@ -372,7 +368,7 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
 /// variants. The old star suffix is gone from authored schema.
 #[test]
 fn design_example_same_name_payload_variant_uses_explicit_payload() {
-    let source = "Input@[Record@Record] Output@[Recorded@Recorded] { Record@{ description@Description } Recorded@{ recordIdentifier@RecordIdentifier } }";
+    let source = "[Record@ Record] [Recorded@ Recorded] { Record { description Description } Recorded { recordIdentifier RecordIdentifier } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("explicit same-name variants lower");
@@ -452,18 +448,18 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
 #[test]
 fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
     let source = "
-        Input@[Record@Entry Observe@Query]
-        Output@[RecordAccepted@RecordIdentifier RecordsObserved@RecordSet]
+        [Record@ Entry Observe@ Query]
+        [RecordAccepted@ RecordIdentifier RecordsObserved@ RecordSet]
         {
-          NexusInput@[Signal@Input Sema@SemaOutput]
-          NexusOutput@[Sema@SemaInput Signal@Output]
-          SemaInput@[Record@Entry Observe@Query]
-          SemaOutput@[Recorded@RecordIdentifier Observed@RecordSet]
-          Topic@{ string@String }
-          RecordIdentifier@{ integer@Integer }
-          Entry@{ topic@Topic }
-          Query@{ topic@Topic }
-          RecordSet@{ entries@(Vec Entry) }
+          NexusInput [Signal@ Input Sema@ SemaOutput]
+          NexusOutput [Sema@ SemaInput Signal@ Output]
+          SemaInput [Record@ Entry Observe@ Query]
+          SemaOutput [Recorded@ RecordIdentifier Observed@ RecordSet]
+          Topic String
+          RecordIdentifier Integer
+          Entry { topic Topic }
+          Query { topic Topic }
+          RecordSet (Vec Entry)
         }
     ";
     let asschema = SchemaEngine::default()

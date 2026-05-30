@@ -1282,6 +1282,12 @@ impl<'template> AssembledFields<'template> {
                         .lower(registry, context)?,
                 );
                 index += 2;
+            } else if self.starts_ambiguous_pascal_pair(index) {
+                return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                    form: "derived struct field pair",
+                    expected: "PascalCase type plus * marker",
+                    found: 2,
+                });
             } else {
                 fields.push(AssembledField::new(&self.objects[index]).lower(registry, context)?);
                 index += 1;
@@ -1291,12 +1297,34 @@ impl<'template> AssembledFields<'template> {
     }
 
     fn starts_flat_field_pair(&self, index: usize) -> bool {
+        let Some(name) = self.objects[index].demote_to_string() else {
+            return false;
+        };
+        if self
+            .objects
+            .get(index + 1)
+            .and_then(Block::demote_to_string)
+            == Some("*")
+        {
+            return true;
+        }
+        !name.contains('@')
+            && name
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_lowercase())
+    }
+
+    fn starts_ambiguous_pascal_pair(&self, index: usize) -> bool {
+        if index + 1 >= self.objects.len() {
+            return false;
+        }
         self.objects[index].demote_to_string().is_some_and(|name| {
             !name.contains('@')
                 && name
                     .chars()
                     .next()
-                    .is_some_and(|character| character.is_ascii_lowercase())
+                    .is_some_and(|character| character.is_ascii_uppercase())
         })
     }
 }
@@ -1345,8 +1373,11 @@ impl<'template> AssembledField<'template> {
         }
         if let Some(reference_object) = self.paired_reference {
             let field_name = self.object.schema_name()?;
-            let reference =
-                TypeReference::from_block_with_registry(reference_object, registry, context)?;
+            let reference = if reference_object.demote_to_string() == Some("*") {
+                TypeReference::from_name(field_name.clone())
+            } else {
+                TypeReference::from_block_with_registry(reference_object, registry, context)?
+            };
             return Ok(FieldDeclaration {
                 name: Name::new(field_name.field_name()),
                 reference,
@@ -1436,21 +1467,67 @@ impl<'template> AssembledVariants<'template> {
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
         let mut variants = Vec::new();
-        for object in self.objects {
-            variants.push(AssembledVariant::new(object).lower(registry, context)?);
+        let mut index = 0;
+        while index < self.objects.len() {
+            if self.starts_data_variant_pair(index) {
+                let payload_index = index + 1;
+                if payload_index >= self.objects.len() {
+                    return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                        form: "data variant pair",
+                        expected: "variant name plus one payload reference",
+                        found: 1,
+                    });
+                }
+                variants.push(
+                    AssembledVariant::new_payload_pair(
+                        &self.objects[index],
+                        &self.objects[payload_index],
+                    )
+                    .lower(registry, context)?,
+                );
+                index += 2;
+            } else {
+                variants
+                    .push(AssembledVariant::new(&self.objects[index]).lower(registry, context)?);
+                index += 1;
+            }
         }
         Ok(variants)
+    }
+
+    fn starts_data_variant_pair(&self, index: usize) -> bool {
+        let Some(name) = self.objects[index].demote_to_string() else {
+            return false;
+        };
+        name.strip_suffix('@')
+            .is_some_and(|variant| !variant.is_empty())
+            || self
+                .objects
+                .get(index + 1)
+                .and_then(Block::demote_to_string)
+                == Some("*")
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct AssembledVariant<'template> {
     object: &'template Block,
+    paired_payload: Option<&'template Block>,
 }
 
 impl<'template> AssembledVariant<'template> {
     fn new(object: &'template Block) -> Self {
-        Self { object }
+        Self {
+            object,
+            paired_payload: None,
+        }
+    }
+
+    fn new_payload_pair(name: &'template Block, payload: &'template Block) -> Self {
+        Self {
+            object: name,
+            paired_payload: Some(payload),
+        }
     }
 
     fn lower(
@@ -1458,6 +1535,9 @@ impl<'template> AssembledVariant<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
+        if let Some(payload) = self.paired_payload {
+            return self.lower_payload_pair(payload, registry, context);
+        }
         if let Some(binding) = AssembledBinding::from_block(self.object) {
             return Ok(EnumVariant {
                 name: binding.name,
@@ -1474,6 +1554,35 @@ impl<'template> AssembledVariant<'template> {
         } else {
             Err(SchemaError::ExpectedEnumVariant)
         }
+    }
+
+    fn lower_payload_pair(
+        &self,
+        payload: &Block,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<EnumVariant, SchemaError> {
+        let name = self.variant_pair_name()?;
+        let reference = if payload.demote_to_string() == Some("*") {
+            TypeReference::from_name(name.clone())
+        } else {
+            TypeReference::from_block_with_registry(payload, registry, context)?
+        };
+        Ok(EnumVariant {
+            name,
+            payload: Some(reference),
+        })
+    }
+
+    fn variant_pair_name(&self) -> Result<Name, SchemaError> {
+        if let Some(text) = self.object.demote_to_string() {
+            if let Some(name) = text.strip_suffix('@') {
+                if !name.is_empty() {
+                    return Ok(Name::new(name));
+                }
+            }
+        }
+        self.object.schema_name()
     }
 
     fn lower_parenthesis(

@@ -3,12 +3,12 @@ use nota_next::{Block, Document};
 use crate::{
     asschema::{
         Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, TypeDeclaration, TypeReference,
+        NewtypeDeclaration, StructDeclaration, TypeDeclaration, TypeReference,
     },
-    declarative::{AssembledVariants, DeclarativeMacroLibrary},
+    declarative::{AssembledFields, AssembledVariants, DeclarativeMacroLibrary},
     macros::{
-        MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPosition,
-        MacroRegistry, SchemaBlockExt, SchemaMacro,
+        MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
+        MacroPosition, MacroRegistry, SchemaBlockExt, SchemaMacro,
     },
     resolution::ImportResolver,
 };
@@ -409,6 +409,7 @@ impl MacroRegistry {
             "Output",
         ));
         registry.register(RootNamespaceMacro::new());
+        registry.register(KeyValueDeclarationMacro::new());
         registry.register(SimpleNewtypeDeclarationMacro::new());
         for schema_macro in DeclarativeMacroLibrary::builtin()
             .expect("builtin schema macros parse")
@@ -417,6 +418,129 @@ impl MacroRegistry {
             registry.register_box(schema_macro);
         }
         registry
+    }
+}
+
+#[derive(Clone, Debug)]
+struct KeyValueDeclarationMacro {
+    signature: MacroSignature,
+}
+
+impl KeyValueDeclarationMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new(
+                "KeyValueDeclaration",
+                MacroPosition::NamespaceDeclaration,
+                "Name value",
+            ),
+        }
+    }
+}
+
+impl SchemaMacro for KeyValueDeclarationMacro {
+    fn name(&self) -> &str {
+        self.signature.name()
+    }
+
+    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
+        self.signature.accepts_position(position) && object.pair().is_some()
+    }
+
+    fn lower(
+        &self,
+        object: MacroObject<'_>,
+        position: MacroPosition,
+        context: &mut MacroContext,
+        registry: &MacroRegistry,
+    ) -> Result<MacroOutput, SchemaError> {
+        self.signature.remember(position, context);
+        let pair = object.pair().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
+        KeyValueDeclaration::new(pair)
+            .lower(registry, context)
+            .map(MacroOutput::Type)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct KeyValueDeclaration<'schema> {
+    pair: MacroPair<'schema>,
+}
+
+impl<'schema> KeyValueDeclaration<'schema> {
+    fn new(pair: MacroPair<'schema>) -> Self {
+        Self { pair }
+    }
+
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        let name = self.pair.name.schema_name()?;
+        match self.pair.definition {
+            Block::Delimited {
+                delimiter: nota_next::Delimiter::Brace,
+                root_objects,
+                ..
+            } => self.lower_struct(name, root_objects, registry, context),
+            Block::Delimited {
+                delimiter: nota_next::Delimiter::SquareBracket,
+                root_objects,
+                ..
+            } => self.lower_enum(name, root_objects, registry, context),
+            definition => self.lower_newtype(name, definition, registry, context),
+        }
+    }
+
+    fn lower_struct(
+        &self,
+        name: Name,
+        root_objects: &'schema [Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        let fields = AssembledFields::new(root_objects).lower(registry, context)?;
+        Ok(TypeDeclaration::Struct(StructDeclaration::new(
+            name, fields,
+        )))
+    }
+
+    fn lower_enum(
+        &self,
+        name: Name,
+        root_objects: &'schema [Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        let variants = AssembledVariants::new(root_objects).lower(registry, context)?;
+        Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
+    }
+
+    fn lower_newtype(
+        &self,
+        name: Name,
+        definition: &'schema Block,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        if matches!(
+            definition,
+            Block::Delimited {
+                delimiter: nota_next::Delimiter::PipeBrace | nota_next::Delimiter::PipeParenthesis,
+                ..
+            }
+        ) {
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: "namespace value reference, not self-named declaration",
+            });
+        }
+        let reference = TypeReference::from_block_with_registry(definition, registry, context)?;
+        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+            name, reference,
+        )))
     }
 }
 
@@ -661,6 +785,40 @@ impl<'schema> NamespaceBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<Declaration>, SchemaError> {
+        if self.contains_key_value_pairs() {
+            return self.lower_key_value_declarations(registry, context);
+        }
+        self.lower_legacy_declarations(registry, context)
+    }
+
+    fn lower_key_value_declarations(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<Declaration>, SchemaError> {
+        let mut declarations = Vec::new();
+        for pair in self.key_value_pairs()? {
+            let name = pair.name.schema_name()?;
+            if TypeReference::is_reserved_scalar_name(&name) {
+                return Err(SchemaError::ReservedScalarTypeName {
+                    name: name.as_str().to_owned(),
+                });
+            }
+            self.push_declaration(
+                MacroObject::Pair(pair),
+                registry,
+                context,
+                &mut declarations,
+            )?;
+        }
+        Ok(declarations)
+    }
+
+    fn lower_legacy_declarations(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Vec<Declaration>, SchemaError> {
         let mut declarations = Vec::new();
         for declaration_object in self.object.root_objects() {
             let name = NamespaceDeclarationBlock::new(declaration_object).name()?;
@@ -677,6 +835,34 @@ impl<'schema> NamespaceBlock<'schema> {
             )?;
         }
         Ok(declarations)
+    }
+
+    fn contains_key_value_pairs(&self) -> bool {
+        self.object.holds_root_objects() == 0
+            || (self.object.holds_root_objects() % 2 == 0
+                && self
+                    .object
+                    .root_objects()
+                    .iter()
+                    .step_by(2)
+                    .all(|object| object.schema_name().is_ok()))
+    }
+
+    fn key_value_pairs(&self) -> Result<Vec<MacroPair<'schema>>, SchemaError> {
+        if self.object.holds_root_objects() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: self.object.holds_root_objects(),
+            });
+        }
+        Ok(self
+            .object
+            .root_objects()
+            .chunks_exact(2)
+            .map(|chunk| MacroPair {
+                name: &chunk[0],
+                definition: &chunk[1],
+            })
+            .collect())
     }
 
     fn push_declaration(
@@ -735,7 +921,7 @@ struct RootEnumMacro {
 impl RootEnumMacro {
     fn new(name: &'static str, position: MacroPosition, enum_name: &'static str) -> Self {
         Self {
-            signature: MacroSignature::new(name, position, "Name@[ ]"),
+            signature: MacroSignature::new(name, position, "[ ]"),
             enum_name,
         }
     }
@@ -750,7 +936,7 @@ impl SchemaMacro for RootEnumMacro {
         self.signature.accepts_position(position)
             && object
                 .block()
-                .is_some_and(|object| object.is_pipe_parenthesis())
+                .is_some_and(|object| object.is_square_bracket() || object.is_pipe_parenthesis())
     }
 
     fn lower(
@@ -765,7 +951,7 @@ impl SchemaMacro for RootEnumMacro {
             expected: self.signature.expected_delimiter(),
         })?;
         let root_enum = RootEnumBlock::new(object, self.enum_name);
-        root_enum.require_named_root()?;
+        root_enum.require_named_root_if_legacy()?;
         let name = root_enum.name();
         let variants = root_enum.variants(registry, context)?;
         Ok(MacroOutput::RootEnum(EnumDeclaration::new(name, variants)))
@@ -787,7 +973,10 @@ impl<'schema> RootEnumBlock<'schema> {
         Name::new(self.enum_name)
     }
 
-    fn require_named_root(&self) -> Result<(), SchemaError> {
+    fn require_named_root_if_legacy(&self) -> Result<(), SchemaError> {
+        if self.object.is_square_bracket() {
+            return Ok(());
+        }
         let declared = self
             .object
             .root_object_at(0)
@@ -809,6 +998,10 @@ impl<'schema> RootEnumBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        AssembledVariants::new(&self.object.root_objects()[1..]).lower(registry, context)
+        if self.object.is_square_bracket() {
+            AssembledVariants::new(self.object.root_objects()).lower(registry, context)
+        } else {
+            AssembledVariants::new(&self.object.root_objects()[1..]).lower(registry, context)
+        }
     }
 }
