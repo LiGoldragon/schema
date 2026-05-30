@@ -107,6 +107,7 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
         error,
         schema_next::SchemaError::ExpectedDelimiter { .. }
             | schema_next::SchemaError::MacroDidNotMatch { .. }
+            | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
 }
 
@@ -120,6 +121,7 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
     assert!(matches!(
         error,
         schema_next::SchemaError::ExpectedDelimiter { .. }
+            | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
 }
 

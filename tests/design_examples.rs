@@ -11,9 +11,9 @@
 
 use nota_next::{Document, StructureShape};
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroDispatch, MacroPosition, MacroRegistry, Name,
-    SchemaEngine, SchemaError, SchemaIdentity, SchemaNode, SchemaNodeData, SchemaNodeValue,
-    TypeDeclaration, TypeReference,
+    DeclarativeMacroLibrary, MacroContext, MacroDispatch, MacroObject, MacroPair, MacroPosition,
+    MacroRegistry, Name, SchemaEngine, SchemaError, SchemaIdentity, SchemaNode, SchemaNodeData,
+    SchemaNodeValue, TypeDeclaration, TypeReference,
 };
 
 /// Illustrates: a schema document is positional. The common no-import
@@ -316,6 +316,61 @@ fn design_example_macro_node_definitions_separate_structural_from_tagged_invocat
             ),
         ],
     );
+}
+
+/// Illustrates: a macro node definition is more than a position label.
+/// It carries the structural cases expected at that position. For
+/// namespace declarations the cases are key/value pair nodes: a symbol
+/// key with a brace value is a struct macro, a symbol key with a
+/// bracket value is an enum macro, and a symbol key with a reference
+/// value is a newtype macro.
+#[test]
+fn design_example_macro_node_definition_lists_structural_cases() {
+    let registry = MacroRegistry::with_schema_defaults();
+    let namespace = registry
+        .node_definition(MacroPosition::NamespaceDeclaration)
+        .expect("namespace macro node definition");
+    let case_names: Vec<&str> = namespace.cases().iter().map(|case| case.name()).collect();
+    assert_eq!(
+        case_names,
+        vec![
+            "struct declaration",
+            "enum declaration",
+            "newtype declaration"
+        ]
+    );
+
+    let document =
+        Document::parse("Entry { Topic * } Kind [Decision] Topic String").expect("nota parses");
+    let struct_pair = MacroPair {
+        name: document.root_object_at(0).expect("struct name"),
+        definition: document.root_object_at(1).expect("struct value"),
+    };
+    let enum_pair = MacroPair {
+        name: document.root_object_at(2).expect("enum name"),
+        definition: document.root_object_at(3).expect("enum value"),
+    };
+    let newtype_pair = MacroPair {
+        name: document.root_object_at(4).expect("newtype name"),
+        definition: document.root_object_at(5).expect("newtype value"),
+    };
+
+    assert!(namespace.matches(MacroObject::Pair(struct_pair)));
+    assert!(namespace.matches(MacroObject::Pair(enum_pair)));
+    assert!(namespace.matches(MacroObject::Pair(newtype_pair)));
+
+    let malformed = Document::parse("(Entry String)").expect("nota parses");
+    let error = registry
+        .lower(
+            MacroObject::Block(malformed.root_object_at(0).expect("malformed declaration")),
+            MacroPosition::NamespaceDeclaration,
+            &mut MacroContext::default(),
+        )
+        .expect_err("unsupported namespace declaration shape should be explained");
+    assert!(matches!(
+        error,
+        SchemaError::UnsupportedMacroNodeStructure { .. }
+    ));
 }
 
 /// Illustrates: a schema-node macro call is data. `(Normalize [Topic])`

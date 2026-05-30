@@ -148,6 +148,41 @@ self-named `Name@{...}` / `Name@[...]` forms are legacy compatibility
 surfaces only. New authored schema uses brace key/value pairs and bare root
 bracket bodies.
 
+## Macro Node Structural Matching
+
+`MacroNodeDefinition` is the data model for "what can appear here." Each
+definition names its `MacroPosition`, dispatch mode, and structural cases.
+Those cases are data-bearing objects, not comments:
+
+- `MacroNodeCase` names one accepted shape.
+- `MacroNodeBlockConstraint` matches delimiter and object-count predicates.
+- `MacroNodePairConstraint` matches a key constraint plus a value constraint.
+- `MacroNodeKeyConstraint` captures symbol, PascalCase, camelCase, and
+  sigil-suffix key variants.
+- `MacroNodeValueConstraint` captures delimiter values, type-reference-like
+  values, and the `*` same-type marker.
+
+The namespace declaration node now makes the strict brace model executable:
+
+```nota
+Entry { Topics * }     ; symbol key + brace value -> struct declaration case
+Kind [Decision]        ; symbol key + bracket value -> enum declaration case
+Topic String           ; symbol key + reference value -> newtype declaration case
+```
+
+`KeyValueDeclarationMacro::matches` delegates to that node definition instead
+of merely checking "is this a pair." When no registered macro matches at a
+node position with known cases, `SchemaError::UnsupportedMacroNodeStructure`
+reports the position, expected cases, and actual shape. Type-reference
+positions retain their existing `UnknownTypeReferenceForm` path so unknown
+collection heads remain precise.
+
+This is the schema-next implementation floor for the broader NOTA-layer macro
+vision. The final mechanism belongs in `nota-next` as reusable macro-node
+dispatch returning typed matches/captures; schema-next is the first consumer
+and currently hosts the bootstrap cases so the running schema stack can keep
+moving while that lower layer is extracted.
+
 ## Schema Package Entry
 
 `SchemaPackage` is the first crate-local module loader. It expects a crate root

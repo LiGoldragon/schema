@@ -1,4 +1,4 @@
-use nota_next::{Block, StructureHeader};
+use nota_next::{Block, Delimiter, StructureHeader};
 
 use crate::{
     Asschema, Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, SchemaError,
@@ -77,6 +77,17 @@ impl<'object> MacroObject<'object> {
         match self {
             Self::Block(_) => None,
             Self::Pair(pair) => Some(pair),
+        }
+    }
+
+    pub fn describe(self) -> String {
+        match self {
+            Self::Block(block) => format!("block({})", block.reemit_fallback()),
+            Self::Pair(pair) => format!(
+                "pair({} {})",
+                pair.name.reemit_fallback(),
+                pair.definition.reemit_fallback()
+            ),
         }
     }
 }
@@ -243,6 +254,12 @@ impl MacroRegistry {
                 return schema_macro.lower(object, position, context, self);
             }
         }
+        if position != MacroPosition::TypeReference
+            && let Some(definition) = self.node_definition(position)
+            && definition.has_cases()
+        {
+            return Err(definition.unsupported_structure_error(object));
+        }
         Err(SchemaError::MacroDidNotMatch {
             macro_name: "registered macro".to_owned(),
         })
@@ -256,15 +273,184 @@ impl MacroRegistry {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MacroNodeDefinition {
     position: MacroPosition,
     dispatch: MacroDispatch,
+    cases: Vec<MacroNodeCase>,
 }
 
 impl MacroNodeDefinition {
     pub fn new(position: MacroPosition, dispatch: MacroDispatch) -> Self {
-        Self { position, dispatch }
+        Self {
+            position,
+            dispatch,
+            cases: Vec::new(),
+        }
+    }
+
+    pub fn with_cases(
+        position: MacroPosition,
+        dispatch: MacroDispatch,
+        cases: Vec<MacroNodeCase>,
+    ) -> Self {
+        Self {
+            position,
+            dispatch,
+            cases,
+        }
+    }
+
+    pub fn root_imports() -> Self {
+        Self::with_cases(
+            MacroPosition::RootImports,
+            MacroDispatch::RootPositional,
+            vec![MacroNodeCase::block(
+                "imports map",
+                MacroNodeBlockConstraint::new(
+                    Some(MacroNodeDelimiter::Brace),
+                    MacroNodeObjectCount::Even,
+                ),
+            )],
+        )
+    }
+
+    pub fn root_input() -> Self {
+        Self::root_enum(MacroPosition::RootInput)
+    }
+
+    pub fn root_output() -> Self {
+        Self::root_enum(MacroPosition::RootOutput)
+    }
+
+    pub fn root_namespace() -> Self {
+        Self::with_cases(
+            MacroPosition::RootNamespace,
+            MacroDispatch::RootPositional,
+            vec![MacroNodeCase::block(
+                "namespace map",
+                MacroNodeBlockConstraint::new(
+                    Some(MacroNodeDelimiter::Brace),
+                    MacroNodeObjectCount::Even,
+                ),
+            )],
+        )
+    }
+
+    pub fn namespace_declaration() -> Self {
+        Self::with_cases(
+            MacroPosition::NamespaceDeclaration,
+            MacroDispatch::Structural,
+            vec![
+                MacroNodeCase::pair(
+                    "struct declaration",
+                    MacroNodePairConstraint::new(
+                        MacroNodeKeyConstraint::Symbol,
+                        MacroNodeValueConstraint::Delimited(MacroNodeDelimiter::Brace),
+                    ),
+                ),
+                MacroNodeCase::pair(
+                    "enum declaration",
+                    MacroNodePairConstraint::new(
+                        MacroNodeKeyConstraint::Symbol,
+                        MacroNodeValueConstraint::Delimited(MacroNodeDelimiter::SquareBracket),
+                    ),
+                ),
+                MacroNodeCase::pair(
+                    "newtype declaration",
+                    MacroNodePairConstraint::new(
+                        MacroNodeKeyConstraint::Symbol,
+                        MacroNodeValueConstraint::TypeReferenceLike,
+                    ),
+                ),
+            ],
+        )
+    }
+
+    pub fn struct_fields() -> Self {
+        Self::with_cases(
+            MacroPosition::StructFields,
+            MacroDispatch::Structural,
+            vec![
+                MacroNodeCase::pair(
+                    "explicit field",
+                    MacroNodePairConstraint::new(
+                        MacroNodeKeyConstraint::CamelCaseSymbol,
+                        MacroNodeValueConstraint::TypeReferenceLike,
+                    ),
+                ),
+                MacroNodeCase::pair(
+                    "derived field",
+                    MacroNodePairConstraint::new(
+                        MacroNodeKeyConstraint::PascalCaseSymbol,
+                        MacroNodeValueConstraint::SameTypeMarker,
+                    ),
+                ),
+            ],
+        )
+    }
+
+    pub fn enum_variants() -> Self {
+        Self::with_cases(
+            MacroPosition::EnumVariants,
+            MacroDispatch::Structural,
+            vec![
+                MacroNodeCase::block(
+                    "unit variant",
+                    MacroNodeBlockConstraint::new(None, MacroNodeObjectCount::Exact(0)),
+                ),
+                MacroNodeCase::pair(
+                    "data variant",
+                    MacroNodePairConstraint::new(
+                        MacroNodeKeyConstraint::SigilSuffix('@'),
+                        MacroNodeValueConstraint::TypeReferenceLike,
+                    ),
+                ),
+            ],
+        )
+    }
+
+    pub fn type_reference() -> Self {
+        Self::with_cases(
+            MacroPosition::TypeReference,
+            MacroDispatch::StructuralOrTaggedInvocation,
+            vec![
+                MacroNodeCase::block(
+                    "plain or scalar reference",
+                    MacroNodeBlockConstraint::new(None, MacroNodeObjectCount::Exact(0)),
+                ),
+                MacroNodeCase::block(
+                    "composite or tagged invocation",
+                    MacroNodeBlockConstraint::new(
+                        Some(MacroNodeDelimiter::Parenthesis),
+                        MacroNodeObjectCount::Any,
+                    ),
+                ),
+            ],
+        )
+    }
+
+    fn root_enum(position: MacroPosition) -> Self {
+        Self::with_cases(
+            position,
+            MacroDispatch::RootPositional,
+            vec![
+                MacroNodeCase::block(
+                    "root enum body",
+                    MacroNodeBlockConstraint::new(
+                        Some(MacroNodeDelimiter::SquareBracket),
+                        MacroNodeObjectCount::Any,
+                    ),
+                ),
+                MacroNodeCase::block(
+                    "legacy named root enum body",
+                    MacroNodeBlockConstraint::new(
+                        Some(MacroNodeDelimiter::PipeParenthesis),
+                        MacroNodeObjectCount::Any,
+                    ),
+                ),
+            ],
+        )
     }
 
     pub fn position(&self) -> MacroPosition {
@@ -273,6 +459,26 @@ impl MacroNodeDefinition {
 
     pub fn dispatch(&self) -> MacroDispatch {
         self.dispatch
+    }
+
+    pub fn cases(&self) -> &[MacroNodeCase] {
+        &self.cases
+    }
+
+    pub fn has_cases(&self) -> bool {
+        !self.cases.is_empty()
+    }
+
+    pub fn matches(&self, object: MacroObject<'_>) -> bool {
+        self.cases.iter().any(|case| case.matches(object))
+    }
+
+    pub fn unsupported_structure_error(&self, object: MacroObject<'_>) -> SchemaError {
+        SchemaError::UnsupportedMacroNodeStructure {
+            position: self.position.as_str().to_owned(),
+            expected: self.cases.iter().map(MacroNodeCase::description).collect(),
+            found: object.describe(),
+        }
     }
 
     pub fn accepts_tagged_invocation(&self) -> bool {
@@ -289,6 +495,265 @@ pub enum MacroDispatch {
     Structural,
     TaggedInvocation,
     StructuralOrTaggedInvocation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MacroNodeCase {
+    name: String,
+    object: MacroNodeObjectConstraint,
+}
+
+impl MacroNodeCase {
+    pub fn block(name: impl Into<String>, block: MacroNodeBlockConstraint) -> Self {
+        Self {
+            name: name.into(),
+            object: MacroNodeObjectConstraint::Block(block),
+        }
+    }
+
+    pub fn pair(name: impl Into<String>, pair: MacroNodePairConstraint) -> Self {
+        Self {
+            name: name.into(),
+            object: MacroNodeObjectConstraint::Pair(pair),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn matches(&self, object: MacroObject<'_>) -> bool {
+        self.object.matches(object)
+    }
+
+    pub fn description(&self) -> String {
+        format!("{}: {}", self.name, self.object.description())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MacroNodeObjectConstraint {
+    Block(MacroNodeBlockConstraint),
+    Pair(MacroNodePairConstraint),
+}
+
+impl MacroNodeObjectConstraint {
+    pub fn matches(&self, object: MacroObject<'_>) -> bool {
+        match self {
+            Self::Block(constraint) => object
+                .block()
+                .is_some_and(|block| constraint.matches(block)),
+            Self::Pair(constraint) => object.pair().is_some_and(|pair| constraint.matches(pair)),
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match self {
+            Self::Block(constraint) => constraint.description(),
+            Self::Pair(constraint) => constraint.description(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MacroNodeBlockConstraint {
+    delimiter: Option<MacroNodeDelimiter>,
+    object_count: MacroNodeObjectCount,
+}
+
+impl MacroNodeBlockConstraint {
+    pub fn new(delimiter: Option<MacroNodeDelimiter>, object_count: MacroNodeObjectCount) -> Self {
+        Self {
+            delimiter,
+            object_count,
+        }
+    }
+
+    pub fn matches(&self, block: &Block) -> bool {
+        self.delimiter_matches(block) && self.object_count.matches(block.holds_root_objects())
+    }
+
+    pub fn description(&self) -> String {
+        let delimiter = self
+            .delimiter
+            .map(|delimiter| delimiter.as_str())
+            .unwrap_or("any delimiter or atom");
+        format!(
+            "block delimiter={delimiter} count={}",
+            self.object_count.as_str()
+        )
+    }
+
+    fn delimiter_matches(&self, block: &Block) -> bool {
+        match self.delimiter {
+            Some(expected) => MacroNodeDelimiter::from_block(block) == Some(expected),
+            None => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacroNodeObjectCount {
+    Any,
+    Even,
+    Exact(usize),
+}
+
+impl MacroNodeObjectCount {
+    pub fn matches(&self, found: usize) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Even => found % 2 == 0,
+            Self::Exact(expected) => found == *expected,
+        }
+    }
+
+    pub fn as_str(&self) -> String {
+        match self {
+            Self::Any => "any".to_owned(),
+            Self::Even => "even".to_owned(),
+            Self::Exact(expected) => expected.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MacroNodePairConstraint {
+    key: MacroNodeKeyConstraint,
+    value: MacroNodeValueConstraint,
+}
+
+impl MacroNodePairConstraint {
+    pub fn new(key: MacroNodeKeyConstraint, value: MacroNodeValueConstraint) -> Self {
+        Self { key, value }
+    }
+
+    pub fn matches(&self, pair: MacroPair<'_>) -> bool {
+        self.key.matches(pair.name) && self.value.matches(pair.definition)
+    }
+
+    pub fn description(&self) -> String {
+        format!(
+            "pair key={} value={}",
+            self.key.description(),
+            self.value.description()
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacroNodeKeyConstraint {
+    Symbol,
+    PascalCaseSymbol,
+    CamelCaseSymbol,
+    SigilSuffix(char),
+}
+
+impl MacroNodeKeyConstraint {
+    pub fn matches(&self, block: &Block) -> bool {
+        let Some(text) = block.demote_to_string() else {
+            return false;
+        };
+        match self {
+            Self::Symbol => block.schema_name().is_ok(),
+            Self::PascalCaseSymbol => Self::starts_with_case(text, char::is_ascii_uppercase),
+            Self::CamelCaseSymbol => Self::starts_with_case(text, char::is_ascii_lowercase),
+            Self::SigilSuffix(sigil) => text
+                .strip_suffix(*sigil)
+                .is_some_and(|name| !name.is_empty()),
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match self {
+            Self::Symbol => "symbol".to_owned(),
+            Self::PascalCaseSymbol => "PascalCase symbol".to_owned(),
+            Self::CamelCaseSymbol => "camelCase symbol".to_owned(),
+            Self::SigilSuffix(sigil) => format!("symbol ending with {sigil}"),
+        }
+    }
+
+    fn starts_with_case(text: &str, predicate: fn(&char) -> bool) -> bool {
+        !text.contains('@')
+            && text
+                .chars()
+                .next()
+                .is_some_and(|character| predicate(&character))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacroNodeValueConstraint {
+    Delimited(MacroNodeDelimiter),
+    TypeReferenceLike,
+    SameTypeMarker,
+}
+
+impl MacroNodeValueConstraint {
+    pub fn matches(&self, block: &Block) -> bool {
+        match self {
+            Self::Delimited(expected) => MacroNodeDelimiter::from_block(block) == Some(*expected),
+            Self::TypeReferenceLike => Self::is_type_reference_like(block),
+            Self::SameTypeMarker => block.demote_to_string() == Some("*"),
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match self {
+            Self::Delimited(delimiter) => delimiter.as_str().to_owned(),
+            Self::TypeReferenceLike => "type reference".to_owned(),
+            Self::SameTypeMarker => "*".to_owned(),
+        }
+    }
+
+    fn is_type_reference_like(block: &Block) -> bool {
+        match block {
+            Block::Atom(atom) => atom.qualifies_as_symbol(),
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            } => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacroNodeDelimiter {
+    Parenthesis,
+    SquareBracket,
+    Brace,
+    PipeParenthesis,
+    PipeBrace,
+}
+
+impl MacroNodeDelimiter {
+    pub fn from_block(block: &Block) -> Option<Self> {
+        match block {
+            Block::Delimited { delimiter, .. } => Some(Self::from_nota(*delimiter)),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Parenthesis => "parenthesis",
+            Self::SquareBracket => "square bracket",
+            Self::Brace => "brace",
+            Self::PipeParenthesis => "pipe parenthesis",
+            Self::PipeBrace => "pipe brace",
+        }
+    }
+
+    fn from_nota(delimiter: Delimiter) -> Self {
+        match delimiter {
+            Delimiter::Parenthesis => Self::Parenthesis,
+            Delimiter::SquareBracket => Self::SquareBracket,
+            Delimiter::Brace => Self::Brace,
+            Delimiter::PipeParenthesis => Self::PipeParenthesis,
+            Delimiter::PipeBrace => Self::PipeBrace,
+        }
+    }
 }
 
 pub(crate) trait BlockDebug {

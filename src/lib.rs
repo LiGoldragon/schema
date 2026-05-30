@@ -20,7 +20,9 @@ pub use declarative::{
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
 pub use macros::{
-    MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
+    MacroContext, MacroDispatch, MacroNodeBlockConstraint, MacroNodeCase, MacroNodeDefinition,
+    MacroNodeDelimiter, MacroNodeKeyConstraint, MacroNodeObjectConstraint, MacroNodeObjectCount,
+    MacroNodePairConstraint, MacroNodeValueConstraint, MacroObject, MacroOutput, MacroPair,
     MacroPosition, MacroRegistry, SchemaMacro,
 };
 pub use module::{SchemaModuleSource, SchemaPackage};

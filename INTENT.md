@@ -163,6 +163,22 @@ and Rust emission treats it as a real tuple newtype.*
 syntax remain compatibility surfaces in the parser and macro engine while
 existing fixtures migrate. They are not the authored-schema target.*
 
+*Macro nodes are first-class structural expectations, not just prose around
+registered Rust macros. A macro node definition carries named cases with
+position, input object kind, delimiter constraints, object-count constraints,
+key qualification rules, and value-shape rules. For namespace declarations,
+the key/value pair itself is the semantic macro-node object: symbol+brace
+matches a struct declaration, symbol+bracket matches an enum declaration, and
+symbol+reference matches a newtype declaration. Unsupported shapes should fail
+as unsupported macro-node structure with the expected cases listed, not as
+opaque parser magic.*
+
+*The long-term macro-node mechanism belongs at the NOTA layer so other
+consumers can reuse it. Schema-next may host the bootstrap structural cases
+while the stack converges, but the target split is: nota-next owns structural
+macro-node dispatch and typed matches/captures; schema-next registers the
+schema vocabulary and lowers matches into assembled-schema fragments.*
+
 *For `name@( ... )`, the parenthesized body is resolved at the
 assembled-schema reference layer: recognized type-reference heads such as
 `Vec`, `Optional`, and `Map` remain composite references, and future user macro

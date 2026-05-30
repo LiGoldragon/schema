@@ -7,8 +7,8 @@ use crate::{
     },
     declarative::{AssembledFields, AssembledVariants, DeclarativeMacroLibrary},
     macros::{
-        MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
-        MacroPosition, MacroRegistry, SchemaBlockExt, SchemaMacro,
+        MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
+        MacroRegistry, SchemaBlockExt, SchemaMacro,
     },
     resolution::ImportResolver,
 };
@@ -81,6 +81,11 @@ pub enum SchemaError {
         found: String,
     },
     MalformedSchemaNode {
+        found: String,
+    },
+    UnsupportedMacroNodeStructure {
+        position: String,
+        expected: Vec<String>,
         found: String,
     },
     MacroDidNotMatch {
@@ -365,38 +370,14 @@ impl SchemaEngine {
 impl MacroRegistry {
     pub fn with_schema_defaults() -> Self {
         let mut registry = Self::new();
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::RootImports,
-            MacroDispatch::RootPositional,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::RootInput,
-            MacroDispatch::RootPositional,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::RootOutput,
-            MacroDispatch::RootPositional,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::RootNamespace,
-            MacroDispatch::RootPositional,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::NamespaceDeclaration,
-            MacroDispatch::Structural,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::StructFields,
-            MacroDispatch::Structural,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::EnumVariants,
-            MacroDispatch::Structural,
-        ));
-        registry.register_node_definition(MacroNodeDefinition::new(
-            MacroPosition::TypeReference,
-            MacroDispatch::StructuralOrTaggedInvocation,
-        ));
+        registry.register_node_definition(MacroNodeDefinition::root_imports());
+        registry.register_node_definition(MacroNodeDefinition::root_input());
+        registry.register_node_definition(MacroNodeDefinition::root_output());
+        registry.register_node_definition(MacroNodeDefinition::root_namespace());
+        registry.register_node_definition(MacroNodeDefinition::namespace_declaration());
+        registry.register_node_definition(MacroNodeDefinition::struct_fields());
+        registry.register_node_definition(MacroNodeDefinition::enum_variants());
+        registry.register_node_definition(MacroNodeDefinition::type_reference());
         registry.register(RootImportsMacro::new());
         registry.register(RootEnumMacro::new(
             "RootInput",
@@ -424,6 +405,7 @@ impl MacroRegistry {
 #[derive(Clone, Debug)]
 struct KeyValueDeclarationMacro {
     signature: MacroSignature,
+    node: MacroNodeDefinition,
 }
 
 impl KeyValueDeclarationMacro {
@@ -434,6 +416,7 @@ impl KeyValueDeclarationMacro {
                 MacroPosition::NamespaceDeclaration,
                 "Name value",
             ),
+            node: MacroNodeDefinition::namespace_declaration(),
         }
     }
 }
@@ -444,7 +427,7 @@ impl SchemaMacro for KeyValueDeclarationMacro {
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        self.signature.accepts_position(position) && object.pair().is_some()
+        self.signature.accepts_position(position) && self.node.matches(object)
     }
 
     fn lower(
