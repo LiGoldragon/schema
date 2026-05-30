@@ -1,23 +1,23 @@
 Input@[]
 Output@[]
 {
-  CoreSchema@{ builtinMacroPositions@BuiltinMacroPositions builtinMacroShapes@BuiltinMacroShapes builtinMacroOutputs@BuiltinMacroOutputs builtinMacroDefinitions@BuiltinMacroDefinitions }
-  BuiltinMacroPositions@{ macroPosition@MacroPosition }
-  BuiltinMacroShapes@{ macroShape@MacroShape }
-  BuiltinMacroOutputs@{ macroOutputKind@MacroOutputKind }
-  BuiltinMacroDefinitions@{ schemaMacro@SchemaMacro }
-  SchemaMacro@{ macroName@MacroName macroPosition@MacroPosition macroPattern@MacroPattern macroTemplate@MacroTemplate }
-  MacroName@{ string@String }
+  CoreSchema@{ @BuiltinMacroPositions @BuiltinMacroShapes @BuiltinMacroOutputs @BuiltinMacroDefinitions }
+  BuiltinMacroPositions@{ macroPosition@(Vec MacroPosition) }
+  BuiltinMacroShapes@{ macroShape@(Vec MacroShape) }
+  BuiltinMacroOutputs@{ macroOutputKind@(Vec MacroOutputKind) }
+  BuiltinMacroDefinitions@{ schemaMacro@(Vec SchemaMacro) }
+  SchemaMacro@{ @MacroName @MacroPosition @MacroPattern @MacroTemplate }
+  MacroName@String
   MacroPattern@{ object@MacroPatternObject }
   MacroPatternObjects@{ values@(Vec MacroPatternObject) }
   MacroPatternObject@[Capture@MacroCaptureName RestCapture@MacroCaptureName Atom@MacroAtom Delimited@MacroPatternDelimited]
-  MacroPatternDelimited@{ delimiter@MacroDelimiter children@MacroPatternObjects }
+  MacroPatternDelimited@{ delimiter@MacroDelimiter @MacroPatternObjects }
   MacroTemplate@{ object@MacroTemplateObject }
   MacroTemplateObjects@{ values@(Vec MacroTemplateObject) }
   MacroTemplateObject@[Capture@MacroCaptureName RestCapture@MacroCaptureName Atom@MacroAtom Delimited@MacroTemplateDelimited]
-  MacroTemplateDelimited@{ delimiter@MacroDelimiter children@MacroTemplateObjects }
-  MacroCaptureName@{ string@String }
-  MacroAtom@{ string@String }
+  MacroTemplateDelimited@{ delimiter@MacroDelimiter @MacroTemplateObjects }
+  MacroCaptureName@String
+  MacroAtom@String
   MacroDelimiter@[SquareBracket Brace Parenthesis PipeParenthesis PipeBrace]
   MacroPosition@[RootImports RootInput RootOutput RootNamespace NamespaceDeclaration StructFields EnumVariants TypeReference]
   MacroShape@[BraceMap ParenthesisEnum SquareStruct KeyValueDeclaration VariantDefinition Symbol]

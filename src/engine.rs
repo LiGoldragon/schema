@@ -2,7 +2,8 @@ use nota_next::{Block, Document};
 
 use crate::{
     asschema::{
-        Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name, TypeReference,
+        Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
+        NewtypeDeclaration, TypeDeclaration, TypeReference,
     },
     declarative::{AssembledVariants, DeclarativeMacroLibrary},
     macros::{
@@ -389,6 +390,7 @@ impl MacroRegistry {
             "Output",
         ));
         registry.register(RootNamespaceMacro::new());
+        registry.register(SimpleNewtypeDeclarationMacro::new());
         for schema_macro in DeclarativeMacroLibrary::builtin()
             .expect("builtin schema macros parse")
             .into_macros()
@@ -396,6 +398,89 @@ impl MacroRegistry {
             registry.register_box(schema_macro);
         }
         registry
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SimpleNewtypeDeclarationMacro {
+    signature: MacroSignature,
+}
+
+impl SimpleNewtypeDeclarationMacro {
+    fn new() -> Self {
+        Self {
+            signature: MacroSignature::new(
+                "SimpleNewtypeDeclaration",
+                MacroPosition::NamespaceDeclaration,
+                "Name@Type",
+            ),
+        }
+    }
+}
+
+impl SchemaMacro for SimpleNewtypeDeclarationMacro {
+    fn name(&self) -> &str {
+        self.signature.name()
+    }
+
+    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
+        self.signature.accepts_position(position)
+            && object
+                .block()
+                .and_then(SimpleNewtypeDeclarationBlock::from_block)
+                .is_some()
+    }
+
+    fn lower(
+        &self,
+        object: MacroObject<'_>,
+        position: MacroPosition,
+        context: &mut MacroContext,
+        _registry: &MacroRegistry,
+    ) -> Result<MacroOutput, SchemaError> {
+        self.signature.remember(position, context);
+        let block = object.block().ok_or(SchemaError::ExpectedDelimiter {
+            expected: self.signature.expected_delimiter(),
+        })?;
+        let declaration = SimpleNewtypeDeclarationBlock::from_block(block).ok_or(
+            SchemaError::ExpectedDelimiter {
+                expected: self.signature.expected_delimiter(),
+            },
+        )?;
+        Ok(MacroOutput::Type(TypeDeclaration::Newtype(
+            NewtypeDeclaration::new(
+                declaration.name().clone(),
+                TypeReference::from_name(declaration.reference().clone()),
+            ),
+        )))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SimpleNewtypeDeclarationBlock {
+    name: Name,
+    reference: Name,
+}
+
+impl SimpleNewtypeDeclarationBlock {
+    fn from_block(block: &Block) -> Option<Self> {
+        let text = block.demote_to_string()?;
+        let (name, reference) = text.split_once('@')?;
+        if name.is_empty() || reference.is_empty() || reference.contains('@') {
+            return None;
+        }
+        Some(Self {
+            name: Name::new(name),
+            reference: Name::new(reference),
+        })
+    }
+
+    fn name(&self) -> &Name {
+        &self.name
+    }
+
+    fn reference(&self) -> &Name {
+        &self.reference
     }
 }
 
@@ -610,6 +695,9 @@ impl<'schema> NamespaceDeclarationBlock<'schema> {
     }
 
     fn name(&self) -> Result<Name, SchemaError> {
+        if let Some(declaration) = SimpleNewtypeDeclarationBlock::from_block(self.object) {
+            return Ok(declaration.name().clone());
+        }
         self.object
             .root_object_at(0)
             .ok_or(SchemaError::ExpectedDelimiter {

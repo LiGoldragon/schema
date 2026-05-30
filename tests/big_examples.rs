@@ -111,9 +111,8 @@ fn assert_has_type(declarations: &[Declaration], name: &str) {
     let found = declarations
         .iter()
         .any(|declaration| match declaration.value() {
-            TypeDeclaration::Struct(declaration) | TypeDeclaration::Newtype(declaration) => {
-                declaration.name.as_str() == name
-            }
+            TypeDeclaration::Struct(declaration) => declaration.name.as_str() == name,
+            TypeDeclaration::Newtype(declaration) => declaration.name.as_str() == name,
             TypeDeclaration::Enum(declaration) => declaration.name.as_str() == name,
         });
     assert!(found, "missing namespace type {name}");

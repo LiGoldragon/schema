@@ -64,7 +64,13 @@ visibility, declared name, and type value.
 A struct value in asschema is a field-name -> type-reference map. The Rust
 `StructFieldMap` stores the map in source order because generated Rust field
 order and rkyv layout are load-bearing, but the semantic object is the brace
-map shape that `Name@{ field@Type ... }` expands into.
+map shape that `Name@{ @Type field@OtherType ... }` expands into.
+
+A newtype value in asschema is a single contained type reference, not a
+one-field struct map with an invented field name. Its long form is
+`(Public Topic { String })`, not `(Public Topic { text String })`, and the
+Rust emitter consumes the contained reference directly when emitting a tuple
+newtype.
 
 ## Core Macro Schema
 
@@ -84,7 +90,11 @@ The authored syntax is name-first `@` binding:
 
 - `Name@{ ... }` lowers to the same struct declaration data.
 - `Name@[ ... ]` lowers to enum declaration data.
-- `name@Type` binds a field/member name to a reference.
+- `@Type` inside a struct body binds a field/member by deriving the field name
+  from the already-defined type (`@Topics` -> `topics: Topics`).
+- `@Type` inside an enum body creates a data-carrying variant whose variant
+  name and payload type are both `Type`.
+- `name@Type` explicitly binds a field/member name to a reference.
 - `name@(Composite Type)` binds a field/member name to a structural reference
   without losing the referenced object's parentheses.
 
@@ -159,9 +169,12 @@ module schema and checking that the imported type is declared there.
 - `Name@[...]` defines authored enum declarations. The older
   `Name@(...)` and `Name (| Name ... |)` forms are compatibility syntax.
 - Braces are key/value maps only. They are not enum sugar.
-- `Name@{ field@Reference ... }` defines authored struct declarations; the
-  one-field form remains a newtype struct. Lowercase/camelCase names bind
-  fields. PascalCase names declare or reference schema types. The older
+- `Name@{ @Reference field@Reference ... }` defines authored struct
+  declarations. `@Reference` derives the field name from an existing type;
+  explicit `field@Reference` remains available when the field name differs.
+  The one-reference form lowers to an asschema newtype, represented as a
+  single contained type rather than a field-name map. Lowercase/camelCase names
+  bind fields. PascalCase names declare or reference schema types. The older
   `Name {| Name ... |}` pipe-brace form is compatibility syntax.
 - Plain square brackets are NOTA vector/bracket structure. They may appear as
   macro payload data or value data, but they are not the authored declaration

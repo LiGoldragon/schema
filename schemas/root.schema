@@ -1,21 +1,22 @@
 Input@[]
 Output@[]
 {
-  Schema@{ input@Input output@Output namespace@Namespace }
-  Imports@{ importDeclaration@ImportDeclaration }
+  Schema@{ @Input @Output @Namespace }
+  Imports@{ importDeclaration@(Vec ImportDeclaration) }
   Namespace@{ declaration@(Vec Declaration) }
-  ImportDeclaration@{ name@Name typeReference@TypeReference }
+  ImportDeclaration@{ @Name source@TypeReference }
   Declaration@[Public@NamedTypeDeclaration Private@NamedTypeDeclaration]
-  NamedTypeDeclaration@{ name@Name value@TypeDeclaration }
-  TypeDeclaration@[Struct@StructDeclaration Enum@EnumDeclaration Newtype@StructDeclaration]
-  StructDeclaration@{ name@Name fields@StructFieldMap }
+  NamedTypeDeclaration@{ @Name value@TypeDeclaration }
+  TypeDeclaration@[Struct@StructDeclaration Enum@EnumDeclaration Newtype@NewtypeDeclaration]
+  StructDeclaration@{ @Name @StructFieldMap }
+  NewtypeDeclaration@{ @Name reference@TypeReference }
   StructFieldMap@{ fieldDeclaration@(Vec FieldDeclaration) }
-  FieldDeclaration@{ name@Name typeReference@TypeReference }
-  EnumDeclaration@{ name@Name variants@Variants }
+  FieldDeclaration@{ @Name reference@TypeReference }
+  EnumDeclaration@{ @Name @Variants }
   Variants@{ variantDeclaration@VariantDeclaration }
-  VariantDeclaration@{ name@Name payload@Payload }
+  VariantDeclaration@{ @Name @Payload }
   Payload@[Unit Carries@TypeReference]
   TypeReference@[String Integer Boolean Path Plain@Name Vector@TypeReference Map@TypeReferencePair Optional@TypeReference]
   TypeReferencePair@{ key@TypeReference value@TypeReference }
-  Name@{ string@String }
+  Name@String
 }

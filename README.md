@@ -22,8 +22,12 @@ raw vector structure and schema struct field lists, not `Vec` type syntax.
 Composite type references are typed NOTA objects such as `(Vec Topic)`,
 `(Map (Topic RecordIdentifier))`, and `(Optional Topic)`. Authored datatype
 declarations use name-first `@` forms: `Kind@[Decision Correction]` for enums
-and `Entry@{ topic@Topic description@String }` for structs. Struct declarations
-lower to the asschema key/value map form: field name -> type reference.
+and `Entry@{ @Topic description@String }` for structs. Inside a struct body,
+`@Topic` derives the field name from the existing type (`topic`); explicit
+`field@Type` remains available when the field name differs from the payload
+type. Struct declarations lower to the asschema key/value map form:
+field name -> type reference. Newtypes lower as one contained type reference,
+not as a one-entry field map.
 
 Rust code emission is not here. It lives in `schema-rust-next`.
 

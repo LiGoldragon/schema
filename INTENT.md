@@ -115,16 +115,17 @@ tagged schema nodes only when the expected type is `SchemaNode` or another
 tag-plus-payload struct.*
 
 *Authored schema declarations use name-first `@` binding. A namespace entry
-declares a struct with `Type@{ field@Reference ... }` and an enum with
-`Type@[Variant Variant@Payload ...]`. Plain `[]` and `()` remain legal NOTA
-values, but only the `@[` binding form is the declaration syntax for a schema
-enum datatype; parentheses remain the composite/type-reference and macro-call
-argument form (`(Vec Entry)`, `(Optional Kind)`, `(Map (Key Value))`).
-Lowercase/camelCase member names bind fields; PascalCase names declare or
-reference schema types. The `@` is a declaration/binding sigil, not the
-macro-call sigil rejected by the schema-node model. The schema root is always
-the known root struct whose name comes from the filename, so it does not need a
-delimiter or `@` wrapper.*
+declares a struct with `Type@{ @Reference explicit@Reference ... }` and an
+enum with `Type@[Variant @SameNamePayload Variant@Payload ...]`. Plain `[]`
+and `()` remain legal NOTA values, but only the `@[` binding form is the
+declaration syntax for a schema enum datatype; parentheses remain the
+composite/type-reference and macro-call argument form (`(Vec Entry)`,
+`(Optional Kind)`, `(Map (Key Value))`). Lowercase/camelCase member names bind
+explicit fields; `@PascalCase` derives a field or data-carrying variant from
+an existing type. PascalCase names declare or reference schema types. The `@`
+is a declaration/binding sigil, not the macro-call sigil rejected by the
+schema-node model. The schema root is always the known root struct whose name
+comes from the filename, so it does not need a delimiter or `@` wrapper.*
 
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
@@ -138,6 +139,11 @@ be referenced later in the same module.*
 type reference. The implementation may preserve source order internally for
 Rust field order and rkyv layout, but the semantic object is a brace map:
 field key -> type-reference value.*
+
+*A newtype declaration's assembled value is a single contained type reference,
+not a one-field map with an invented field name. The intended long-form
+notation is `(Public Topic { String })`, not `(Public Topic { text String })`,
+and Rust emission treats it as a real tuple newtype.*
 
 *The earlier pipe-family declaration syntax remains a compatibility surface
 in the parser and macro engine while existing fixtures migrate. It is not the

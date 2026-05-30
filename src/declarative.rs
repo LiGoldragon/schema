@@ -2,8 +2,8 @@ use nota_next::{Block, Delimiter, Document};
 
 use crate::{
     EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject, MacroOutput,
-    MacroPair, MacroPosition, MacroRegistry, Name, SchemaError, SchemaMacro, StructDeclaration,
-    TypeDeclaration, TypeReference, macros::SchemaBlockExt,
+    MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError, SchemaMacro,
+    StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -732,11 +732,15 @@ impl<'template> AssembledType<'template> {
                 });
             }
         };
-        let declaration = StructDeclaration::new(name, fields);
-        if declaration.fields.len() == 1 {
-            Ok(TypeDeclaration::Newtype(declaration))
+        if fields.len() == 1 {
+            let reference = fields.into_iter().next().expect("length checked").reference;
+            Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+                name, reference,
+            )))
         } else {
-            Ok(TypeDeclaration::Struct(declaration))
+            Ok(TypeDeclaration::Struct(StructDeclaration::new(
+                name, fields,
+            )))
         }
     }
 
@@ -831,15 +835,14 @@ impl<'template> AssembledFields<'template> {
 
 /// One field inside a struct body.
 ///
-/// A bare PascalCase symbol (`Topic`) derives the field name from the
-/// type name (`topic`) and creates a `Plain` reference. Native NOTA
+/// `@Topic` derives the field name from an already-declared type
+/// (`topic`) and creates a `Plain` reference. Native NOTA
 /// type-reference objects can also sit directly in a field position:
 /// `(Vec Topic)`, `(Map (Topic RecordIdentifier))`, and
 /// `(Optional Topic)` lower to vector, map, and optional references
 /// with names derived from the reference shape. A parenthesised pair
-/// whose first object is a
-/// lower-case field symbol remains the explicit escape hatch for
-/// uncommon names.
+/// whose first object is a lower-case field symbol remains the
+/// explicit escape hatch for uncommon names.
 #[derive(Clone, Copy, Debug)]
 struct AssembledField<'template> {
     object: &'template Block,
@@ -1045,6 +1048,16 @@ struct AssembledBinding {
 impl AssembledBinding {
     fn from_block(block: &Block) -> Option<Self> {
         let text = block.demote_to_string()?;
+        if let Some(reference) = text.strip_prefix('@') {
+            if reference.is_empty() || reference.contains('@') {
+                return None;
+            }
+            let reference = Name::new(reference);
+            return Some(Self {
+                name: reference.clone(),
+                reference,
+            });
+        }
         let (name, reference) = text.split_once('@')?;
         if name.is_empty() || reference.is_empty() || reference.contains('@') {
             return None;

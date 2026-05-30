@@ -76,6 +76,28 @@ fn at_declarations_lower_to_structs_and_enums() {
 }
 
 #[test]
+fn simple_newtype_declarations_lower_to_single_contained_reference() {
+    let source = "Input@[] Output@[] { Topic@String Topics@{ (Vec Topic) } }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("newtype forms lower");
+
+    let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
+        panic!("Topic should be a newtype");
+    };
+    assert_eq!(topic.reference, TypeReference::String);
+
+    let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
+    else {
+        panic!("Topics should be a newtype");
+    };
+    assert_eq!(
+        topics.reference,
+        TypeReference::Vector(Box::new(TypeReference::new("Topic")))
+    );
+}
+
+#[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
     let source = "Input@[] Output@[] { (Entry Entry@{ topic@Topic kind@Kind }) }";
     let error = SchemaEngine::default()
@@ -130,7 +152,10 @@ fn colon_qualified_names_lower_as_schema_names() {
     let TypeDeclaration::Newtype(entry) = asschema.namespace()[1].value() else {
         panic!("single-field entry should be a newtype");
     };
-    assert_eq!(entry.fields[0].name, Name::new("topic"));
+    assert_eq!(
+        entry.reference,
+        TypeReference::Plain(Name::new("schema:spirit:Topic"))
+    );
 }
 
 #[test]
@@ -197,7 +222,7 @@ fn root_schema_describes_the_schema_root_type() {
         vec![
             ("Struct", Some("StructDeclaration")),
             ("Enum", Some("EnumDeclaration")),
-            ("Newtype", Some("StructDeclaration")),
+            ("Newtype", Some("NewtypeDeclaration")),
         ]
     );
 
@@ -284,7 +309,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         panic!("MacroPattern should be a newtype");
     };
     assert_eq!(
-        macro_pattern.fields[0]
+        macro_pattern
             .reference
             .plain_name()
             .expect("macro pattern object reference")
@@ -601,6 +626,70 @@ fn at_declaration_field_pairs_lower_through_default_engine() {
         TypeReference::Plain(Name::new("RecordIdentifier"))
     );
     assert_eq!(entry.fields[1].name, Name::new("description"));
+}
+
+#[test]
+fn at_type_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
+    let source = include_str!("fixtures/big-schemas/derived-members.schema");
+    let asschema = SchemaEngine::default()
+        .lower_source(
+            source,
+            SchemaIdentity::new("example:derived-members", "0.1.0"),
+        )
+        .expect("derived member schema lowers");
+
+    let TypeDeclaration::Struct(entry) = asschema.type_named("Entry").expect("entry type") else {
+        panic!("entry should be a struct");
+    };
+    assert_eq!(
+        entry
+            .fields
+            .iter()
+            .map(|field| (
+                field.name.as_str(),
+                field.reference.plain_name().map(Name::as_str)
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("topics", Some("Topics")),
+            ("kind", Some("Kind")),
+            ("description", Some("Description")),
+            ("magnitude", Some("Magnitude")),
+        ]
+    );
+
+    let TypeDeclaration::Struct(query) = asschema.type_named("Query").expect("query type") else {
+        panic!("query should remain a struct");
+    };
+    assert_eq!(query.fields[0].name.as_str(), "topics");
+    assert_eq!(
+        query.fields[1].reference,
+        TypeReference::Optional(Box::new(TypeReference::Integer))
+    );
+
+    let TypeDeclaration::Enum(some_enum) = asschema.type_named("SomeEnum").expect("some enum type")
+    else {
+        panic!("SomeEnum should be an enum");
+    };
+    assert_eq!(
+        some_enum
+            .variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["SomethingHoldingSomething", "SomethingElse", "SomeString"]
+    );
+    assert_eq!(
+        some_enum.variants[0].payload,
+        Some(TypeReference::Plain(Name::new("SomethingHoldingSomething")))
+    );
+    assert_eq!(some_enum.variants[1].payload, None);
+    assert_eq!(some_enum.variants[2].payload, Some(TypeReference::String));
+
+    let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
+        panic!("Topic should be a newtype");
+    };
+    assert_eq!(topic.reference, TypeReference::String);
 }
 
 #[test]

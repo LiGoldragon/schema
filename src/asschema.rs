@@ -209,15 +209,28 @@ impl Declaration {
 pub enum TypeDeclaration {
     Struct(StructDeclaration),
     Enum(EnumDeclaration),
-    Newtype(StructDeclaration),
+    Newtype(NewtypeDeclaration),
 }
 
 impl TypeDeclaration {
     pub fn name(&self) -> &Name {
         match self {
-            Self::Struct(declaration) | Self::Newtype(declaration) => &declaration.name,
+            Self::Struct(declaration) => &declaration.name,
+            Self::Newtype(declaration) => &declaration.name,
             Self::Enum(declaration) => &declaration.name,
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NewtypeDeclaration {
+    pub name: Name,
+    pub reference: TypeReference,
+}
+
+impl NewtypeDeclaration {
+    pub fn new(name: Name, reference: TypeReference) -> Self {
+        Self { name, reference }
     }
 }
 
@@ -457,12 +470,13 @@ impl TypeReference {
     ) -> Result<Self, SchemaError> {
         let name = Self::inline_declaration_name(objects, "inline struct declaration")?;
         let fields = AssembledFields::new(&objects[1..]).lower(registry, context)?;
-        let declaration = StructDeclaration::new(name.clone(), fields);
-        if declaration.fields.len() == 1 {
+        if fields.len() == 1 {
+            let reference = fields.into_iter().next().expect("length checked").reference;
             context.remember_inline_declaration(Declaration::private(TypeDeclaration::Newtype(
-                declaration,
+                NewtypeDeclaration::new(name.clone(), reference),
             )));
         } else {
+            let declaration = StructDeclaration::new(name.clone(), fields);
             context.remember_inline_declaration(Declaration::private(TypeDeclaration::Struct(
                 declaration,
             )));

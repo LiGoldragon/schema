@@ -1,0 +1,17 @@
+Input@[Record@Entry Observe@Query]
+Output@[Accepted@Receipt Failed@ErrorReport]
+{
+  RecordIdentifier@Integer
+  DatabaseMarker@Integer
+  Topic@String
+  Topics@{ (Vec Topic) }
+  Kind@[Decision Correction]
+  Description@String
+  Magnitude@[Low High]
+  SomethingHoldingSomething@String
+  Entry@{ @Topics @Kind @Description @Magnitude }
+  Query@{ @Topics limit@(Optional Integer) }
+  Receipt@{ @RecordIdentifier @DatabaseMarker }
+  ErrorReport@{ @Description }
+  SomeEnum@[ @SomethingHoldingSomething SomethingElse SomeString@String ]
+}

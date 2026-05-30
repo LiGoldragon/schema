@@ -138,10 +138,12 @@ impl SyntaxStructDeclaration {
                 continue;
             }
             let Some(reference_item) = items.get(index + 1) else {
-                return Err(SchemaError::ExpectedRawFieldPairCount {
-                    declaration: expected_name.as_str().to_owned(),
-                    found: items.len() - 1,
-                });
+                fields.push(SyntaxField::from_derived_reference(
+                    index - 1,
+                    &items[index],
+                )?);
+                index += 1;
+                continue;
             };
             fields.push(SyntaxField::from_named_pair(
                 index - 1,
@@ -189,6 +191,12 @@ impl SyntaxField {
         })
     }
 
+    fn from_derived_reference(index: usize, item: &RawNotaDatatype) -> Result<Self, SchemaError> {
+        let reference = SyntaxReference::from_raw(item)?.with_positional_fallback(index);
+        let name = reference.derived_field_name();
+        Ok(Self { name, reference })
+    }
+
     fn from_binding(index: usize, item: &RawNotaDatatype) -> Result<Option<Self>, SchemaError> {
         let Some(text) = item.as_atom() else {
             return Ok(None);
@@ -197,7 +205,7 @@ impl SyntaxField {
             return Ok(None);
         };
         Ok(Some(Self {
-            name: binding.name,
+            name: binding.field_name(),
             reference: SyntaxReference::Plain(binding.reference).with_positional_fallback(index),
         }))
     }
@@ -321,10 +329,30 @@ impl SyntaxVariant {
 struct SyntaxBinding {
     name: Name,
     reference: Name,
+    derives_name_from_reference: bool,
 }
 
 impl SyntaxBinding {
+    fn field_name(&self) -> Name {
+        if self.derives_name_from_reference {
+            Name::new(self.name.field_name())
+        } else {
+            self.name.clone()
+        }
+    }
+
     fn from_text(text: &str) -> Option<Self> {
+        if let Some(reference) = text.strip_prefix('@') {
+            if reference.is_empty() || reference.contains('@') {
+                return None;
+            }
+            let reference = Name::new(reference);
+            return Some(Self {
+                name: reference.clone(),
+                reference,
+                derives_name_from_reference: true,
+            });
+        }
         let (name, reference) = text.split_once('@')?;
         if name.is_empty() || reference.is_empty() || reference.contains('@') {
             return None;
@@ -332,6 +360,7 @@ impl SyntaxBinding {
         Some(Self {
             name: Name::new(name),
             reference: Name::new(reference),
+            derives_name_from_reference: false,
         })
     }
 }
@@ -463,6 +492,21 @@ impl SyntaxReference {
 
     fn with_positional_fallback(self, _index: usize) -> Self {
         self
+    }
+
+    fn derived_field_name(&self) -> Name {
+        match self {
+            Self::Plain(name) => Name::new(name.field_name()),
+            Self::Vector(inner) => Name::new(format!("{}_vector", inner.derived_field_name())),
+            Self::Optional(inner) => Name::new(format!("optional_{}", inner.derived_field_name())),
+            Self::Map(key, value) => Name::new(format!(
+                "{}_by_{}",
+                value.derived_field_name(),
+                key.derived_field_name()
+            )),
+            Self::InlineStruct(declaration) => Name::new(declaration.name().field_name()),
+            Self::InlineEnum(declaration) => Name::new(declaration.name().field_name()),
+        }
     }
 }
 

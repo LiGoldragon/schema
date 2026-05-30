@@ -1,11 +1,11 @@
 {
-  Text@{ string@String }
-  Identifier@{ integer@Integer }
-  Topic@{ text@Text }
-  Topics@{ values@(Vec Topic) }
+  Text@{ String }
+  Identifier@{ Integer }
+  Topic@{ @Text }
+  Topics@{ (Vec Topic) }
   TopicIndex@{ entries@(Map (Topic Identifier)) }
   Kind@[Decision Principle Correction Clarification Constraint]
-  Entry@{ topics@Topics kind@Kind description@Text related@TopicIndex maybeTopic@(Optional Topic) }
+  Entry@{ @Topics @Kind description@Text related@TopicIndex maybeTopic@(Optional Topic) }
   RecordQuery@{ topics@(Vec Topic) maximumCount@Integer }
   RecordReply@{ entries@(Vec Entry) }
   SpiritInput@[Record@Entry Observe@RecordQuery Ping]

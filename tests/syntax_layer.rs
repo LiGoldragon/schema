@@ -71,6 +71,48 @@ fn at_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
 }
 
 #[test]
+fn at_type_shorthand_derives_syntax_fields_and_variant_payloads() {
+    let schema = syntax_schema("tests/fixtures/syntax-layer/derived-members.schema");
+    let entry = struct_named(&schema, "Entry");
+
+    assert_eq!("topics", entry.fields()[0].name().as_str());
+    assert_eq!(&name_reference("Topics"), entry.fields()[0].reference());
+    assert_eq!("kind", entry.fields()[1].name().as_str());
+    assert_eq!(&name_reference("Kind"), entry.fields()[1].reference());
+    assert_eq!("description", entry.fields()[2].name().as_str());
+    assert_eq!(
+        &name_reference("Description"),
+        entry.fields()[2].reference()
+    );
+
+    let query = struct_named(&schema, "Query");
+    assert_eq!("topics", query.fields()[0].name().as_str());
+    assert_eq!(&name_reference("Topics"), query.fields()[0].reference());
+    assert_eq!("limit", query.fields()[1].name().as_str());
+    assert_eq!(
+        &SyntaxReference::Optional(Box::new(name_reference("Integer"))),
+        query.fields()[1].reference()
+    );
+
+    let some_enum = enum_declaration(&schema, "SomeEnum");
+    assert_eq!(
+        "SomethingHoldingSomething",
+        some_enum.variants()[0].name().as_str()
+    );
+    assert_eq!(
+        Some(&name_reference("SomethingHoldingSomething")),
+        some_enum.variants()[0].payload()
+    );
+    assert_eq!("SomethingElse", some_enum.variants()[1].name().as_str());
+    assert_eq!(None, some_enum.variants()[1].payload());
+    assert_eq!("SomeString", some_enum.variants()[2].name().as_str());
+    assert_eq!(
+        Some(&name_reference("String")),
+        some_enum.variants()[2].payload()
+    );
+}
+
+#[test]
 fn at_brace_at_datatype_declaration_position_creates_struct_field_lists() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/schema.schema");
     let text = struct_named(&schema, "Text");

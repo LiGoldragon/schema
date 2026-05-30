@@ -85,7 +85,7 @@ fn design_example_namespace_brace_contains_self_named_declarations() {
     let TypeDeclaration::Newtype(topic) = asschema.namespace()[0].value() else {
         panic!("Topic should lower as a newtype (single-field struct)");
     };
-    assert_eq!(topic.fields.len(), 1);
+    assert_eq!(topic.reference, TypeReference::String);
     let TypeDeclaration::Enum(kind) = asschema.namespace()[1].value() else {
         panic!("Kind should lower as an enum");
     };
@@ -431,13 +431,13 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
         panic!("StringNewtype macro creates a newtype");
     };
-    assert_eq!(topic.fields[0].reference, TypeReference::String);
+    assert_eq!(topic.reference, TypeReference::String);
     let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
     else {
         panic!("single-field Topics should be a newtype");
     };
     assert_eq!(
-        topics.fields[0].reference,
+        topics.reference,
         TypeReference::Vector(Box::new(TypeReference::new("Topic"))),
     );
 }
