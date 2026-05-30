@@ -97,9 +97,18 @@ rest captures, atoms, delimiter nodes, and ordered child vectors. That makes
 the macro shape itself schema data instead of a string blob.
 
 The current built-in registry still reads `schemas/builtin-macros.schema`
-through the hand-written declarative macro reader. The near target is to lower
-the core macro schema to asschema data, emit its Rust type, and make the macro
-registry consume a typed macro table value instead of bespoke parser structs.
+through the declarative macro reader, then projects those definitions into
+`MacroLibraryData`. That typed data object contains `MacroDefinitionData`,
+`MacroPatternData`, `MacroTemplateData`, delimiter values, captures, rest
+captures, atoms, and delimiter child trees. It can round-trip through NOTA,
+archive to binary bytes through its canonical NOTA representation, and rebuild
+the executable `DeclarativeMacroLibrary`.
+
+The near target is to lower the core macro schema to asschema data, emit its
+Rust type, and replace the transitional `MacroLibraryData` projection with the
+schema-emitted macro table type directly. That closes the remaining loop:
+macro table source -> asschema -> emitted Rust data type -> loaded macro
+library.
 
 ## At-Binding Declaration Syntax
 

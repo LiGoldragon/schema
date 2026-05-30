@@ -16,8 +16,8 @@
 
 use nota_next::Document;
 use schema_next::{
-    MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError, SchemaMacro,
-    TypeReference,
+    DeclarativeMacroLibrary, MacroContext, MacroLibraryData, MacroObject, MacroOutput,
+    MacroPosition, MacroRegistry, SchemaError, SchemaMacro, TypeDeclaration, TypeReference,
 };
 
 // ---------------------------------------------------------------------
@@ -262,6 +262,53 @@ fn object_count_match_distinguishes_by_root_object_count() {
         .expect("nota parses");
     let six_object = six.root_object_at(0).expect("root");
     assert!(!macro_obj.matches(MacroObject::Block(six_object), MacroPosition::RootInput));
+}
+
+#[test]
+fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
+    let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
+    let data = library.to_data();
+    assert_eq!(data.definitions().len(), 4);
+    assert!(
+        data.definitions()
+            .iter()
+            .any(|definition| definition.name().as_str() == "SchemaStructDefinition")
+    );
+
+    let nota = data.to_nota_source();
+    let from_nota = MacroLibraryData::from_nota_source(&nota).expect("macro data reads as NOTA");
+    assert_eq!(from_nota, data);
+
+    let bytes = from_nota
+        .to_binary_bytes()
+        .expect("macro data archives to rkyv");
+    let from_binary =
+        MacroLibraryData::from_binary_bytes(&bytes).expect("macro data reads from rkyv");
+    assert_eq!(from_binary, data);
+
+    let rehydrated_library = DeclarativeMacroLibrary::from_data(from_binary);
+    let mut registry = MacroRegistry::new();
+    for schema_macro in rehydrated_library.into_macros() {
+        registry.register_box(schema_macro);
+    }
+
+    let document = Document::parse("{| Entry Topic Kind |}").expect("macro input parses");
+    let object = document.root_object_at(0).expect("macro input root");
+    let output = registry
+        .lower(
+            MacroObject::Block(object),
+            MacroPosition::NamespaceDeclaration,
+            &mut MacroContext::default(),
+        )
+        .expect("typed-data macro lowers");
+
+    let MacroOutput::Type(TypeDeclaration::Struct(declaration)) = output else {
+        panic!("expected struct type output");
+    };
+    assert_eq!(declaration.name.as_str(), "Entry");
+    assert_eq!(declaration.fields.len(), 2);
+    assert_eq!(declaration.fields[0].name.as_str(), "topic");
+    assert_eq!(declaration.fields[1].name.as_str(), "kind");
 }
 
 // ---------------------------------------------------------------------

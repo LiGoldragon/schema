@@ -792,7 +792,7 @@ impl<'schema> RootEnumBlock<'schema> {
             .object
             .root_object_at(0)
             .and_then(Block::demote_to_string)
-            .ok_or_else(|| SchemaError::ExpectedDelimiter {
+            .ok_or(SchemaError::ExpectedDelimiter {
                 expected: "root enum name",
             })?;
         if declared == self.enum_name {

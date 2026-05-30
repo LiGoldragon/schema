@@ -48,7 +48,7 @@
           test = craneLib.cargoTest (commonArguments // { inherit cargoArtifacts; });
           design-examples = pkgs.runCommand "schema-next-design-examples" { } ''
             grep -R "design_example_schema_document_has_three_roots_or_four_with_imports" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_namespace_brace_is_pair_style_key_value_map" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_namespace_brace_contains_self_named_declarations" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_macro_captures_use_dollar_and_dollar_star_sigils" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
@@ -132,6 +132,8 @@
           '';
           declarative-schema-macros = pkgs.runCommand "schema-next-declarative-schema-macros" { } ''
             grep -R "DeclarativeMacroLibrary::builtin" ${src}/src/engine.rs >/dev/null
+            grep -R "pub struct MacroLibraryData" ${src}/src/declarative.rs >/dev/null
+            grep -R "builtin_macro_library_round_trips_as_typed_data_and_still_executes" ${src}/tests/macro_exploration.rs >/dev/null
             grep -R "SchemaStructDefinition" ${src}/schemas/builtin-macros.schema >/dev/null
             grep -R '\$Name' ${src}/schemas/builtin-macros.schema >/dev/null
             grep -R '\$\*Fields' ${src}/schemas/builtin-macros.schema >/dev/null
@@ -144,7 +146,7 @@
           '';
           namespace-braces-are-key-value = pkgs.runCommand "schema-next-namespace-braces-are-key-value" { } ''
             grep -R "brace_namespace_rejects_parenthesized_named_objects" ${src}/tests/lowering.rs >/dev/null
-            grep -R "brace_namespace_rejects_parenthesized_named_objects_even_when_count_is_even" ${src}/tests/lowering.rs >/dev/null
+            grep -R "brace_namespace_rejects_redundant_key_value_declarations" ${src}/tests/lowering.rs >/dev/null
             ! grep -R "NamedTypeDefinition" ${src}/src ${src}/schemas ${src}/tests
             ! grep -R -n -E '^  \([A-Z][A-Za-z0-9]* [\[\(]' ${src}/schemas/root.schema ${src}/schemas/core.schema ${src}/schemas/spirit-min.schema
             touch $out

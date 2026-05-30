@@ -191,5 +191,12 @@ Current implementation target:
 - `schemas/core.schema` describes macro pattern/template payloads as typed
   schema data (`MacroPatternObject`, `MacroTemplateObject`, delimiter nodes,
   captures, atoms), not opaque strings. The built-in macro registry is not yet
-  loaded from that asschema data; that is the next step toward fully
-  serializable macro tables.
+  loaded from core-schema-emitted Rust types; that is the next step toward the
+  fully self-hosted macro table.
+- `DeclarativeMacroLibrary` can now project its parsed built-in macros into
+  `MacroLibraryData`, a typed data object containing macro definitions,
+  pattern trees, template trees, delimiter values, captures, and atoms. That
+  data object round-trips through NOTA and binary bytes, and it can rebuild the
+  executable macro library. The binary form currently archives the canonical
+  NOTA representation of the typed macro data to avoid bespoke recursive rkyv
+  code in this bootstrap slice.

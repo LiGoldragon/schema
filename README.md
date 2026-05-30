@@ -29,6 +29,13 @@ type. Struct declarations lower to the asschema key/value map form:
 field name -> type reference. Newtypes lower as one contained type reference,
 not as a one-entry field map.
 
+Declarative schema macros have a typed data surface. The built-in macro source
+still reads through the declarative reader, but it can now project to
+`MacroLibraryData`, round-trip through NOTA and binary bytes, and rebuild the
+executable macro library. The remaining self-hosting step is to generate that
+macro-table type from `schemas/core.schema` instead of using the transitional
+hand-written data projection.
+
 Rust code emission is not here. It lives in `schema-rust-next`.
 
 Crates expose schemas through a standard `schema/` directory. The current

@@ -1,4 +1,4 @@
-use nota_next::{Block, Delimiter, Document};
+use nota_next::{Block, Delimiter, Document, NotaEncode, NotaSource};
 
 use crate::{
     EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject, MacroOutput,
@@ -25,6 +25,25 @@ impl DeclarativeMacroLibrary {
         Ok(Self { definitions })
     }
 
+    pub fn from_data(data: MacroLibraryData) -> Self {
+        Self {
+            definitions: data
+                .into_definitions()
+                .into_iter()
+                .map(MacroDefinition::from_data)
+                .collect(),
+        }
+    }
+
+    pub fn to_data(&self) -> MacroLibraryData {
+        MacroLibraryData::new(
+            self.definitions
+                .iter()
+                .map(MacroDefinition::to_data)
+                .collect(),
+        )
+    }
+
     pub fn definitions(&self) -> &[MacroDefinition] {
         &self.definitions
     }
@@ -36,6 +55,208 @@ impl DeclarativeMacroLibrary {
                 Box::new(DeclarativeSchemaMacro { definition }) as Box<dyn SchemaMacro>
             })
             .collect()
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub struct MacroLibraryData {
+    definitions: Vec<MacroDefinitionData>,
+}
+
+impl MacroLibraryData {
+    pub fn new(definitions: Vec<MacroDefinitionData>) -> Self {
+        Self { definitions }
+    }
+
+    pub fn definitions(&self) -> &[MacroDefinitionData] {
+        &self.definitions
+    }
+
+    pub fn into_definitions(self) -> Vec<MacroDefinitionData> {
+        self.definitions
+    }
+
+    pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
+        NotaSource::new(source).parse::<Self>().map_err(Into::into)
+    }
+
+    pub fn to_nota_source(&self) -> String {
+        NotaEncode::to_nota(self)
+    }
+
+    pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
+        let source = rkyv::from_bytes::<String, rkyv::rancor::Error>(bytes)
+            .map_err(|_| SchemaError::ArchiveDecode)?;
+        Self::from_nota_source(&source)
+    }
+
+    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(&self.to_nota_source())
+            .map(|bytes| bytes.to_vec())
+            .map_err(|_| SchemaError::ArchiveEncode)
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub struct MacroDefinitionData {
+    name: Name,
+    position: MacroPosition,
+    pattern: MacroPatternData,
+    template: MacroTemplateData,
+}
+
+impl MacroDefinitionData {
+    pub fn new(
+        name: Name,
+        position: MacroPosition,
+        pattern: MacroPatternData,
+        template: MacroTemplateData,
+    ) -> Self {
+        Self {
+            name,
+            position,
+            pattern,
+            template,
+        }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn position(&self) -> MacroPosition {
+        self.position
+    }
+
+    pub fn pattern(&self) -> &MacroPatternData {
+        &self.pattern
+    }
+
+    pub fn template(&self) -> &MacroTemplateData {
+        &self.template
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub struct MacroPatternData {
+    object: MacroPatternObjectData,
+}
+
+impl MacroPatternData {
+    pub fn new(object: MacroPatternObjectData) -> Self {
+        Self { object }
+    }
+
+    pub fn object(&self) -> &MacroPatternObjectData {
+        &self.object
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub enum MacroPatternObjectData {
+    Capture(String),
+    RestCapture(String),
+    Atom(String),
+    Delimited(MacroPatternDelimitedData),
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub struct MacroPatternDelimitedData {
+    delimiter: MacroDelimiter,
+    children: Vec<MacroPatternObjectData>,
+}
+
+impl MacroPatternDelimitedData {
+    pub fn new(delimiter: MacroDelimiter, children: Vec<MacroPatternObjectData>) -> Self {
+        Self {
+            delimiter,
+            children,
+        }
+    }
+
+    pub fn delimiter(&self) -> MacroDelimiter {
+        self.delimiter
+    }
+
+    pub fn children(&self) -> &[MacroPatternObjectData] {
+        &self.children
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub struct MacroTemplateData {
+    object: MacroTemplateObjectData,
+}
+
+impl MacroTemplateData {
+    pub fn new(object: MacroTemplateObjectData) -> Self {
+        Self { object }
+    }
+
+    pub fn object(&self) -> &MacroTemplateObjectData {
+        &self.object
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub enum MacroTemplateObjectData {
+    Capture(String),
+    RestCapture(String),
+    Atom(String),
+    Delimited(MacroTemplateDelimitedData),
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+pub struct MacroTemplateDelimitedData {
+    delimiter: MacroDelimiter,
+    children: Vec<MacroTemplateObjectData>,
+}
+
+impl MacroTemplateDelimitedData {
+    pub fn new(delimiter: MacroDelimiter, children: Vec<MacroTemplateObjectData>) -> Self {
+        Self {
+            delimiter,
+            children,
+        }
+    }
+
+    pub fn delimiter(&self) -> MacroDelimiter {
+        self.delimiter
+    }
+
+    pub fn children(&self) -> &[MacroTemplateObjectData] {
+        &self.children
+    }
+}
+
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacroDelimiter {
+    Parenthesis,
+    SquareBracket,
+    Brace,
+    PipeParenthesis,
+    PipeBrace,
+}
+
+impl MacroDelimiter {
+    fn from_nota(delimiter: Delimiter) -> Self {
+        match delimiter {
+            Delimiter::Parenthesis => Self::Parenthesis,
+            Delimiter::SquareBracket => Self::SquareBracket,
+            Delimiter::Brace => Self::Brace,
+            Delimiter::PipeParenthesis => Self::PipeParenthesis,
+            Delimiter::PipeBrace => Self::PipeBrace,
+        }
+    }
+
+    fn into_nota(self) -> Delimiter {
+        match self {
+            Self::Parenthesis => Delimiter::Parenthesis,
+            Self::SquareBracket => Delimiter::SquareBracket,
+            Self::Brace => Delimiter::Brace,
+            Self::PipeParenthesis => Delimiter::PipeParenthesis,
+            Self::PipeBrace => Delimiter::PipeBrace,
+        }
     }
 }
 
@@ -56,6 +277,24 @@ impl MacroDefinition {
             pattern: record.pattern()?,
             template: record.template()?,
         })
+    }
+
+    fn from_data(data: MacroDefinitionData) -> Self {
+        Self {
+            name: data.name,
+            position: data.position,
+            pattern: MacroPattern::from_data(data.pattern),
+            template: MacroTemplate::from_data(data.template),
+        }
+    }
+
+    fn to_data(&self) -> MacroDefinitionData {
+        MacroDefinitionData::new(
+            self.name.clone(),
+            self.position,
+            self.pattern.to_data(),
+            self.template.to_data(),
+        )
     }
 
     pub fn name(&self) -> &Name {
@@ -133,6 +372,16 @@ impl MacroPattern {
         })
     }
 
+    fn from_data(data: MacroPatternData) -> Self {
+        Self {
+            object: PatternObject::from_data(data.object),
+        }
+    }
+
+    fn to_data(&self) -> MacroPatternData {
+        MacroPatternData::new(self.object.to_data())
+    }
+
     fn captures(&self, object: MacroObject<'_>) -> Result<Option<MacroBindings>, SchemaError> {
         let mut bindings = MacroBindings::default();
         let matched = match object {
@@ -192,6 +441,35 @@ impl PatternObject {
             }
             Block::PipeText(_) => Ok(Self::Atom(NotationBlock::new(object).compact_notation())),
             Block::Atom(_) => unreachable!("atoms are handled by demote_to_string"),
+        }
+    }
+
+    fn from_data(data: MacroPatternObjectData) -> Self {
+        match data {
+            MacroPatternObjectData::Capture(name) => Self::Capture(CaptureName::single(name)),
+            MacroPatternObjectData::RestCapture(name) => Self::RestCapture(CaptureName::rest(name)),
+            MacroPatternObjectData::Atom(text) => Self::Atom(text),
+            MacroPatternObjectData::Delimited(data) => Self::Delimited {
+                delimiter: data.delimiter().into_nota(),
+                children: data.children.into_iter().map(Self::from_data).collect(),
+            },
+        }
+    }
+
+    fn to_data(&self) -> MacroPatternObjectData {
+        match self {
+            Self::Capture(capture) => MacroPatternObjectData::Capture(capture.name().to_owned()),
+            Self::RestCapture(capture) => {
+                MacroPatternObjectData::RestCapture(capture.name().to_owned())
+            }
+            Self::Atom(text) => MacroPatternObjectData::Atom(text.clone()),
+            Self::Delimited {
+                delimiter,
+                children,
+            } => MacroPatternObjectData::Delimited(MacroPatternDelimitedData::new(
+                MacroDelimiter::from_nota(*delimiter),
+                children.iter().map(Self::to_data).collect(),
+            )),
         }
     }
 
@@ -350,6 +628,16 @@ impl MacroTemplate {
         })
     }
 
+    fn from_data(data: MacroTemplateData) -> Self {
+        Self {
+            object: TemplateObject::from_data(data.object),
+        }
+    }
+
+    fn to_data(&self) -> MacroTemplateData {
+        MacroTemplateData::new(self.object.to_data())
+    }
+
     fn expand(&self, bindings: &MacroBindings) -> Result<ExpandedTemplate, SchemaError> {
         let mut pieces = self.object.expand_notations(bindings)?;
         let source = pieces
@@ -406,6 +694,37 @@ impl TemplateObject {
         }
     }
 
+    fn from_data(data: MacroTemplateObjectData) -> Self {
+        match data {
+            MacroTemplateObjectData::Capture(name) => Self::Capture(CaptureName::single(name)),
+            MacroTemplateObjectData::RestCapture(name) => {
+                Self::RestCapture(CaptureName::rest(name))
+            }
+            MacroTemplateObjectData::Atom(text) => Self::Atom(text),
+            MacroTemplateObjectData::Delimited(data) => Self::Delimited {
+                delimiter: data.delimiter().into_nota(),
+                children: data.children.into_iter().map(Self::from_data).collect(),
+            },
+        }
+    }
+
+    fn to_data(&self) -> MacroTemplateObjectData {
+        match self {
+            Self::Capture(capture) => MacroTemplateObjectData::Capture(capture.name().to_owned()),
+            Self::RestCapture(capture) => {
+                MacroTemplateObjectData::RestCapture(capture.name().to_owned())
+            }
+            Self::Atom(text) => MacroTemplateObjectData::Atom(text.clone()),
+            Self::Delimited {
+                delimiter,
+                children,
+            } => MacroTemplateObjectData::Delimited(MacroTemplateDelimitedData::new(
+                MacroDelimiter::from_nota(*delimiter),
+                children.iter().map(Self::to_data).collect(),
+            )),
+        }
+    }
+
     fn expand_notations(&self, bindings: &MacroBindings) -> Result<Vec<String>, SchemaError> {
         match self {
             Self::Capture(capture) => Ok(vec![bindings.single(capture.name())?.to_owned()]),
@@ -434,6 +753,20 @@ struct CaptureName {
 }
 
 impl CaptureName {
+    fn single(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            rest: false,
+        }
+    }
+
+    fn rest(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            rest: true,
+        }
+    }
+
     fn from_token(token: &str) -> Result<Option<Self>, SchemaError> {
         if !token.starts_with('$') {
             return Ok(None);

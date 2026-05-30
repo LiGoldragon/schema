@@ -13,7 +13,11 @@ pub use asschema::{
     SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, TypeDeclaration,
     TypeReference, Visibility,
 };
-pub use declarative::{DeclarativeMacroLibrary, MacroDefinition};
+pub use declarative::{
+    DeclarativeMacroLibrary, MacroDefinition, MacroDefinitionData, MacroDelimiter,
+    MacroLibraryData, MacroPatternData, MacroPatternDelimitedData, MacroPatternObjectData,
+    MacroTemplateData, MacroTemplateDelimitedData, MacroTemplateObjectData,
+};
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,

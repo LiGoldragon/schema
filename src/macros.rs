@@ -5,7 +5,18 @@ use crate::{
     TypeDeclaration, TypeReference,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum MacroPosition {
     RootImports,
     RootInput,
