@@ -31,10 +31,10 @@ not as a one-entry field map.
 
 Declarative schema macros have a typed data surface. The built-in macro source
 still reads through the declarative reader, but it can now project to
-`MacroLibraryData`, round-trip through NOTA and binary bytes, and rebuild the
-executable macro library. The remaining self-hosting step is to generate that
-macro-table type from `schemas/core.schema` instead of using the transitional
-hand-written data projection.
+`MacroLibraryData`, round-trip through NOTA, archive itself directly through
+rkyv, and rebuild the executable macro library. The remaining self-hosting step
+is to generate that macro-table type from `schemas/core.schema` instead of
+using the hand-written data projection.
 
 Rust code emission is not here. It lives in `schema-rust-next`.
 

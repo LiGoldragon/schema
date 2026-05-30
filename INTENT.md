@@ -196,7 +196,7 @@ Current implementation target:
 - `DeclarativeMacroLibrary` can now project its parsed built-in macros into
   `MacroLibraryData`, a typed data object containing macro definitions,
   pattern trees, template trees, delimiter values, captures, and atoms. That
-  data object round-trips through NOTA and binary bytes, and it can rebuild the
-  executable macro library. The binary form currently archives the canonical
-  NOTA representation of the typed macro data to avoid bespoke recursive rkyv
-  code in this bootstrap slice.
+  data object round-trips through NOTA, archives itself directly through rkyv,
+  and can rebuild the executable macro library. The remaining bootstrap step is
+  replacing the hand-written macro-data noun with the same noun emitted from
+  core-schema asschema.

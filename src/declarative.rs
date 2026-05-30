@@ -58,7 +58,17 @@ impl DeclarativeMacroLibrary {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct MacroLibraryData {
     definitions: Vec<MacroDefinitionData>,
 }
@@ -85,19 +95,27 @@ impl MacroLibraryData {
     }
 
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
-        let source = rkyv::from_bytes::<String, rkyv::rancor::Error>(bytes)
-            .map_err(|_| SchemaError::ArchiveDecode)?;
-        Self::from_nota_source(&source)
+        rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|_| SchemaError::ArchiveDecode)
     }
 
     pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
-        rkyv::to_bytes::<rkyv::rancor::Error>(&self.to_nota_source())
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct MacroDefinitionData {
     name: Name,
     position: MacroPosition,
@@ -137,7 +155,17 @@ impl MacroDefinitionData {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct MacroPatternData {
     object: MacroPatternObjectData,
 }
@@ -152,17 +180,60 @@ impl MacroPatternData {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum MacroPatternObjectData {
     Capture(String),
     RestCapture(String),
     Atom(String),
-    Delimited(MacroPatternDelimitedData),
+    Delimited(#[rkyv(omit_bounds)] Box<MacroPatternDelimitedData>),
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct MacroPatternDelimitedData {
     delimiter: MacroDelimiter,
+    #[rkyv(omit_bounds)]
     children: Vec<MacroPatternObjectData>,
 }
 
@@ -183,7 +254,17 @@ impl MacroPatternDelimitedData {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct MacroTemplateData {
     object: MacroTemplateObjectData,
 }
@@ -198,17 +279,60 @@ impl MacroTemplateData {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum MacroTemplateObjectData {
     Capture(String),
     RestCapture(String),
     Atom(String),
-    Delimited(MacroTemplateDelimitedData),
+    Delimited(#[rkyv(omit_bounds)] Box<MacroTemplateDelimitedData>),
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct MacroTemplateDelimitedData {
     delimiter: MacroDelimiter,
+    #[rkyv(omit_bounds)]
     children: Vec<MacroTemplateObjectData>,
 }
 
@@ -229,7 +353,18 @@ impl MacroTemplateDelimitedData {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum MacroDelimiter {
     Parenthesis,
     SquareBracket,
@@ -466,10 +601,10 @@ impl PatternObject {
             Self::Delimited {
                 delimiter,
                 children,
-            } => MacroPatternObjectData::Delimited(MacroPatternDelimitedData::new(
+            } => MacroPatternObjectData::Delimited(Box::new(MacroPatternDelimitedData::new(
                 MacroDelimiter::from_nota(*delimiter),
                 children.iter().map(Self::to_data).collect(),
-            )),
+            ))),
         }
     }
 
@@ -718,10 +853,10 @@ impl TemplateObject {
             Self::Delimited {
                 delimiter,
                 children,
-            } => MacroTemplateObjectData::Delimited(MacroTemplateDelimitedData::new(
+            } => MacroTemplateObjectData::Delimited(Box::new(MacroTemplateDelimitedData::new(
                 MacroDelimiter::from_nota(*delimiter),
                 children.iter().map(Self::to_data).collect(),
-            )),
+            ))),
         }
     }
 
