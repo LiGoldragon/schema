@@ -65,6 +65,13 @@ only non-symbol names fall back to bracket-string text. Actual `String`
 type-reference values still use the normal NOTA string surface at value
 positions.
 
+`AsschemaArtifact` is the artifact owner. It wraps the assembled value and
+reads or writes `.asschema` NOTA text plus `.asschema.rkyv` binary bytes. The
+artifact object is the handoff surface for downstream code generation: callers
+may still inspect `artifact.asschema()`, but build paths can now materialize
+and consume the serialized artifact explicitly instead of using a private
+lowerer-to-emitter value.
+
 Namespace declarations are assembled as ordinary data-carrying visibility
 objects: `(Public Name Value)` for exported top-level types and
 `(Private Name Value)` for module-local types. The Rust storage keeps a

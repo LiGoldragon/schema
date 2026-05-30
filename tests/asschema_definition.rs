@@ -2,7 +2,8 @@ use std::path::Path;
 
 use nota_next::{Document, NotaEncode};
 use schema_next::{
-    ImportResolver, Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference,
+    AsschemaArtifact, ImportResolver, Name, SchemaEngine, SchemaIdentity, TypeDeclaration,
+    TypeReference,
 };
 
 #[test]
@@ -129,4 +130,74 @@ fn asschema_names_emit_symbol_safe_strings_as_bare_symbols() {
         "[not a symbol]",
         "non-symbol names still fall back to NOTA string form"
     );
+}
+
+#[test]
+fn asschema_artifact_reads_and_writes_real_nota_and_binary_files() {
+    let source = include_str!("fixtures/big-schemas/spirit-reactive-large.schema");
+    let asschema = SchemaEngine::default()
+        .lower_source(
+            source,
+            SchemaIdentity::new("example:spirit-reactive-large", "0.1.0"),
+        )
+        .expect("schema lowers into typed Asschema data");
+    let artifact = AsschemaArtifact::new(asschema.clone());
+    let paths = AsschemaArtifactTestPaths::new("spirit-reactive-large");
+
+    artifact
+        .write_nota_file(paths.nota_path())
+        .expect("write asschema nota artifact");
+    artifact
+        .write_binary_file(paths.binary_path())
+        .expect("write asschema binary artifact");
+
+    let from_nota =
+        AsschemaArtifact::read_nota_file(paths.nota_path()).expect("read asschema nota artifact");
+    let from_binary = AsschemaArtifact::read_binary_file(paths.binary_path())
+        .expect("read asschema binary artifact");
+
+    assert_eq!(from_nota.asschema(), &asschema);
+    assert_eq!(from_binary.asschema(), &asschema);
+    assert!(
+        std::fs::read_to_string(paths.nota_path())
+            .expect("read written asschema text")
+            .contains("(Plain Entry)"),
+        "real .asschema artifact must carry bare schema symbols"
+    );
+
+    paths.remove();
+}
+
+struct AsschemaArtifactTestPaths {
+    directory: std::path::PathBuf,
+    nota_path: std::path::PathBuf,
+    binary_path: std::path::PathBuf,
+}
+
+impl AsschemaArtifactTestPaths {
+    fn new(name: &str) -> Self {
+        let directory = std::env::temp_dir().join(format!(
+            "schema-next-asschema-artifact-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create asschema artifact test directory");
+        Self {
+            nota_path: directory.join("lib.asschema"),
+            binary_path: directory.join("lib.asschema.rkyv"),
+            directory,
+        }
+    }
+
+    fn nota_path(&self) -> &std::path::Path {
+        &self.nota_path
+    }
+
+    fn binary_path(&self) -> &std::path::Path {
+        &self.binary_path
+    }
+
+    fn remove(&self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
 }
