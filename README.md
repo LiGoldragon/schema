@@ -14,27 +14,29 @@ declaration is visibility-tagged as `(Public Name Value)` or
 `(Private Name Value)` at the assembled-data level; top-level authored
 declarations become public and inline PascalCase declarations become private
 module-local types. Compatibility accessors still expose the current `Input`
-and `Output` roots. Checked-in assembled-schema text fixtures are not part of
-the active surface.
+and `Output` roots. The core substrate keeps checked-in data artifacts:
+`schemas/core.asschema` is the assembled form of `schemas/core.schema`, and
+`schemas/builtin-macros.macro-library` is the serialized macro table consumed
+by the default registry. Tests freshness-check both artifacts against their
+source inputs.
 
 The low-level syntax layer preserves the NOTA/schema split: square brackets are
-raw vector structure and schema struct field lists, not `Vec` type syntax.
-Composite type references are typed NOTA objects such as `(Vec Topic)`,
-`(Map (Topic RecordIdentifier))`, and `(Optional Topic)`. Authored datatype
-declarations use name-first `@` forms: `Kind@[Decision Correction]` for enums
-and `Entry@{ @Topic description@String }` for structs. Inside a struct body,
-`@Topic` derives the field name from the existing type (`topic`); explicit
-`field@Type` remains available when the field name differs from the payload
-type. Struct declarations lower to the asschema key/value map form:
-field name -> type reference. Newtypes lower as one contained type reference,
-not as a one-entry field map.
+raw vector structure and enum bodies, not `Vec` type syntax. Composite type
+references are typed Schema objects such as `(Vec Topic)`,
+`(Map (Topic RecordIdentifier))`, and `(Optional Topic)`. Authored namespace
+braces are strict key/value maps: `Topic String`, `Topics (Vec Topic)`,
+`Entry { topic Topic Topics * }`, and `Kind [Decision Correction]`. Struct
+declarations lower to the asschema key/value map form: field name -> type
+reference. Newtypes lower as one contained type reference, not as a one-entry
+field map. The older pipe-family and self-named `@` declaration forms remain
+compatibility surfaces while fixtures migrate.
 
 Declarative schema macros have a typed data surface. The built-in macro source
-still reads through the declarative reader, but it can now project to
-`MacroLibraryData`, round-trip through NOTA, archive itself directly through
-rkyv, and rebuild the executable macro library. The remaining self-hosting step
-is to generate that macro-table type from `schemas/core.schema` instead of
-using the hand-written data projection.
+projects to `MacroLibraryData`, and the checked-in macro-library artifact is
+the runtime load path. It round-trips through NOTA, archives itself directly
+through rkyv, and rebuilds the executable macro library. The remaining
+self-hosting step is to generate that macro-table type from `schemas/core.schema`
+instead of using the hand-written data projection.
 
 Rust code emission is not here. It lives in `schema-rust-next`.
 

@@ -75,6 +75,13 @@ may still inspect `artifact.asschema()`, but build paths can now materialize
 and consume the serialized artifact explicitly instead of using a private
 lowerer-to-emitter value.
 
+`schemas/core.asschema` is checked in as the assembled artifact for
+`schemas/core.schema`. Tests lower `core.schema` through the live engine and
+compare the result to the checked-in artifact, then round-trip the artifact
+through NOTA and rkyv. This makes the schema substrate visible in review as
+three data stages: authored `.schema`, assembled `.asschema`, and downstream
+emitted Rust.
+
 Namespace declarations are assembled as ordinary data-carrying visibility
 objects: `(Public Name Value)` for exported top-level types and
 `(Private Name Value)` for module-local types. The Rust storage keeps a
@@ -99,18 +106,18 @@ It declares macro pattern and template bodies as typed object trees: captures,
 rest captures, atoms, delimiter nodes, and ordered child vectors. That makes
 the macro shape itself schema data instead of a string blob.
 
-The current built-in registry still reads `schemas/builtin-macros.schema`
-through the declarative macro reader, then projects those definitions into
-`MacroLibraryData`. That typed data object contains `MacroDefinitionData`,
-`MacroPatternData`, `MacroTemplateData`, delimiter values, captures, rest
-captures, atoms, and delimiter child trees. It can round-trip through NOTA,
-archive itself directly to binary bytes through rkyv, and rebuild the
-executable `DeclarativeMacroLibrary`.
+The built-in registry reads `schemas/builtin-macros.macro-library`, a
+serialized `MacroLibraryData` artifact, and rebuilds the executable
+`DeclarativeMacroLibrary` from that data. `schemas/builtin-macros.schema`
+remains the bootstrap source: tests parse it through the declarative reader,
+project it to `MacroLibraryData`, and require exact equality with the
+checked-in artifact.
 
 The near target is to lower the core macro schema to asschema data, emit its
-Rust type, and replace the hand-written `MacroLibraryData` projection with the
+Rust type, and replace the hand-written `MacroLibraryData` noun with the
 schema-emitted macro table type directly. The macro table is already real
-serializable data; the remaining loop is making its Rust noun schema-emitted.
+serializable data and is already the runtime load path; the remaining loop is
+making its Rust noun schema-emitted.
 
 ## Strict Key/Value Schema Syntax
 
@@ -214,6 +221,10 @@ module schema and checking that the imported type is declared there.
 - Active code does not keep hand-written assembled-schema text fixtures.
   `Asschema` can serialize itself to NOTA and rkyv after lowering, and tests
   read those serialized forms back through the same typed object.
+- Checked-in core artifacts are allowed because they are first-class pipeline
+  outputs, not hand-maintained witness text. `schemas/core.asschema` and
+  `schemas/builtin-macros.macro-library` are freshness-checked against their
+  source inputs and consumed through typed artifact objects.
 - The root schema is positional. Current MVP shape:
   - field 1: input root enum body, for example `[Record@ Entry Reindex]`
   - field 2: output root enum body, for example `[Recorded@ Receipt Rejected@ Rejection]`

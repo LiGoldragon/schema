@@ -2,8 +2,8 @@ use std::path::Path;
 
 use nota_next::{Document, NotaEncode};
 use schema_next::{
-    AsschemaArtifact, ImportResolver, Name, SchemaEngine, SchemaIdentity, TypeDeclaration,
-    TypeReference,
+    Asschema, AsschemaArtifact, ImportResolver, Name, SchemaEngine, SchemaIdentity,
+    TypeDeclaration, TypeReference,
 };
 
 #[test]
@@ -166,6 +166,47 @@ fn asschema_artifact_reads_and_writes_real_nota_and_binary_files() {
     );
 
     paths.remove();
+}
+
+#[test]
+fn core_asschema_artifact_is_checked_in_and_fresh() {
+    let expected = SchemaEngine::default()
+        .lower_source(
+            include_str!("../schemas/core.schema"),
+            SchemaIdentity::new("schema-next:core", "0.1.0"),
+        )
+        .expect("core schema lowers");
+    let checked_in = AsschemaArtifact::from_nota_source(include_str!("../schemas/core.asschema"))
+        .expect("checked-in core asschema decodes");
+
+    assert_eq!(
+        checked_in.asschema(),
+        &expected,
+        "schemas/core.asschema must be refreshed when core.schema or lowering semantics change"
+    );
+}
+
+#[test]
+fn core_asschema_artifact_round_trips_as_nota_and_rkyv() {
+    let artifact = AsschemaArtifact::from_nota_source(include_str!("../schemas/core.asschema"))
+        .expect("checked-in core asschema decodes");
+    let reparsed =
+        Asschema::from_nota_source(&artifact.to_nota_source()).expect("core asschema re-decodes");
+    let bytes = artifact
+        .to_binary_bytes()
+        .expect("core asschema archives to rkyv");
+    let binary =
+        Asschema::from_binary_bytes(&bytes).expect("core asschema decodes from archived bytes");
+
+    assert_eq!(&reparsed, artifact.asschema());
+    assert_eq!(&binary, artifact.asschema());
+    assert!(
+        artifact
+            .asschema()
+            .type_named("SchemaMacro")
+            .is_some_and(|declaration| matches!(declaration, TypeDeclaration::Struct(_))),
+        "core.asschema must carry the macro-table noun as assembled schema data"
+    );
 }
 
 struct AsschemaArtifactTestPaths {

@@ -108,7 +108,10 @@ values.*
 wraps an `Asschema` value and owns the read/write methods for `.asschema`
 NOTA files and `.asschema.rkyv` binary files, so downstream Rust emission can
 consume a serialized assembled-schema artifact instead of relying on a private
-in-memory handoff from schema lowering.*
+in-memory handoff from schema lowering. Core schema artifacts that define the
+schema substrate itself are checked into the repository and freshness-checked
+against their source schema so review sees authored schema, assembled schema,
+and emitted Rust as separate stages.*
 
 *A core schema file can be read one layer lower than schema lowering: as raw
 NOTA object data. In that mode the root struct name is derived from the
@@ -177,7 +180,10 @@ opaque parser magic.*
 consumers can reuse it. Schema-next may host the bootstrap structural cases
 while the stack converges, but the target split is: nota-next owns structural
 macro-node dispatch and typed matches/captures; schema-next registers the
-schema vocabulary and lowers matches into assembled-schema fragments.*
+schema vocabulary and lowers matches into assembled-schema fragments. Built-in
+schema macros load through a serialized macro-library data artifact, with the
+hand-authored macro source kept as a freshness-checked bootstrap source rather
+than as the runtime path.*
 
 *Schema-next's structural macro-node cases are expressed through nota-next
 macro-node data. Schema still owns schema positions such as
@@ -213,13 +219,13 @@ Current implementation target:
   serializable without adding parser magic.
 - `schemas/core.schema` describes macro pattern/template payloads as typed
   schema data (`MacroPatternObject`, `MacroTemplateObject`, delimiter nodes,
-  captures, atoms), not opaque strings. The built-in macro registry is not yet
-  loaded from core-schema-emitted Rust types; that is the next step toward the
-  fully self-hosted macro table.
-- `DeclarativeMacroLibrary` can now project its parsed built-in macros into
+  captures, atoms), not opaque strings. `schemas/core.asschema` is checked in
+  as the assembled form of that source and freshness-checked by tests.
+- `DeclarativeMacroLibrary` projects its parsed built-in macros into
   `MacroLibraryData`, a typed data object containing macro definitions,
-  pattern trees, template trees, delimiter values, captures, and atoms. That
-  data object round-trips through NOTA, archives itself directly through rkyv,
-  and can rebuild the executable macro library. The remaining bootstrap step is
-  replacing the hand-written macro-data noun with the same noun emitted from
-  core-schema asschema.
+  pattern trees, template trees, delimiter values, captures, and atoms. The
+  checked-in `schemas/builtin-macros.macro-library` artifact is the runtime
+  load path for built-in declarative macros; `schemas/builtin-macros.schema`
+  remains the bootstrap source that tests use to prove artifact freshness. The
+  remaining bootstrap step is replacing the hand-written macro-data noun with
+  the same noun emitted from core-schema asschema.

@@ -16,8 +16,9 @@
 
 use nota_next::Document;
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroLibraryData, MacroObject, MacroOutput,
-    MacroPosition, MacroRegistry, SchemaError, SchemaMacro, TypeDeclaration, TypeReference,
+    DeclarativeMacroLibrary, MacroContext, MacroLibraryArtifact, MacroLibraryData, MacroObject,
+    MacroOutput, MacroPosition, MacroRegistry, SchemaError, SchemaMacro, TypeDeclaration,
+    TypeReference,
 };
 
 // ---------------------------------------------------------------------
@@ -309,6 +310,90 @@ fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
     assert_eq!(declaration.fields.len(), 2);
     assert_eq!(declaration.fields[0].name.as_str(), "topic");
     assert_eq!(declaration.fields[1].name.as_str(), "kind");
+}
+
+#[test]
+fn builtin_macro_library_artifact_is_checked_in_and_fresh() {
+    let source_data = DeclarativeMacroLibrary::builtin_source()
+        .expect("builtin macro source parses")
+        .to_data();
+    let checked_in = MacroLibraryArtifact::from_nota_source(include_str!(
+        "../schemas/builtin-macros.macro-library"
+    ))
+    .expect("checked-in macro library artifact decodes");
+
+    assert_eq!(
+        checked_in.data(),
+        &source_data,
+        "schemas/builtin-macros.macro-library must be refreshed when builtin-macros.schema changes"
+    );
+
+    let runtime_library = DeclarativeMacroLibrary::builtin().expect("builtin artifact loads");
+    assert_eq!(
+        runtime_library.to_data(),
+        source_data,
+        "the default macro library must load through the serialized data artifact"
+    );
+}
+
+#[test]
+fn macro_library_artifact_reads_and_writes_real_nota_and_binary_files() {
+    let data = DeclarativeMacroLibrary::builtin()
+        .expect("builtin artifact loads")
+        .to_data();
+    let artifact = MacroLibraryArtifact::new(data.clone());
+    let paths = MacroLibraryArtifactTestPaths::new("builtin-macros");
+
+    artifact
+        .write_nota_file(paths.nota_path())
+        .expect("write macro library nota artifact");
+    artifact
+        .write_binary_file(paths.binary_path())
+        .expect("write macro library binary artifact");
+
+    let from_nota = MacroLibraryArtifact::read_nota_file(paths.nota_path())
+        .expect("read macro library nota artifact");
+    let from_binary = MacroLibraryArtifact::read_binary_file(paths.binary_path())
+        .expect("read macro library binary artifact");
+
+    assert_eq!(from_nota.data(), &data);
+    assert_eq!(from_binary.data(), &data);
+
+    paths.remove();
+}
+
+struct MacroLibraryArtifactTestPaths {
+    directory: std::path::PathBuf,
+    nota_path: std::path::PathBuf,
+    binary_path: std::path::PathBuf,
+}
+
+impl MacroLibraryArtifactTestPaths {
+    fn new(name: &str) -> Self {
+        let directory = std::env::temp_dir().join(format!(
+            "schema-next-macro-library-artifact-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create macro library artifact test directory");
+        Self {
+            nota_path: directory.join("builtin-macros.macro-library"),
+            binary_path: directory.join("builtin-macros.macro-library.rkyv"),
+            directory,
+        }
+    }
+
+    fn nota_path(&self) -> &std::path::Path {
+        &self.nota_path
+    }
+
+    fn binary_path(&self) -> &std::path::Path {
+        &self.binary_path
+    }
+
+    fn remove(&self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
 }
 
 // ---------------------------------------------------------------------

@@ -1,3 +1,8 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use nota_next::{Block, Delimiter, Document, NotaEncode, NotaSource};
 
 use crate::{
@@ -13,6 +18,12 @@ pub struct DeclarativeMacroLibrary {
 
 impl DeclarativeMacroLibrary {
     pub fn builtin() -> Result<Self, SchemaError> {
+        Ok(Self::from_data(MacroLibraryData::from_nota_source(
+            include_str!("../schemas/builtin-macros.macro-library"),
+        )?))
+    }
+
+    pub fn builtin_source() -> Result<Self, SchemaError> {
         Self::from_source(include_str!("../schemas/builtin-macros.schema"))
     }
 
@@ -55,6 +66,91 @@ impl DeclarativeMacroLibrary {
                 Box::new(DeclarativeSchemaMacro { definition }) as Box<dyn SchemaMacro>
             })
             .collect()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MacroLibraryArtifact {
+    data: MacroLibraryData,
+}
+
+impl MacroLibraryArtifact {
+    pub fn new(data: MacroLibraryData) -> Self {
+        Self { data }
+    }
+
+    pub fn data(&self) -> &MacroLibraryData {
+        &self.data
+    }
+
+    pub fn into_data(self) -> MacroLibraryData {
+        self.data
+    }
+
+    pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
+        MacroLibraryData::from_nota_source(source).map(Self::new)
+    }
+
+    pub fn to_nota_source(&self) -> String {
+        self.data.to_nota_source()
+    }
+
+    pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
+        MacroLibraryData::from_binary_bytes(bytes).map(Self::new)
+    }
+
+    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
+        self.data.to_binary_bytes()
+    }
+
+    pub fn read_nota_file(path: impl AsRef<Path>) -> Result<Self, SchemaError> {
+        let artifact_path = MacroLibraryArtifactPath::new(path.as_ref());
+        let source = fs::read_to_string(artifact_path.path())
+            .map_err(|error| artifact_path.io_error(error))?;
+        Self::from_nota_source(&source)
+    }
+
+    pub fn write_nota_file(&self, path: impl AsRef<Path>) -> Result<(), SchemaError> {
+        let artifact_path = MacroLibraryArtifactPath::new(path.as_ref());
+        fs::write(artifact_path.path(), self.to_nota_source())
+            .map_err(|error| artifact_path.io_error(error))
+    }
+
+    pub fn read_binary_file(path: impl AsRef<Path>) -> Result<Self, SchemaError> {
+        let artifact_path = MacroLibraryArtifactPath::new(path.as_ref());
+        let bytes =
+            fs::read(artifact_path.path()).map_err(|error| artifact_path.io_error(error))?;
+        Self::from_binary_bytes(&bytes)
+    }
+
+    pub fn write_binary_file(&self, path: impl AsRef<Path>) -> Result<(), SchemaError> {
+        let artifact_path = MacroLibraryArtifactPath::new(path.as_ref());
+        let bytes = self.to_binary_bytes()?;
+        fs::write(artifact_path.path(), bytes).map_err(|error| artifact_path.io_error(error))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MacroLibraryArtifactPath {
+    path: PathBuf,
+}
+
+impl MacroLibraryArtifactPath {
+    fn new(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn io_error(&self, error: std::io::Error) -> SchemaError {
+        SchemaError::Io {
+            path: self.path.display().to_string(),
+            reason: error.to_string(),
+        }
     }
 }
 
