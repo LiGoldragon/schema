@@ -13,7 +13,17 @@ use crate::{
     resolution::ImportResolver,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct SchemaIdentity {
     component: Name,
     version: String,
@@ -39,6 +49,9 @@ impl SchemaIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SchemaError {
     Nota(String),
+    NotaDecode(String),
+    ArchiveEncode,
+    ArchiveDecode,
     ExpectedRootObjectCount {
         expected: &'static str,
         found: usize,
@@ -144,6 +157,12 @@ pub enum SchemaError {
 impl From<nota_next::NotaError> for SchemaError {
     fn from(value: nota_next::NotaError) -> Self {
         Self::Nota(value.to_string())
+    }
+}
+
+impl From<nota_next::NotaDecodeError> for SchemaError {
+    fn from(value: nota_next::NotaDecodeError) -> Self {
+        Self::NotaDecode(value.to_string())
     }
 }
 

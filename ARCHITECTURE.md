@@ -43,17 +43,20 @@ will consume.
 
 ## Assembled Schema Endpoint
 
-`Asschema` is currently the typed in-memory endpoint produced by lowering a
-real `.schema` file. The previous checked-in assembled-schema text fixture
-surface has been removed from active code because it confused raw NOTA bracket
-structure with higher schema semantics.
+`Asschema` is the typed, macro-free data endpoint produced by lowering a real
+`.schema` file. It is also a live artifact: `Asschema::to_nota` writes the
+assembled schema as legal NOTA, `Asschema::from_nota_source` reads that NOTA
+back as the same typed value, and `Asschema::to_binary_bytes` /
+`Asschema::from_binary_bytes` archive and restore the same value through rkyv.
 
-Tests now prove the endpoint by asserting the Rust data directly:
+Tests prove the endpoint by asserting the Rust data directly and by
+round-tripping the produced `Asschema` through NOTA and rkyv:
 `Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,
 `TypeDeclaration::{Struct, Enum, Newtype}` and
-`TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`. A
-later serialized assembled schema format must be designed from the raw-NOTA
-floor rather than reviving the obsolete vector-record fixture shape.
+`TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`.
+The previous checked-in assembled-schema text fixture surface stays removed:
+the live serialized form comes from the typed data object, not from hand-kept
+golden `.asschema` text.
 
 Namespace declarations are assembled as ordinary data-carrying visibility
 objects: `(Public Name Value)` for exported top-level types and
@@ -150,9 +153,9 @@ module schema and checking that the imported type is declared there.
   lowering consumed the source's first-pass structural shape.
 - `Asschema` stores root declarations and visibility-tagged namespace
   declarations in `Vec` order; lookup maps are derived.
-- Active code does not keep assembled-schema text fixtures. The current
-  serialized file-level witness is `.schema`, parsed as NOTA first and then
-  lowered.
+- Active code does not keep hand-written assembled-schema text fixtures.
+  `Asschema` can serialize itself to NOTA and rkyv after lowering, and tests
+  read those serialized forms back through the same typed object.
 - The root schema is positional. Current MVP shape:
   - field 1: named input root enum, for example `Input@[Record@Entry Reindex]`
   - field 2: named output root enum, for example `Output@[Recorded@Receipt Rejected@Rejection]`

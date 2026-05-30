@@ -10,7 +10,17 @@ use crate::{ImportDeclaration, Name, SchemaEngine, SchemaError, SchemaPackage};
 /// splits that target into the dependency crate, the module inside
 /// it, and the imported type, so the resolver can find the
 /// dependency's schema file and confirm the type is declared there.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct ImportSource {
     crate_name: Name,
     module: Name,
@@ -78,7 +88,17 @@ impl TryFrom<&Name> for ImportSource {
 /// imported type, then carries the local alias plus the parsed source
 /// so the Rust emitter can write a `use` aliasing the dependency's
 /// emitted type to the local name — instead of re-declaring the type.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct ResolvedImport {
     local_name: Name,
     source: ImportSource,

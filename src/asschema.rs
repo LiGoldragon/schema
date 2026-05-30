@@ -1,6 +1,6 @@
 use std::fmt;
 
-use nota_next::{Block, Delimiter};
+use nota_next::{Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaEncode, NotaSource};
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
@@ -8,7 +8,18 @@ use crate::{
     macros::{BlockDebug, SchemaBlockExt},
 };
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+)]
 pub struct Name(String);
 
 impl Name {
@@ -55,7 +66,17 @@ impl fmt::Display for Name {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct Asschema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
@@ -130,9 +151,39 @@ impl Asschema {
             .find(|declaration| declaration.name().as_str() == name)
             .map(Declaration::value)
     }
+
+    pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
+        NotaSource::new(source)
+            .parse::<Self>()
+            .map_err(SchemaError::from)
+    }
+
+    pub fn to_nota(&self) -> String {
+        NotaEncode::to_nota(self)
+    }
+
+    pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
+        rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|_| SchemaError::ArchiveDecode)
+    }
+
+    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|bytes| bytes.to_vec())
+            .map_err(|_| SchemaError::ArchiveEncode)
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct RootDeclaration {
     pub enum_declaration: EnumDeclaration,
 }
@@ -151,19 +202,50 @@ impl RootDeclaration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct ImportDeclaration {
     pub local_name: Name,
     pub source: TypeReference,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum Visibility {
     Public,
     Private,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct Declaration {
     visibility: Visibility,
     name: Name,
@@ -205,7 +287,17 @@ impl Declaration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum TypeDeclaration {
     Struct(StructDeclaration),
     Enum(EnumDeclaration),
@@ -222,7 +314,17 @@ impl TypeDeclaration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct NewtypeDeclaration {
     pub name: Name,
     pub reference: TypeReference,
@@ -234,7 +336,17 @@ impl NewtypeDeclaration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct StructDeclaration {
     pub name: Name,
     pub fields: StructFieldMap,
@@ -256,7 +368,7 @@ impl StructDeclaration {
 /// The Rust storage preserves source order because rkyv layout and
 /// generated struct field order are load-bearing, but the object is
 /// semantically a field-name -> type-reference map.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct StructFieldMap {
     entries: Vec<FieldDeclaration>,
 }
@@ -304,13 +416,75 @@ impl<'fields> IntoIterator for &'fields StructFieldMap {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl NotaDecode for StructFieldMap {
+    fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
+        let Block::Delimited {
+            delimiter: Delimiter::Brace,
+            root_objects,
+            ..
+        } = block
+        else {
+            return Err(NotaDecodeError::ExpectedDelimited {
+                type_name: "StructFieldMap",
+                delimiter: "brace",
+            });
+        };
+        if root_objects.len() % 2 != 0 {
+            return Err(NotaDecodeError::ExpectedRootCount {
+                type_name: "StructFieldMap",
+                expected: root_objects.len() + 1,
+                found: root_objects.len(),
+            });
+        }
+        let mut entries = Vec::new();
+        for chunk in root_objects.chunks_exact(2) {
+            entries.push(FieldDeclaration {
+                name: Name::from_nota_block(&chunk[0])?,
+                reference: TypeReference::from_nota_block(&chunk[1])?,
+            });
+        }
+        Ok(Self::new(entries))
+    }
+}
+
+impl NotaEncode for StructFieldMap {
+    fn to_nota(&self) -> String {
+        let mut fields = Vec::new();
+        for entry in self.entries() {
+            fields.push(entry.name.to_nota());
+            fields.push(entry.reference.to_nota());
+        }
+        format!("{{{}}}", fields.join(" "))
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct FieldDeclaration {
     pub name: Name,
     pub reference: TypeReference,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct EnumDeclaration {
     pub name: Name,
     pub variants: Vec<EnumVariant>,
@@ -322,7 +496,17 @@ impl EnumDeclaration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct EnumVariant {
     pub name: Name,
     pub payload: Option<TypeReference>,
@@ -339,16 +523,79 @@ pub struct EnumVariant {
 /// `(Map (K V))` lowers to `Map<K, V>`, and `(Optional T)` lowers to
 /// `Optional<T>`. Parentheses with other heads remain available for
 /// user-declared type-reference macros.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
+    serialize_bounds(__S: rkyv::ser::Writer),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum TypeReference {
     String,
     Integer,
     Boolean,
     Path,
     Plain(Name),
-    Vector(Box<TypeReference>),
-    Map(Box<TypeReference>, Box<TypeReference>),
-    Optional(Box<TypeReference>),
+    Vector(#[rkyv(omit_bounds)] Box<TypeReference>),
+    Map(
+        #[rkyv(omit_bounds)] Box<TypeReference>,
+        #[rkyv(omit_bounds)] Box<TypeReference>,
+    ),
+    Optional(#[rkyv(omit_bounds)] Box<TypeReference>),
+}
+
+impl NotaDecode for TypeReference {
+    fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
+        if let Some(name) = block.demote_to_string() {
+            return match name {
+                "String" => Ok(Self::String),
+                "Integer" => Ok(Self::Integer),
+                "Boolean" => Ok(Self::Boolean),
+                "Path" => Ok(Self::Path),
+                other => Err(NotaDecodeError::UnknownVariant {
+                    enum_name: "TypeReference",
+                    variant: other.to_owned(),
+                }),
+            };
+        }
+        let children = NotaBlock::new(block).expect_children(
+            Delimiter::Parenthesis,
+            "parenthesis",
+            "TypeReference",
+            2,
+        )?;
+        let variant = children[0]
+            .demote_to_string()
+            .ok_or(NotaDecodeError::ExpectedAtom {
+                type_name: "TypeReference variant",
+            })?;
+        match variant {
+            "Plain" => Ok(Self::Plain(Name::from_nota_block(&children[1])?)),
+            "Vector" => Ok(Self::Vector(Box::new(Self::from_nota_block(&children[1])?))),
+            "Optional" => Ok(Self::Optional(Box::new(Self::from_nota_block(
+                &children[1],
+            )?))),
+            "Map" => Self::from_nota_map_payload(&children[1]),
+            other => Err(NotaDecodeError::UnknownVariant {
+                enum_name: "TypeReference",
+                variant: other.to_owned(),
+            }),
+        }
+    }
+}
+
+impl NotaEncode for TypeReference {
+    fn to_nota(&self) -> String {
+        match self {
+            Self::String => "String".to_owned(),
+            Self::Integer => "Integer".to_owned(),
+            Self::Boolean => "Boolean".to_owned(),
+            Self::Path => "Path".to_owned(),
+            Self::Plain(name) => format!("(Plain {})", name.to_nota()),
+            Self::Vector(reference) => format!("(Vector {})", reference.to_nota()),
+            Self::Map(key, value) => format!("(Map ({} {}))", key.to_nota(), value.to_nota()),
+            Self::Optional(reference) => format!("(Optional {})", reference.to_nota()),
+        }
+    }
 }
 
 impl TypeReference {
@@ -402,6 +649,19 @@ impl TypeReference {
     /// Whether this reference is a declared-name leaf.
     pub fn is_plain(&self) -> bool {
         matches!(self, Self::Plain(_))
+    }
+
+    fn from_nota_map_payload(block: &Block) -> Result<Self, NotaDecodeError> {
+        let children = NotaBlock::new(block).expect_children(
+            Delimiter::Parenthesis,
+            "parenthesis",
+            "TypeReference::Map payload",
+            2,
+        )?;
+        Ok(Self::Map(
+            Box::new(Self::from_nota_block(&children[0])?),
+            Box::new(Self::from_nota_block(&children[1])?),
+        ))
     }
 
     /// Lower an already-parsed NOTA block at a reference position into
@@ -682,7 +942,7 @@ impl<'schema> MacroInvocationData<'schema> {
 /// type constructor. This type exists so macro calls can be inspected,
 /// serialized through assembled schema, and tested as data rather than
 /// disappearing into parser control flow.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub struct SchemaNode {
     tag: Name,
     data: SchemaNodeData,
@@ -733,7 +993,7 @@ impl SchemaNode {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub enum SchemaNodeData {
     Unit,
     Value(SchemaNodeValue),
@@ -759,7 +1019,7 @@ impl SchemaNodeData {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub enum SchemaNodeValue {
     Symbol(Name),
     Text(String),
@@ -801,7 +1061,7 @@ impl SchemaNodeValue {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub struct SchemaNodePair {
     key: Name,
     value: SchemaNodeValue,

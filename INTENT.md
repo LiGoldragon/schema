@@ -93,9 +93,10 @@ schema module, confirms the type is declared there, and records a resolved
 import so Rust emission can reference the dependency type by alias.*
 
 *Assembled schema is defined before authored-schema sugar. `Asschema` is the
-typed in-memory macro-free endpoint produced by lowering real `.schema` files.
-Current tests assert that typed data directly rather than preserving assembled
-schema text fixtures.*
+typed macro-free endpoint produced by lowering real `.schema` files, and it is
+itself live data: it must read/write legal NOTA through the shared NOTA codec
+and read/write binary rkyv bytes. Rust emission consumes that assembled data
+object, not hidden parser state or hand-kept assembled-schema text fixtures.*
 
 *A core schema file can be read one layer lower than schema lowering: as raw
 NOTA object data. In that mode the root struct name is derived from the
@@ -171,6 +172,10 @@ Current implementation target:
 - The context records which macros ran as diagnostics. Correctness tests prove
   lowering through the produced `Asschema` data, not by treating trace strings
   as a side-channel witness.
+- `Asschema` derives the shared NOTA codec and rkyv archive surface wherever
+  its data is non-recursive; recursive references use explicit `omit_bounds`
+  archive annotations and object-owned codec methods so assembled schema stays
+  serializable without adding parser magic.
 - `schemas/core.schema` describes macro pattern/template payloads as typed
   schema data (`MacroPatternObject`, `MacroTemplateObject`, delimiter nodes,
   captures, atoms), not opaque strings. The built-in macro registry is not yet

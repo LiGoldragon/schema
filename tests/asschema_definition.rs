@@ -81,3 +81,36 @@ fn asschema_import_data_is_built_from_real_schema_fixture() {
         "marker_core::schema::mail::DatabaseMarker"
     );
 }
+
+#[test]
+fn asschema_is_a_live_nota_and_rkyv_data_artifact() {
+    let source = include_str!("fixtures/big-schemas/spirit-reactive-large.schema");
+    let asschema = SchemaEngine::default()
+        .lower_source(
+            source,
+            SchemaIdentity::new("example:spirit-reactive-large", "0.1.0"),
+        )
+        .expect("schema lowers into typed Asschema data");
+
+    let nota = asschema.to_nota();
+    Document::parse(&nota).expect("emitted asschema is legal NOTA");
+    let from_nota = schema_next::Asschema::from_nota_source(&nota)
+        .expect("asschema decodes from its NOTA form");
+    assert_eq!(from_nota, asschema);
+
+    let bytes = asschema
+        .to_binary_bytes()
+        .expect("asschema encodes as rkyv bytes");
+    let from_binary = schema_next::Asschema::from_binary_bytes(&bytes)
+        .expect("asschema decodes from rkyv bytes");
+    assert_eq!(from_binary, asschema);
+
+    assert!(
+        nota.contains("(Public [Entry] (Struct ([Entry]"),
+        "the assembled artifact carries visibility, names, and type declarations as data: {nota}"
+    );
+    assert!(
+        nota.contains("(Vector (Plain [Entry]))"),
+        "schema Vec sugar must be gone; assembled schema carries Vector data: {nota}"
+    );
+}
