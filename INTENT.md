@@ -160,7 +160,7 @@ tag-plus-payload struct.*
 `fieldName TypeReference` pairs. A PascalCase key followed by `*` is the
 derived-member shorthand: `Topics *` lowers to field `topics` with type
 `Topics`. Root input/output positions are known by the schema reader and are
-written as bare bracket bodies such as `[Record@ Entry]` or `[]`, never
+written as bare bracket bodies such as `[(Record Entry)]` or `[]`, never
 `Input@[]` / `Output@[]` at the root. Square-bracket namespace values define
 enum bodies; brace namespace values define struct field maps; atom or
 parenthesized reference values define newtypes (`Topic String`,
@@ -168,6 +168,12 @@ parenthesized reference values define newtypes (`Topic String`,
 macro-call argument form (`(Vec Entry)`, `(Optional Kind)`,
 `(Map (Key Value))`). The older self-named `Type@{...}` / `Type@[...]` surface
 is compatibility syntax while fixtures migrate, not the target structure.*
+
+*Enum bodies are homogeneous vectors of variant-signature objects. A unit
+variant is a bare PascalCase symbol, and a data-carrying variant is a
+parenthesized record `(Variant PayloadType)`. The retired `Variant@ Payload`
+or `Variant@Payload` spelling is not structurally honest inside `[]` because
+it smuggles key/value rhythm into a vector delimiter.*
 
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with

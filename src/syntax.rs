@@ -289,15 +289,14 @@ impl SyntaxVariant {
 
     fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
         if let Some(name) = raw.as_atom() {
-            if let Some(binding) = SyntaxBinding::from_text(name) {
+            if Self::is_variant_symbol(name) {
                 return Ok(Self {
-                    name: binding.name,
-                    payload: Some(SyntaxReference::Plain(binding.reference)),
+                    name: Name::new(name),
+                    payload: None,
                 });
             }
-            return Ok(Self {
-                name: Name::new(name),
-                payload: None,
+            return Err(SchemaError::ExpectedSyntaxEnumVariant {
+                found: raw.syntax_description(),
             });
         }
 
@@ -318,10 +317,23 @@ impl SyntaxVariant {
                 found: sequence.items()[0].syntax_description(),
             });
         };
+        if !Self::is_variant_symbol(name) {
+            return Err(SchemaError::ExpectedSyntaxEnumVariant {
+                found: sequence.items()[0].syntax_description(),
+            });
+        }
         Ok(Self {
             name: Name::new(name),
             payload: Some(SyntaxReference::from_raw(&sequence.items()[1])?),
         })
+    }
+
+    fn is_variant_symbol(value: &str) -> bool {
+        value
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase())
+            && !value.contains('@')
     }
 }
 

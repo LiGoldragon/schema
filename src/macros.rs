@@ -2,7 +2,7 @@ use nota_next::{
     AtomShape, Block, CaptureName, DelimitedShape, Delimiter, MacroCandidate, MacroDelimiter,
     MacroNodeDefinition as NotaMacroNodeDefinition, MacroObjectCount as NotaMacroObjectCount,
     MacroRegistry as NotaMacroRegistry, NotaBody, Pattern, PatternElement, PositionPredicate,
-    SigilSpec, StructureHeader,
+    StructureHeader,
 };
 
 use crate::{
@@ -442,15 +442,23 @@ impl MacroNodeDefinition {
                     )))]),
                     "PascalCase variant atom",
                 ),
-                Self::pair_case(
-                    MacroPosition::EnumVariants,
+                NotaMacroNodeDefinition::new(
                     "data variant",
-                    PatternElement::atom(
-                        AtomShape::pascal_case(Some(CaptureName::new("variant_name")))
-                            .with_sigil(SigilSpec::suffix("@")),
-                    ),
-                    PatternElement::any(Some(CaptureName::new("payload"))),
-                    "PascalCase@ variant key followed by payload type",
+                    MacroPosition::EnumVariants.position_predicate(),
+                    Pattern::new(vec![PatternElement::delimited(
+                        DelimitedShape::new(
+                            MacroDelimiter::Parenthesis,
+                            NotaMacroObjectCount::Exact(2),
+                            Some(CaptureName::new("variant_signature")),
+                        )
+                        .with_children(Pattern::new(vec![
+                            PatternElement::atom(AtomShape::pascal_case(Some(CaptureName::new(
+                                "variant_name",
+                            )))),
+                            PatternElement::any(Some(CaptureName::new("payload"))),
+                        ])),
+                    )]),
+                    "parenthesized variant signature carrying variant name and payload type",
                 ),
             ],
         )

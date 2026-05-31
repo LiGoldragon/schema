@@ -1,14 +1,14 @@
 { DatabaseMarker marker-core:mail:DatabaseMarker
   CommitSequence marker-core:mail:CommitSequence }
-Input@[Record@Entry
- Observe@Query
- Mark@DatabaseMarker
- Commit@CommitSequence]
-Output@[Recorded@RecordReceipt
- Observed@RecordSet
- Marked@DatabaseMarker
- Committed@CommitSequence
- Rejected@Rejection]
+Input@[(Record Entry)
+ (Observe Query)
+ (Mark DatabaseMarker)
+ (Commit CommitSequence)]
+Output@[(Recorded RecordReceipt)
+ (Observed RecordSet)
+ (Marked DatabaseMarker)
+ (Committed CommitSequence)
+ (Rejected Rejection)]
 {
   Topic@{ string@String }
   Topics@{ values@(Vec Topic) }

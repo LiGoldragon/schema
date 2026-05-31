@@ -1,17 +1,17 @@
-Input@[Record@Entry
- Correct@Correction
- Observe@Query
- Watch@WatchRequest
- Unwatch@SubscriptionToken
+Input@[(Record Entry)
+ (Correct Correction)
+ (Observe Query)
+ (Watch WatchRequest)
+ (Unwatch SubscriptionToken)
  Reindex
  Compact]
-Output@[Recorded@RecordReceipt
- Corrected@CorrectionReceipt
- Observed@RecordSet
- Watching@SubscriptionReceipt
- Unwatched@SubscriptionReceipt
- Rejected@Rejection
- Indexed@IndexReceipt]
+Output@[(Recorded RecordReceipt)
+ (Corrected CorrectionReceipt)
+ (Observed RecordSet)
+ (Watching SubscriptionReceipt)
+ (Unwatched SubscriptionReceipt)
+ (Rejected Rejection)
+ (Indexed IndexReceipt)]
 {
   Topic@{ string@String }
   Topics@{ values@(Vec Topic) }

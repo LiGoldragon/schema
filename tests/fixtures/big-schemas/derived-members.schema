@@ -1,5 +1,5 @@
-Input@[Record@Entry Observe@Query]
-Output@[Accepted@Receipt Failed@ErrorReport]
+Input@[(Record Entry) (Observe Query)]
+Output@[(Accepted Receipt) (Failed ErrorReport)]
 {
   RecordIdentifier@Integer
   DatabaseMarker@Integer
@@ -13,5 +13,5 @@ Output@[Accepted@Receipt Failed@ErrorReport]
   Query@{ @Topics limit@(Optional Integer) }
   Receipt@{ @RecordIdentifier @DatabaseMarker }
   ErrorReport@{ @Description }
-  SomeEnum@[ @SomethingHoldingSomething SomethingElse SomeString@String ]
+  SomeEnum@[ (SomethingHoldingSomething SomethingHoldingSomething) SomethingElse (SomeString String) ]
 }

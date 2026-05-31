@@ -6,5 +6,5 @@
   Entry@{ @Topics @Kind @Description }
   Query@{ @Topics limit@(Optional Integer) }
   SomethingHoldingSomething@{ String }
-  SomeEnum@[ @SomethingHoldingSomething SomethingElse SomeString@String ]
+  SomeEnum@[ (SomethingHoldingSomething SomethingHoldingSomething) SomethingElse (SomeString String) ]
 }

@@ -1895,67 +1895,21 @@ impl<'template> AssembledVariants<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        let mut variants = Vec::new();
-        let mut index = 0;
-        while index < self.objects.len() {
-            if self.starts_data_variant_pair(index) {
-                let payload_index = index + 1;
-                if payload_index >= self.objects.len() {
-                    return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                        form: "data variant pair",
-                        expected: "variant name plus one payload reference",
-                        found: 1,
-                    });
-                }
-                variants.push(
-                    AssembledVariant::new_payload_pair(
-                        self.objects[index],
-                        self.objects[payload_index],
-                    )
-                    .lower(registry, context)?,
-                );
-                index += 2;
-            } else {
-                variants.push(AssembledVariant::new(self.objects[index]).lower(registry, context)?);
-                index += 1;
-            }
-        }
-        Ok(variants)
-    }
-
-    fn starts_data_variant_pair(&self, index: usize) -> bool {
-        let Some(name) = self.objects[index].demote_to_string() else {
-            return false;
-        };
-        name.strip_suffix('@')
-            .is_some_and(|variant| !variant.is_empty())
-            || self
-                .objects
-                .get(index + 1)
-                .and_then(ObjectView::demote_to_string)
-                == Some("*")
+        self.objects
+            .iter()
+            .map(|object| AssembledVariant::new(*object).lower(registry, context))
+            .collect()
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct AssembledVariant<'template> {
     object: ObjectView<'template>,
-    paired_payload: Option<ObjectView<'template>>,
 }
 
 impl<'template> AssembledVariant<'template> {
     fn new(object: ObjectView<'template>) -> Self {
-        Self {
-            object,
-            paired_payload: None,
-        }
-    }
-
-    fn new_payload_pair(name: ObjectView<'template>, payload: ObjectView<'template>) -> Self {
-        Self {
-            object: name,
-            paired_payload: Some(payload),
-        }
+        Self { object }
     }
 
     fn lower(
@@ -1963,15 +1917,6 @@ impl<'template> AssembledVariant<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
-        if let Some(payload) = self.paired_payload {
-            return self.lower_payload_pair(payload, registry, context);
-        }
-        if let Some(binding) = AssembledBinding::from_object(self.object) {
-            return Ok(EnumVariant {
-                name: binding.name,
-                payload: Some(TypeReference::from_name(binding.reference)),
-            });
-        }
         if self.object.is_parenthesis() {
             self.lower_parenthesis(registry, context)
         } else if self.object.qualifies_as_pascal_case_symbol() {
@@ -1984,49 +1929,12 @@ impl<'template> AssembledVariant<'template> {
         }
     }
 
-    fn lower_payload_pair(
-        &self,
-        payload: ObjectView<'template>,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<EnumVariant, SchemaError> {
-        let name = self.variant_pair_name()?;
-        let reference = if payload.demote_to_string() == Some("*") {
-            TypeReference::from_name(name.clone())
-        } else {
-            payload.type_reference(registry, context)?
-        };
-        Ok(EnumVariant {
-            name,
-            payload: Some(reference),
-        })
-    }
-
-    fn variant_pair_name(&self) -> Result<Name, SchemaError> {
-        if let Some(text) = self.object.demote_to_string() {
-            if let Some(name) = text.strip_suffix('@') {
-                if !name.is_empty() {
-                    return Ok(Name::new(name));
-                }
-            }
-        }
-        self.object.schema_name()
-    }
-
     fn lower_parenthesis(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
         match self.object.holds_root_objects() {
-            1 => Ok(EnumVariant {
-                name: self
-                    .object
-                    .root_object_at(0)
-                    .expect("count checked")
-                    .schema_name()?,
-                payload: None,
-            }),
             2 => Ok(EnumVariant {
                 name: self
                     .object

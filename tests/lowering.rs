@@ -122,7 +122,7 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
 
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
-    let source = "[Record@ schema:spirit:Entry] [] { schema:spirit:Topic String schema:spirit:Entry schema:spirit:Topic }";
+    let source = "[(Record schema:spirit:Entry)] [] { schema:spirit:Topic String schema:spirit:Entry schema:spirit:Topic }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
@@ -688,7 +688,7 @@ fn at_type_shorthand_derives_fields_and_data_variant_payloads_from_real_schema()
 
 #[test]
 fn inline_at_declaration_creates_ordered_namespace_type() {
-    let source = "Input@[] Output@[] { Entry@{ Receipt@{ recordIdentifier@RecordIdentifier } later@Receipt } }";
+    let source = "[] [] { Entry@{ Receipt@{ recordIdentifier@RecordIdentifier } later@Receipt } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline declaration lowers");
@@ -724,7 +724,7 @@ fn inline_at_declaration_creates_ordered_namespace_type() {
 fn root_enum_requires_named_input_and_output_declarations() {
     let asschema = SchemaEngine::default()
         .lower_source(
-            "[Record@ Entry] [] {}",
+            "[(Record Entry)] [] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("bare input root lowers because the root position names it");
@@ -733,7 +733,7 @@ fn root_enum_requires_named_input_and_output_declarations() {
 
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Reply@[Accepted@Receipt] {}",
+            "Input@[] Reply@[(Accepted Receipt)] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect_err("root output must be named Output");

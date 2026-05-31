@@ -160,7 +160,7 @@ map. Schema sugar may shorten values, but it must not turn a brace entry into
 a single self-named object.
 
 - Root input/output positions are known by the schema reader and are written
-  as bare bracket bodies: `[]`, `[Record@ Entry]`, or
+  as bare bracket bodies: `[]`, `[(Record Entry)]`, or
   `[(Record Entry) Observe]`. The root does not say `Input@[]` or
   `Output@[]`.
 - Namespace braces contain `TypeName Value` pairs. `Topic String` and
@@ -169,12 +169,11 @@ a single self-named object.
 - Struct braces contain field-name -> type-reference pairs. `topic Topic` is
   explicit. `Topics *` derives the field name from an already-defined type and
   lowers to `topics: Topics`.
-- Enum bodies are bracket/vector structure. Data variants may use the current
-  pair sugar `Record@ Entry` or the parenthesized long form `(Record Entry)`.
-
-The `@` marker on an enum variant key is a key-side type cue for a
-data-carrying variant. It is not a macro-call marker; schema-node macro calls
-remain tagged values read against a known expected type.
+- Enum bodies are bracket/vector structure. Each object in that vector is a
+  variant signature: a bare PascalCase symbol for a unit variant or a
+  parenthesized `(Variant PayloadType)` record for a data-carrying variant.
+  `Variant@ Payload` and `Variant@Payload` are retired because they insert a
+  key/value rhythm into a vector delimiter.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`
@@ -267,8 +266,8 @@ module schema and checking that the imported type is declared there.
   `schemas/builtin-macros.macro-library` are freshness-checked against their
   source inputs and consumed through typed artifact objects.
 - The root schema is positional. Current MVP shape:
-  - field 1: input root enum body, for example `[Record@ Entry Reindex]`
-  - field 2: output root enum body, for example `[Recorded@ Receipt Rejected@ Rejection]`
+  - field 1: input root enum body, for example `[(Record Entry) Reindex]`
+  - field 2: output root enum body, for example `[(Recorded Receipt) (Rejected Rejection)]`
   - field 3: namespace map `{ TypeName Value ... }`
   - optional leading field: imports map `{ Local dependency-crate:module:Type }`
 - Input and output roots are actor reaction languages. They declare

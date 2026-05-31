@@ -249,7 +249,7 @@ fn design_example_default_engine_has_two_macro_layers() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "[Record@ Entry] [Accepted] { Entry { description Description } }";
+    let source = "[(Record Entry)] [Accepted] { Entry { description Description } }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -273,13 +273,13 @@ fn design_example_schema_lowering_records_source_structure_header() {
         observed,
         vec![
             (StructureShape::Document, 3),
-            (StructureShape::SquareBracket, 2),
-            (StructureShape::Atom, 0),
-            (StructureShape::Atom, 0),
+            (StructureShape::SquareBracket, 1),
+            (StructureShape::Parenthesis, 2),
             (StructureShape::SquareBracket, 1),
             (StructureShape::Atom, 0),
             (StructureShape::Brace, 2),
-            (StructureShape::Unknown, 15),
+            (StructureShape::Atom, 0),
+            (StructureShape::Brace, 2),
         ],
     );
     assert_ne!(header.packed_word(), 0, "header packs into a u64 word");
@@ -391,11 +391,11 @@ fn design_example_schema_node_macro_call_is_tagged_data() {
 }
 
 /// Illustrates: root enum payloads are authored directly inside the
-/// known root enum body. Payload-carrying variants use `Variant@ Payload`;
+/// known root enum body. Payload-carrying variants use `(Variant Payload)`;
 /// unit variants use bare symbols.
 #[test]
 fn design_example_root_enum_uses_direct_variant_shapes() {
-    let source = "[Record@ Entry Drop] [] {}";
+    let source = "[(Record Entry) Drop] [] {}";
 
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
@@ -423,7 +423,7 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
 /// variants. The old star suffix is gone from authored schema.
 #[test]
 fn design_example_same_name_payload_variant_uses_explicit_payload() {
-    let source = "[Record@ Record] [Recorded@ Recorded] { Record { description Description } Recorded { recordIdentifier RecordIdentifier } }";
+    let source = "[(Record Record)] [(Recorded Recorded)] { Record { description Description } Recorded { recordIdentifier RecordIdentifier } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("explicit same-name variants lower");
@@ -503,13 +503,13 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
 #[test]
 fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
     let source = "
-        [Record@ Entry Observe@ Query]
-        [RecordAccepted@ RecordIdentifier RecordsObserved@ RecordSet]
+        [(Record Entry) (Observe Query)]
+        [(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]
         {
-          NexusInput [Signal@ Input Sema@ SemaOutput]
-          NexusOutput [Sema@ SemaInput Signal@ Output]
-          SemaInput [Record@ Entry Observe@ Query]
-          SemaOutput [Recorded@ RecordIdentifier Observed@ RecordSet]
+          NexusInput [(Signal Input) (Sema SemaOutput)]
+          NexusOutput [(Sema SemaInput) (Signal Output)]
+          SemaInput [(Record Entry) (Observe Query)]
+          SemaOutput [(Recorded RecordIdentifier) (Observed RecordSet)]
           Topic String
           RecordIdentifier Integer
           Entry { topic Topic }

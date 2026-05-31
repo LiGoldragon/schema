@@ -1,28 +1,28 @@
-Input@[SignalIn@SignalRequest
- NexusIn@NexusRequest
- SemaIn@SemaRequest
- Admin@AdminRequest
+Input@[(SignalIn SignalRequest)
+ (NexusIn NexusRequest)
+ (SemaIn SemaRequest)
+ (Admin AdminRequest)
  Heartbeat]
-Output@[SignalOut@SignalReply
- NexusOut@NexusReply
- SemaOut@SemaReply
- AdminOut@AdminReply
- Event@RuntimeEvent
- Rejected@Rejected]
+Output@[(SignalOut SignalReply)
+ (NexusOut NexusReply)
+ (SemaOut SemaReply)
+ (AdminOut AdminReply)
+ (Event RuntimeEvent)
+ (Rejected Rejected)]
 {
   CommitSequence@{ integer@Integer }
   DatabaseDigest@{ integer@Integer }
   ActorIdentifier@{ string@String }
   SocketPath@{ string@String }
-  SignalRequest@[RecordIntent@RecordIntent ObserveIntent@ObserveIntent SubscribeIntent@SubscribeIntent]
-  SignalReply@[RecordAccepted@RecordAccepted ObservationReturned@ObservationReturned SubscriptionStarted@SubscriptionStarted]
-  NexusRequest@[PushSignal@PushSignal PushSemaResult@PushSemaResult ResolveMail ExpireMail]
-  NexusReply@[PushedToSema@PushedToSema MailResolved@MailResolved MailExpired]
-  SemaRequest@[WriteEntry@WriteEntry ReadEntries@ReadEntries OpenSubscription@OpenSubscription CloseSubscription@CloseSubscription]
-  SemaReply@[EntryWritten@EntryWritten EntriesRead@EntriesRead SubscriptionOpened@SubscriptionOpened SubscriptionClosed@SubscriptionClosed]
-  AdminRequest@[Drain Pause Resume Snapshot@Snapshot]
-  AdminReply@[Drained Paused Resumed SnapshotReady@SnapshotReady]
-  RuntimeEvent@[MailSent@MailSent MessageAccepted@MessageAccepted MessageCommitted@MessageCommitted MessageFailed@MessageFailed]
+  SignalRequest@[(RecordIntent RecordIntent) (ObserveIntent ObserveIntent) (SubscribeIntent SubscribeIntent)]
+  SignalReply@[(RecordAccepted RecordAccepted) (ObservationReturned ObservationReturned) (SubscriptionStarted SubscriptionStarted)]
+  NexusRequest@[(PushSignal PushSignal) (PushSemaResult PushSemaResult) ResolveMail ExpireMail]
+  NexusReply@[(PushedToSema PushedToSema) (MailResolved MailResolved) MailExpired]
+  SemaRequest@[(WriteEntry WriteEntry) (ReadEntries ReadEntries) (OpenSubscription OpenSubscription) (CloseSubscription CloseSubscription)]
+  SemaReply@[(EntryWritten EntryWritten) (EntriesRead EntriesRead) (SubscriptionOpened SubscriptionOpened) (SubscriptionClosed SubscriptionClosed)]
+  AdminRequest@[Drain Pause Resume (Snapshot Snapshot)]
+  AdminReply@[Drained Paused Resumed (SnapshotReady SnapshotReady)]
+  RuntimeEvent@[(MailSent MailSent) (MessageAccepted MessageAccepted) (MessageCommitted MessageCommitted) (MessageFailed MessageFailed)]
   Rejected@{ rejectionReason@RejectionReason }
   RejectionReason@[Malformed Unauthorized Conflict Unsupported StaleVersion InternalError]
   RecordIntent@{ actorIdentifier@ActorIdentifier entry@Entry }

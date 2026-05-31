@@ -10,11 +10,11 @@
   MacroName String
   MacroPattern MacroPatternObject
   MacroPatternObjects { values (Vec MacroPatternObject) }
-  MacroPatternObject [Capture@ MacroCaptureName RestCapture@ MacroCaptureName Atom@ MacroAtom Delimited@ MacroPatternDelimited]
+  MacroPatternObject [(Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroPatternDelimited)]
   MacroPatternDelimited { delimiter MacroDelimiter MacroPatternObjects * }
   MacroTemplate MacroTemplateObject
   MacroTemplateObjects { values (Vec MacroTemplateObject) }
-  MacroTemplateObject [Capture@ MacroCaptureName RestCapture@ MacroCaptureName Atom@ MacroAtom Delimited@ MacroTemplateDelimited]
+  MacroTemplateObject [(Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroTemplateDelimited)]
   MacroTemplateDelimited { delimiter MacroDelimiter MacroTemplateObjects * }
   MacroCaptureName String
   MacroAtom String

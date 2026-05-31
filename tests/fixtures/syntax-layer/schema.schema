@@ -8,6 +8,6 @@
   Entry@{ @Topics @Kind description@Text related@TopicIndex maybeTopic@(Optional Topic) }
   RecordQuery@{ topics@(Vec Topic) maximumCount@Integer }
   RecordReply@{ entries@(Vec Entry) }
-  SpiritInput@[Record@Entry Observe@RecordQuery Ping]
-  SpiritOutput@[Recorded@Identifier Observed@RecordReply Pong]
+  SpiritInput@[(Record Entry) (Observe RecordQuery) Ping]
+  SpiritOutput@[(Recorded Identifier) (Observed RecordReply) Pong]
 }
