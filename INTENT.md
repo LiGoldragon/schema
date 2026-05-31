@@ -117,6 +117,11 @@ outer parenthesized record. The input and output positions are known fields and
 serialize their enum bodies directly; they are not labeled data-carrying
 variants named `Input` or `Output`.*
 
+*Known-root `.asschema` reading goes through the NOTA document-body codec, not
+through ad hoc field-string joins. `Asschema` implements the NOTA document-body
+traits by assigning root objects to the typed `Asschema` fields; NOTA owns the
+body parse/format boundary while schema owns the field semantics.*
+
 *The assembled schema artifact is a first-class data object. `AsschemaArtifact`
 wraps an `Asschema` value and owns the read/write methods for `.asschema`
 NOTA files and `.asschema.rkyv` binary files, so downstream Rust emission can

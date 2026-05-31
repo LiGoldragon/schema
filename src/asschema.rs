@@ -4,7 +4,8 @@ use std::{
 };
 
 use nota_next::{
-    AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaEncode,
+    AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaDocumentBody,
+    NotaDocumentDecode, NotaDocumentEncode, NotaDocumentEncoding, NotaEncode, NotaSource,
     NotaString,
 };
 
@@ -166,20 +167,13 @@ impl Asschema {
     }
 
     pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
-        let document = nota_next::Document::parse(source)?;
-        Self::from_nota_document(&document)
+        NotaSource::new(source)
+            .parse_document_body()
+            .map_err(SchemaError::from)
     }
 
     pub fn to_nota(&self) -> String {
-        [
-            self.identity.to_nota(),
-            self.imports.to_nota(),
-            self.resolved_imports.to_nota(),
-            self.input.variants.to_nota(),
-            self.output.variants.to_nota(),
-            self.namespace.to_nota(),
-        ]
-        .join("\n")
+        self.to_nota_document_body().to_nota()
     }
 
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
@@ -192,19 +186,7 @@ impl Asschema {
             .map_err(|_| SchemaError::ArchiveEncode)
     }
 
-    fn from_nota_document(document: &nota_next::Document) -> Result<Self, SchemaError> {
-        match document.root_objects().len() {
-            1 => <Self as NotaDecode>::from_nota_block(&document.root_objects()[0])
-                .map_err(SchemaError::from),
-            6 => Self::from_nota_document_fields(document.root_objects()),
-            found => Err(SchemaError::ExpectedRootObjectCount {
-                expected: "six asschema root fields",
-                found,
-            }),
-        }
-    }
-
-    fn from_nota_document_fields(fields: &[Block]) -> Result<Self, SchemaError> {
+    fn from_nota_document_fields(fields: &[Block]) -> Result<Self, NotaDecodeError> {
         Ok(Self {
             identity: super::SchemaIdentity::from_nota_block(&fields[0])?,
             imports: Vec::<ImportDeclaration>::from_nota_block(&fields[1])?,
@@ -219,6 +201,33 @@ impl Asschema {
             ),
             namespace: Vec::<Declaration>::from_nota_block(&fields[5])?,
         })
+    }
+}
+
+impl NotaDocumentDecode for Asschema {
+    fn from_nota_document_body(body: &NotaDocumentBody<'_>) -> Result<Self, NotaDecodeError> {
+        match body.root_objects().len() {
+            1 => <Self as NotaDecode>::from_nota_block(&body.root_objects()[0]),
+            6 => Self::from_nota_document_fields(body.expect_fields("Asschema", 6)?),
+            found => Err(NotaDecodeError::ExpectedRootCount {
+                type_name: "Asschema",
+                expected: 6,
+                found,
+            }),
+        }
+    }
+}
+
+impl NotaDocumentEncode for Asschema {
+    fn to_nota_document_body(&self) -> NotaDocumentEncoding {
+        NotaDocumentEncoding::new(vec![
+            self.identity.to_nota(),
+            self.imports.to_nota(),
+            self.resolved_imports.to_nota(),
+            self.input.variants.to_nota(),
+            self.output.variants.to_nota(),
+            self.namespace.to_nota(),
+        ])
     }
 }
 
