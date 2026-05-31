@@ -130,7 +130,7 @@ dependencies = [
 [[package]]
 name = "nota-next"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#b041e6422e191700d9f05ba224b2c8e862358aa7"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#3f46c2e94a4d498d718ba3784a0363b7142e2d94"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -139,7 +139,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#b041e6422e191700d9f05ba224b2c8e862358aa7"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#3f46c2e94a4d498d718ba3784a0363b7142e2d94"
 dependencies = [
  "proc-macro2",
  "quote",

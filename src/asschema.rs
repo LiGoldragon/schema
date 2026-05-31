@@ -648,12 +648,8 @@ impl NotaDecode for TypeReference {
                 }),
             };
         }
-        let children = NotaBlock::new(block).expect_children(
-            Delimiter::Parenthesis,
-            "parenthesis",
-            "TypeReference",
-            2,
-        )?;
+        let children =
+            NotaBlock::new(block).expect_children(Delimiter::Parenthesis, "TypeReference", 2)?;
         let variant = children[0]
             .demote_to_string()
             .ok_or(NotaDecodeError::ExpectedAtom {
@@ -745,7 +741,6 @@ impl TypeReference {
     fn from_nota_map_payload(block: &Block) -> Result<Self, NotaDecodeError> {
         let children = NotaBlock::new(block).expect_children(
             Delimiter::Parenthesis,
-            "parenthesis",
             "TypeReference::Map payload",
             2,
         )?;
