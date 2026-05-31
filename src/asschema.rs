@@ -4,8 +4,9 @@ use std::{
 };
 
 use nota_next::{
-    AtomClassification, Block, Delimiter, NotaBlock, NotaBodyEncode, NotaDecode, NotaDecodeError,
-    NotaEncode, NotaNamedDocumentFieldDecode, NotaNamedDocumentFieldEncode, NotaSource, NotaString,
+    AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaBodyEncode, NotaDecode,
+    NotaDecodeError, NotaEncode, NotaNamedDocumentFieldDecode, NotaNamedDocumentFieldEncode,
+    NotaSource, NotaString,
 };
 
 use crate::{
@@ -490,17 +491,8 @@ impl<'fields> IntoIterator for &'fields StructFieldMap {
 
 impl NotaDecode for StructFieldMap {
     fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
-        let Block::Delimited {
-            delimiter: Delimiter::Brace,
-            root_objects,
-            ..
-        } = block
-        else {
-            return Err(NotaDecodeError::ExpectedDelimited {
-                type_name: "StructFieldMap",
-                delimiter: "brace",
-            });
-        };
+        let body = NotaBody::from_delimited(block, Delimiter::Brace, "StructFieldMap")?;
+        let root_objects = body.root_objects();
         if root_objects.len() % 2 != 0 {
             return Err(NotaDecodeError::ExpectedRootCount {
                 type_name: "StructFieldMap",

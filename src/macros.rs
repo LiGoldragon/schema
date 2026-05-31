@@ -1,8 +1,8 @@
 use nota_next::{
-    AtomShape, Block, CaptureName, DelimitedShape, MacroCandidate, MacroDelimiter,
+    AtomShape, Block, CaptureName, DelimitedShape, Delimiter, MacroCandidate, MacroDelimiter,
     MacroNodeDefinition as NotaMacroNodeDefinition, MacroObjectCount as NotaMacroObjectCount,
-    MacroRegistry as NotaMacroRegistry, Pattern, PatternElement, PositionPredicate, SigilSpec,
-    StructureHeader,
+    MacroRegistry as NotaMacroRegistry, NotaBody, Pattern, PatternElement, PositionPredicate,
+    SigilSpec, StructureHeader,
 };
 
 use crate::{
@@ -87,6 +87,17 @@ impl<'object> MacroObject<'object> {
             Self::Block(_) => None,
             Self::Pair(pair) => Some(pair),
         }
+    }
+
+    pub(crate) fn delimited_body(
+        self,
+        delimiter: Delimiter,
+        expected: &'static str,
+    ) -> Result<NotaBody<'object>, SchemaError> {
+        let block = self
+            .block()
+            .ok_or(SchemaError::ExpectedDelimiter { expected })?;
+        NotaBody::from_delimited(block, delimiter, expected).map_err(SchemaError::from)
     }
 
     pub fn describe(self) -> String {

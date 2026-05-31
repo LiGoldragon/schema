@@ -218,11 +218,12 @@ diagnostic. Type-reference positions retain their existing
 `UnknownTypeReferenceForm` path so unknown collection heads remain precise.
 
 Schema-next is now a consumer of the NOTA-layer macro mechanism for structural
-cases. Delimited captures from nota-next already expose inner `NotaBody`
-streams, so the next convergence work is to route successful `MacroMatch`
-captures directly into schema handlers, then load the schema macro vocabulary
-from serialized Asschema data instead of constructing the bootstrap registry
-in Rust.
+cases. Delimited captures from nota-next expose inner `NotaBody` streams, and
+the built-in root imports, root namespace, root enum, and struct-field map
+readers strip matched delimiters before semantic lowering. The next convergence
+work is to route successful `MacroMatch` captures directly into schema
+handlers, then load the schema macro vocabulary from serialized Asschema data
+instead of constructing the bootstrap registry in Rust.
 
 ## Schema Package Entry
 

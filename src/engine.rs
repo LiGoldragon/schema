@@ -1,4 +1,4 @@
-use nota_next::{Block, Document};
+use nota_next::{Block, Delimiter, Document, NotaBody};
 
 use crate::{
     asschema::{
@@ -693,30 +693,17 @@ impl SchemaMacro for RootImportsMacro {
         _registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
         self.signature.remember(position, context);
-        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
-            expected: self.signature.expected_delimiter(),
-        })?;
-        if !object.is_brace() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: self.signature.expected_delimiter(),
-            });
-        }
-        if object.holds_root_objects() % 2 != 0 {
+        let body = object.delimited_body(Delimiter::Brace, self.signature.expected_delimiter())?;
+        if body.root_objects().len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
-                found: object.holds_root_objects(),
+                found: body.root_objects().len(),
             });
         }
 
         let mut imports = Vec::new();
-        for index in (0..object.holds_root_objects()).step_by(2) {
-            let local_name = object
-                .root_object_at(index)
-                .expect("index within map object count")
-                .schema_name()?;
-            let source = object
-                .root_object_at(index + 1)
-                .expect("index within map object count")
-                .schema_name()?;
+        for chunk in body.root_objects().chunks_exact(2) {
+            let local_name = chunk[0].schema_name()?;
+            let source = chunk[1].schema_name()?;
             imports.push(ImportDeclaration {
                 local_name,
                 source: TypeReference::from_name(source),
@@ -757,28 +744,21 @@ impl SchemaMacro for RootNamespaceMacro {
         registry: &MacroRegistry,
     ) -> Result<MacroOutput, SchemaError> {
         self.signature.remember(position, context);
-        let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
-            expected: self.signature.expected_delimiter(),
-        })?;
-        if !object.is_brace() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: self.signature.expected_delimiter(),
-            });
-        }
+        let body = object.delimited_body(Delimiter::Brace, self.signature.expected_delimiter())?;
         Ok(MacroOutput::Types(
-            NamespaceBlock::new(object).lower_declarations(registry, context)?,
+            NamespaceBlock::new(body).lower_declarations(registry, context)?,
         ))
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct NamespaceBlock<'schema> {
-    object: &'schema Block,
+    body: NotaBody<'schema>,
 }
 
 impl<'schema> NamespaceBlock<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
+    fn new(body: NotaBody<'schema>) -> Self {
+        Self { body }
     }
 
     fn lower_declarations(
@@ -821,7 +801,7 @@ impl<'schema> NamespaceBlock<'schema> {
         context: &mut MacroContext,
     ) -> Result<Vec<Declaration>, SchemaError> {
         let mut declarations = Vec::new();
-        for declaration_object in self.object.root_objects() {
+        for declaration_object in self.body.root_objects() {
             let name = NamespaceDeclarationBlock::new(declaration_object).name()?;
             if TypeReference::is_reserved_scalar_name(&name) {
                 return Err(SchemaError::ReservedScalarTypeName {
@@ -839,10 +819,10 @@ impl<'schema> NamespaceBlock<'schema> {
     }
 
     fn contains_key_value_pairs(&self) -> bool {
-        self.object.holds_root_objects() == 0
-            || (self.object.holds_root_objects() % 2 == 0
+        self.body.root_objects().is_empty()
+            || (self.body.root_objects().len() % 2 == 0
                 && self
-                    .object
+                    .body
                     .root_objects()
                     .iter()
                     .step_by(2)
@@ -850,13 +830,13 @@ impl<'schema> NamespaceBlock<'schema> {
     }
 
     fn key_value_pairs(&self) -> Result<Vec<MacroPair<'schema>>, SchemaError> {
-        if self.object.holds_root_objects() % 2 != 0 {
+        if self.body.root_objects().len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
-                found: self.object.holds_root_objects(),
+                found: self.body.root_objects().len(),
             });
         }
         Ok(self
-            .object
+            .body
             .root_objects()
             .chunks_exact(2)
             .map(|chunk| MacroPair {
@@ -951,8 +931,7 @@ impl SchemaMacro for RootEnumMacro {
         let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
             expected: self.signature.expected_delimiter(),
         })?;
-        let root_enum = RootEnumBlock::new(object, self.enum_name);
-        root_enum.require_named_root_if_legacy()?;
+        let root_enum = RootEnumBlock::from_block(object, self.enum_name)?;
         let name = root_enum.name();
         let variants = root_enum.variants(registry, context)?;
         Ok(MacroOutput::RootEnum(EnumDeclaration::new(name, variants)))
@@ -961,37 +940,43 @@ impl SchemaMacro for RootEnumMacro {
 
 #[derive(Clone, Copy, Debug)]
 struct RootEnumBlock<'schema> {
-    object: &'schema Block,
+    variants: &'schema [Block],
     enum_name: &'static str,
 }
 
 impl<'schema> RootEnumBlock<'schema> {
-    fn new(object: &'schema Block, enum_name: &'static str) -> Self {
-        Self { object, enum_name }
-    }
-
-    fn name(&self) -> Name {
-        Name::new(self.enum_name)
-    }
-
-    fn require_named_root_if_legacy(&self) -> Result<(), SchemaError> {
-        if self.object.is_square_bracket() {
-            return Ok(());
+    fn from_block(object: &'schema Block, enum_name: &'static str) -> Result<Self, SchemaError> {
+        if object.is_square_bracket() {
+            let body =
+                NotaBody::from_delimited(object, Delimiter::SquareBracket, "root enum body")?;
+            return Ok(Self {
+                variants: body.root_objects(),
+                enum_name,
+            });
         }
-        let declared = self
-            .object
-            .root_object_at(0)
+
+        let body = NotaBody::from_delimited(object, Delimiter::PipeParenthesis, "root enum body")?;
+        let declared = body
+            .root_objects()
+            .first()
             .and_then(Block::demote_to_string)
             .ok_or(SchemaError::ExpectedDelimiter {
                 expected: "root enum name",
             })?;
-        if declared == self.enum_name {
-            return Ok(());
+        if declared != enum_name {
+            return Err(SchemaError::RootEnumNameMismatch {
+                expected: enum_name.to_owned(),
+                found: declared.to_owned(),
+            });
         }
-        Err(SchemaError::RootEnumNameMismatch {
-            expected: self.enum_name.to_owned(),
-            found: declared.to_owned(),
+        Ok(Self {
+            variants: &body.root_objects()[1..],
+            enum_name,
         })
+    }
+
+    fn name(&self) -> Name {
+        Name::new(self.enum_name)
     }
 
     fn variants(
@@ -999,10 +984,6 @@ impl<'schema> RootEnumBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        if self.object.is_square_bracket() {
-            AssembledVariants::new(self.object.root_objects()).lower(registry, context)
-        } else {
-            AssembledVariants::new(&self.object.root_objects()[1..]).lower(registry, context)
-        }
+        AssembledVariants::new(self.variants).lower(registry, context)
     }
 }
