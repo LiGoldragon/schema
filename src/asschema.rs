@@ -4,9 +4,9 @@ use std::{
 };
 
 use nota_next::{
-    AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaDocumentBody,
-    NotaDocumentDecode, NotaDocumentEncode, NotaDocumentEncoding, NotaEncode, NotaSource,
-    NotaString,
+    AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError,
+    NotaDocumentEncode, NotaEncode, NotaNamedDocumentFieldDecode, NotaNamedDocumentFieldEncode,
+    NotaSource, NotaString,
 };
 
 use crate::{
@@ -93,11 +93,14 @@ impl fmt::Display for Name {
     Eq,
     PartialEq,
 )]
+#[nota(known_root)]
 pub struct Asschema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
+    #[nota(name = "Input")]
     input: EnumDeclaration,
+    #[nota(name = "Output")]
     output: EnumDeclaration,
     namespace: Vec<Declaration>,
 }
@@ -184,50 +187,6 @@ impl Asschema {
         rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
-    }
-
-    fn from_nota_document_fields(fields: &[Block]) -> Result<Self, NotaDecodeError> {
-        Ok(Self {
-            identity: super::SchemaIdentity::from_nota_block(&fields[0])?,
-            imports: Vec::<ImportDeclaration>::from_nota_block(&fields[1])?,
-            resolved_imports: Vec::<super::ResolvedImport>::from_nota_block(&fields[2])?,
-            input: EnumDeclaration::new(
-                Name::new("Input"),
-                Vec::<EnumVariant>::from_nota_block(&fields[3])?,
-            ),
-            output: EnumDeclaration::new(
-                Name::new("Output"),
-                Vec::<EnumVariant>::from_nota_block(&fields[4])?,
-            ),
-            namespace: Vec::<Declaration>::from_nota_block(&fields[5])?,
-        })
-    }
-}
-
-impl NotaDocumentDecode for Asschema {
-    fn from_nota_document_body(body: &NotaDocumentBody<'_>) -> Result<Self, NotaDecodeError> {
-        match body.root_objects().len() {
-            1 => <Self as NotaDecode>::from_nota_block(&body.root_objects()[0]),
-            6 => Self::from_nota_document_fields(body.expect_fields("Asschema", 6)?),
-            found => Err(NotaDecodeError::ExpectedRootCount {
-                type_name: "Asschema",
-                expected: 6,
-                found,
-            }),
-        }
-    }
-}
-
-impl NotaDocumentEncode for Asschema {
-    fn to_nota_document_body(&self) -> NotaDocumentEncoding {
-        NotaDocumentEncoding::new(vec![
-            self.identity.to_nota(),
-            self.imports.to_nota(),
-            self.resolved_imports.to_nota(),
-            self.input.variants.to_nota(),
-            self.output.variants.to_nota(),
-            self.namespace.to_nota(),
-        ])
     }
 }
 
@@ -607,6 +566,24 @@ pub struct EnumDeclaration {
 impl EnumDeclaration {
     pub fn new(name: Name, variants: Vec<EnumVariant>) -> Self {
         Self { name, variants }
+    }
+}
+
+impl NotaNamedDocumentFieldDecode for EnumDeclaration {
+    fn from_nota_named_document_field(
+        name: &'static str,
+        block: &Block,
+    ) -> Result<Self, NotaDecodeError> {
+        Ok(Self::new(
+            Name::new(name),
+            Vec::<EnumVariant>::from_nota_block(block)?,
+        ))
+    }
+}
+
+impl NotaNamedDocumentFieldEncode for EnumDeclaration {
+    fn to_nota_named_document_field_body(&self) -> String {
+        self.variants.to_nota()
     }
 }
 

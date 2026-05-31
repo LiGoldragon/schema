@@ -57,14 +57,14 @@ the document contains the six `Asschema` root fields in order. The reader uses
 the root struct type it was asked to decode, so the fourth and fifth document
 objects are the input and output enum bodies directly. They are not serialized
 as `(Input ...)` or `(Output ...)` records; those names come from the expected
-root fields. The implementation still accepts the older one-record form as a
-compatibility surface while artifacts migrate.
+root fields.
 
 This uses the `nota-next` document-body codec. `Asschema::from_nota_source`
 delegates to `NotaSource::parse_document_body`, and `Asschema::to_nota`
-delegates to `NotaDocumentEncoding`. The root body mechanism belongs to NOTA;
-schema-next's implementation only maps the body slots to `Asschema` fields and
-keeps the compatibility branch for older one-record artifacts.
+delegates to the `#[nota(known_root)]`-derived document encoder. The root body
+mechanism belongs to NOTA; schema-next only implements the named-field
+projection that turns the input/output body slots into `EnumDeclaration`
+values named by the root type.
 
 Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Asschema` through NOTA and rkyv:
