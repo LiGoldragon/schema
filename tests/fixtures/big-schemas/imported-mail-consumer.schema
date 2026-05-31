@@ -1,10 +1,10 @@
 { DatabaseMarker marker-core:mail:DatabaseMarker
   CommitSequence marker-core:mail:CommitSequence }
-Input@[(Record Entry)
+[(Record Entry)
  (Observe Query)
  (Mark DatabaseMarker)
  (Commit CommitSequence)]
-Output@[(Recorded RecordReceipt)
+[(Recorded RecordReceipt)
  (Observed RecordSet)
  (Marked DatabaseMarker)
  (Committed CommitSequence)

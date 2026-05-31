@@ -161,7 +161,7 @@ tag-plus-payload struct.*
 derived-member shorthand: `Topics *` lowers to field `topics` with type
 `Topics`. Root input/output positions are known by the schema reader and are
 written as bare bracket bodies such as `[(Record Entry)]` or `[]`, never
-`Input@[]` / `Output@[]` at the root. Square-bracket namespace values define
+as labeled root wrappers. Square-bracket namespace values define
 enum bodies; brace namespace values define struct field maps; atom or
 parenthesized reference values define newtypes (`Topic String`,
 `Topics (Vec Topic)`). Parentheses remain the composite/type-reference and

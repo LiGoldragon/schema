@@ -161,8 +161,8 @@ a single self-named object.
 
 - Root input/output positions are known by the schema reader and are written
   as bare bracket bodies: `[]`, `[(Record Entry)]`, or
-  `[(Record Entry) Observe]`. The root does not say `Input@[]` or
-  `Output@[]`.
+  `[(Record Entry) Observe]`. The root does not carry labels; position supplies
+  `Input` and `Output`.
 - Namespace braces contain `TypeName Value` pairs. `Topic String` and
   `Topics (Vec Topic)` are newtype declarations; `Entry { topic Topic }` is a
   struct declaration; `Kind [Decision Correction]` is an enum declaration.

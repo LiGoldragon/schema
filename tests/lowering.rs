@@ -93,7 +93,7 @@ fn simple_newtype_declarations_lower_to_single_contained_reference() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
-    let source = "Input@[] Output@[] { (Entry Entry@{ topic@Topic kind@Kind }) }";
+    let source = "[] [] { (Entry Entry@{ topic@Topic kind@Kind }) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespaces contain self-named declarations only");
@@ -108,7 +108,7 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
 
 #[test]
 fn brace_namespace_rejects_redundant_key_value_declarations() {
-    let source = "Input@[] Output@[] { Entry Entry@{ topic@Topic kind@Kind } }";
+    let source = "[] [] { Entry Entry@{ topic@Topic kind@Kind } }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("namespace declarations must be key/value pairs without duplicated names");
@@ -551,10 +551,7 @@ fn schema_engine_can_be_built_from_a_macro_registry() {
     registry.register(RejectingRootImports);
     let engine = SchemaEngine::with_registry(registry);
     let error = engine
-        .lower_source(
-            "{} Input@[] Output@[] {}",
-            SchemaIdentity::new("example", "0.1.0"),
-        )
+        .lower_source("{} [] [] {}", SchemaIdentity::new("example", "0.1.0"))
         .expect_err("custom registry should reject");
 
     assert_eq!(
@@ -593,7 +590,7 @@ impl SchemaMacro for RejectingRootImports {
 
 #[test]
 fn brace_body_is_not_enum_sugar_inside_namespace() {
-    let source = "Input@[] Output@[] { Routing {ToInbox Address ToOutbox Address} }";
+    let source = "[] [] { Routing {ToInbox Address ToOutbox Address} }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace values are maps, not enum sugar");
@@ -721,7 +718,7 @@ fn inline_at_declaration_creates_ordered_namespace_type() {
 }
 
 #[test]
-fn root_enum_requires_named_input_and_output_declarations() {
+fn root_enum_positions_supply_input_and_output_names() {
     let asschema = SchemaEngine::default()
         .lower_source(
             "[(Record Entry)] [] {}",
@@ -730,18 +727,17 @@ fn root_enum_requires_named_input_and_output_declarations() {
         .expect("bare input root lowers because the root position names it");
     assert_eq!(asschema.input().name.as_str(), "Input");
     assert_eq!(asschema.input().variants[0].name.as_str(), "Record");
+    assert_eq!(asschema.output().name.as_str(), "Output");
 
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Reply@[(Accepted Receipt)] {}",
+            "[] Reply@[(Accepted Receipt)] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
-        .expect_err("root output must be named Output");
-    assert_eq!(
+        .expect_err("labeled root wrapper should not be accepted");
+    assert!(matches!(
         error,
-        schema_next::SchemaError::RootEnumNameMismatch {
-            expected: "Output".to_owned(),
-            found: "Reply".to_owned(),
-        }
-    );
+        schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
+            | schema_next::SchemaError::MacroDidNotMatch { .. }
+    ));
 }

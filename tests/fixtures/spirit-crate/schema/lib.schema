@@ -1,5 +1,5 @@
-Input@[(Record Entry) (Observe Query)]
-Output@[(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]
+[(Record Entry) (Observe Query)]
+[(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]
 {
   Topic@{ string@String }
   Topics@{ values@(Vec Topic) }

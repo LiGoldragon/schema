@@ -17,7 +17,7 @@ fn lower(source: &str) -> schema_next::Asschema {
 }
 
 fn roots(namespace: &str) -> String {
-    format!("Input@[] Output@[] {{ {namespace} }}")
+    format!("[] [] {{ {namespace} }}")
 }
 
 fn struct_fields<'asschema>(
@@ -102,7 +102,7 @@ fn scalar_references_nest_inside_collections() {
 fn scalar_names_are_reserved_at_namespace_declaration_position() {
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Output@[] { String@{ integer@Integer } }",
+            "[] [] { String@{ integer@Integer } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("reserved scalar names cannot be user-declared schema types");
@@ -143,7 +143,7 @@ fn option_field_lowers_to_optional_reference() {
 fn square_bracket_field_is_not_vec_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Output@[] { Service@{ string@String } Cluster@{ service [Service] } }",
+            "[] [] { Service@{ string@String } Cluster@{ service [Service] } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw square bracket is not a Vec reference");
@@ -160,7 +160,7 @@ fn square_bracket_field_is_not_vec_type_syntax() {
 fn brace_field_is_not_map_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Output@[] { NodeName@{ string@String } NodeProposal@{ string@String } Cluster@{ nodes {NodeName NodeProposal} } }",
+            "[] [] { NodeName@{ string@String } NodeProposal@{ string@String } Cluster@{ nodes {NodeName NodeProposal} } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw brace map is not a Map reference");
@@ -210,7 +210,7 @@ fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
     let asschema = lower(
-        "Input@[] Output@[Projected@(Map (NodeName NodeConfig))] { NodeName@{ string@String } NodeConfig@{ string@String } }",
+        "[] [Projected@(Map (NodeName NodeConfig))] { NodeName@{ string@String } NodeConfig@{ string@String } }",
     );
     let payload = asschema.output().variants[0]
         .payload
@@ -229,7 +229,7 @@ fn collection_payload_lowers_in_an_output_variant() {
 fn unknown_collection_head_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Output@[] { Leaf@{ string@String } Bad@{ hashSet@(HashSet (Vec Leaf)) } }",
+            "[] [] { Leaf@{ string@String } Bad@{ hashSet@(HashSet (Vec Leaf)) } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("unknown collection head should fail");
@@ -246,7 +246,7 @@ fn unknown_collection_head_is_rejected() {
 fn map_with_wrong_argument_count_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "Input@[] Output@[] { Leaf@{ string@String } Bad@{ map@(Map (Leaf)) } }",
+            "[] [] { Leaf@{ string@String } Bad@{ map@(Map (Leaf)) } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("Map needs two arguments");

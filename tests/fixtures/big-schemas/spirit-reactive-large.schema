@@ -1,11 +1,11 @@
-Input@[(Record Entry)
+[(Record Entry)
  (Correct Correction)
  (Observe Query)
  (Watch WatchRequest)
  (Unwatch SubscriptionToken)
  Reindex
  Compact]
-Output@[(Recorded RecordReceipt)
+[(Recorded RecordReceipt)
  (Corrected CorrectionReceipt)
  (Observed RecordSet)
  (Watching SubscriptionReceipt)

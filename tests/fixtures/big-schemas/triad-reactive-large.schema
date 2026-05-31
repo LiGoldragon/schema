@@ -1,9 +1,9 @@
-Input@[(SignalIn SignalRequest)
+[(SignalIn SignalRequest)
  (NexusIn NexusRequest)
  (SemaIn SemaRequest)
  (Admin AdminRequest)
  Heartbeat]
-Output@[(SignalOut SignalReply)
+[(SignalOut SignalReply)
  (NexusOut NexusReply)
  (SemaOut SemaReply)
  (AdminOut AdminReply)

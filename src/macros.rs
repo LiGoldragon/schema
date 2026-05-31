@@ -491,20 +491,12 @@ impl MacroNodeDefinition {
         Self::with_cases(
             position,
             MacroDispatch::RootPositional,
-            vec![
-                Self::block_case(
-                    position,
-                    "root enum body",
-                    MacroDelimiter::SquareBracket,
-                    NotaMacroObjectCount::Any,
-                ),
-                Self::block_case(
-                    position,
-                    "legacy named root enum body",
-                    MacroDelimiter::PipeParenthesis,
-                    NotaMacroObjectCount::Any,
-                ),
-            ],
+            vec![Self::block_case(
+                position,
+                "root enum body",
+                MacroDelimiter::SquareBracket,
+                NotaMacroObjectCount::Any,
+            )],
         )
     }
 

@@ -1,5 +1,5 @@
-Input@[(Record Entry) (Observe Query)]
-Output@[(Accepted Receipt) (Failed ErrorReport)]
+[(Record Entry) (Observe Query)]
+[(Accepted Receipt) (Failed ErrorReport)]
 {
   RecordIdentifier@Integer
   DatabaseMarker@Integer

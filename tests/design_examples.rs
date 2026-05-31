@@ -115,7 +115,7 @@ fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
     // matches one legacy declaration and observe the recorded binding
     // names. The production namespace path now uses key/value pairs;
     // this test is specifically about the declarative macro library.
-    let source = "Input@[] Output@[] { Entry@{ topic@Topic description@Description } }";
+    let source = "[] [] { Entry@{ topic@Topic description@Description } }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -474,7 +474,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let asschema = engine
         .lower_source(
-            "Input@[] Output@[] { Topic@(StringNewtype) Topics@{ items@(Bag Topic) } }",
+            "[] [] { Topic@(StringNewtype) Topics@{ items@(Bag Topic) } }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");

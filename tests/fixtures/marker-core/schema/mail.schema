@@ -1,5 +1,5 @@
-Input@[]
-Output@[]
+[]
+[]
 {
   CommitSequence@{ integer@Integer }
   StateDigest@{ integer@Integer }

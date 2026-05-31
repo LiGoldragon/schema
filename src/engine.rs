@@ -80,13 +80,6 @@ pub enum SchemaError {
         found: String,
     },
     ExpectedEnumVariant,
-    RootEnumLabelForbidden {
-        label: String,
-    },
-    RootEnumNameMismatch {
-        expected: String,
-        found: String,
-    },
     MalformedSchemaNode {
         found: String,
     },
@@ -915,9 +908,7 @@ impl SchemaMacro for RootEnumMacro {
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
         self.signature.accepts_position(position)
-            && object
-                .block()
-                .is_some_and(|object| object.is_square_bracket() || object.is_pipe_parenthesis())
+            && object.block().is_some_and(Block::is_square_bracket)
     }
 
     fn lower(
@@ -946,31 +937,9 @@ struct RootEnumBlock<'schema> {
 
 impl<'schema> RootEnumBlock<'schema> {
     fn from_block(object: &'schema Block, enum_name: &'static str) -> Result<Self, SchemaError> {
-        if object.is_square_bracket() {
-            let body =
-                NotaBody::from_delimited(object, Delimiter::SquareBracket, "root enum body")?;
-            return Ok(Self {
-                variants: body.root_objects(),
-                enum_name,
-            });
-        }
-
-        let body = NotaBody::from_delimited(object, Delimiter::PipeParenthesis, "root enum body")?;
-        let declared = body
-            .root_objects()
-            .first()
-            .and_then(Block::demote_to_string)
-            .ok_or(SchemaError::ExpectedDelimiter {
-                expected: "root enum name",
-            })?;
-        if declared != enum_name {
-            return Err(SchemaError::RootEnumNameMismatch {
-                expected: enum_name.to_owned(),
-                found: declared.to_owned(),
-            });
-        }
+        let body = NotaBody::from_delimited(object, Delimiter::SquareBracket, "root enum body")?;
         Ok(Self {
-            variants: &body.root_objects()[1..],
+            variants: body.root_objects(),
             enum_name,
         })
     }
