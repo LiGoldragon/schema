@@ -97,33 +97,35 @@ fn asschema_is_a_live_nota_and_rkyv_data_artifact() {
 
     let nota = asschema.to_nota();
     let document = Document::parse(&nota).expect("emitted asschema is legal NOTA");
-    let Block::Delimited {
-        delimiter: Delimiter::Parenthesis,
-        root_objects,
-        ..
-    } = document.root_object_at(0).expect("asschema root")
-    else {
-        panic!("asschema root should be a positional record");
-    };
+    let root_objects = document.root_objects();
+    assert_eq!(
+        root_objects.len(),
+        6,
+        "asschema text is a known-root document with six positional fields"
+    );
     assert!(
         matches!(
             root_objects.get(3),
             Some(Block::Delimited {
-                delimiter: Delimiter::Parenthesis,
+                delimiter: Delimiter::SquareBracket,
                 ..
             })
         ),
-        "input is a direct asschema field, not a vector of root wrappers: {nota}"
+        "input is a direct enum-body field, not a labeled Input variant: {nota}"
     );
     assert!(
         matches!(
             root_objects.get(4),
             Some(Block::Delimited {
-                delimiter: Delimiter::Parenthesis,
+                delimiter: Delimiter::SquareBracket,
                 ..
             })
         ),
-        "output is a direct asschema field, not a vector of root wrappers: {nota}"
+        "output is a direct enum-body field, not a labeled Output variant: {nota}"
+    );
+    assert!(
+        !nota.contains("(Input [") && !nota.contains("(Output ["),
+        "root field names are supplied by Asschema, not serialized as variants: {nota}"
     );
     let from_nota = schema_next::Asschema::from_nota_source(&nota)
         .expect("asschema decodes from its NOTA form");
@@ -263,8 +265,20 @@ fn core_asschema_artifact_is_checked_in_and_fresh() {
 
 #[test]
 fn core_asschema_artifact_round_trips_as_nota_and_rkyv() {
-    let artifact = AsschemaArtifact::from_nota_source(include_str!("../schemas/core.asschema"))
-        .expect("checked-in core asschema decodes");
+    let source = include_str!("../schemas/core.asschema");
+    let document = Document::parse(source).expect("core asschema is legal NOTA");
+    assert_eq!(
+        document.root_objects().len(),
+        6,
+        "checked-in core.asschema must use known-root fields, not an outer record"
+    );
+    assert!(
+        !source.contains("(Input [") && !source.contains("(Output ["),
+        "checked-in core.asschema must not label input/output root positions"
+    );
+
+    let artifact =
+        AsschemaArtifact::from_nota_source(source).expect("checked-in core asschema decodes");
     let reparsed =
         Asschema::from_nota_source(&artifact.to_nota_source()).expect("core asschema re-decodes");
     let bytes = artifact

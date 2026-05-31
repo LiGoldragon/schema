@@ -52,6 +52,14 @@ assembled schema as legal NOTA, `Asschema::from_nota_source` reads that NOTA
 back as the same typed value, and `Asschema::to_binary_bytes` /
 `Asschema::from_binary_bytes` archive and restore the same value through rkyv.
 
+The canonical `.asschema` text is a known-root document, not an outer record:
+the document contains the six `Asschema` root fields in order. The reader uses
+the root struct type it was asked to decode, so the fourth and fifth document
+objects are the input and output enum bodies directly. They are not serialized
+as `(Input ...)` or `(Output ...)` records; those names come from the expected
+root fields. The implementation still accepts the older one-record form as a
+compatibility surface while artifacts migrate.
+
 Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Asschema` through NOTA and rkyv:
 `Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,

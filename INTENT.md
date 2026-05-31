@@ -111,6 +111,12 @@ are not introduced to make a representation fit; root input and output are
 known product fields of `Asschema`, while namespace declarations remain a
 homogeneous vector of declaration objects.*
 
+*The canonical `.asschema` text artifact is read as the known `Asschema` root
+struct. It therefore writes the root fields as document root objects, not as one
+outer parenthesized record. The input and output positions are known fields and
+serialize their enum bodies directly; they are not labeled data-carrying
+variants named `Input` or `Output`.*
+
 *The assembled schema artifact is a first-class data object. `AsschemaArtifact`
 wraps an `Asschema` value and owns the read/write methods for `.asschema`
 NOTA files and `.asschema.rkyv` binary files, so downstream Rust emission can

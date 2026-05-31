@@ -5,7 +5,7 @@ use std::{
 
 use nota_next::{
     AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError, NotaEncode,
-    NotaSource, NotaString,
+    NotaString,
 };
 
 use crate::{
@@ -166,13 +166,20 @@ impl Asschema {
     }
 
     pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
-        NotaSource::new(source)
-            .parse::<Self>()
-            .map_err(SchemaError::from)
+        let document = nota_next::Document::parse(source)?;
+        Self::from_nota_document(&document)
     }
 
     pub fn to_nota(&self) -> String {
-        NotaEncode::to_nota(self)
+        [
+            self.identity.to_nota(),
+            self.imports.to_nota(),
+            self.resolved_imports.to_nota(),
+            self.input.variants.to_nota(),
+            self.output.variants.to_nota(),
+            self.namespace.to_nota(),
+        ]
+        .join("\n")
     }
 
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
@@ -183,6 +190,35 @@ impl Asschema {
         rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
+    }
+
+    fn from_nota_document(document: &nota_next::Document) -> Result<Self, SchemaError> {
+        match document.root_objects().len() {
+            1 => <Self as NotaDecode>::from_nota_block(&document.root_objects()[0])
+                .map_err(SchemaError::from),
+            6 => Self::from_nota_document_fields(document.root_objects()),
+            found => Err(SchemaError::ExpectedRootObjectCount {
+                expected: "six asschema root fields",
+                found,
+            }),
+        }
+    }
+
+    fn from_nota_document_fields(fields: &[Block]) -> Result<Self, SchemaError> {
+        Ok(Self {
+            identity: super::SchemaIdentity::from_nota_block(&fields[0])?,
+            imports: Vec::<ImportDeclaration>::from_nota_block(&fields[1])?,
+            resolved_imports: Vec::<super::ResolvedImport>::from_nota_block(&fields[2])?,
+            input: EnumDeclaration::new(
+                Name::new("Input"),
+                Vec::<EnumVariant>::from_nota_block(&fields[3])?,
+            ),
+            output: EnumDeclaration::new(
+                Name::new("Output"),
+                Vec::<EnumVariant>::from_nota_block(&fields[4])?,
+            ),
+            namespace: Vec::<Declaration>::from_nota_block(&fields[5])?,
+        })
     }
 }
 
