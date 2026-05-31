@@ -172,8 +172,8 @@ a single self-named object.
 - Enum bodies are bracket/vector structure. Each object in that vector is a
   variant signature: a bare PascalCase symbol for a unit variant or a
   parenthesized `(Variant PayloadType)` record for a data-carrying variant.
-  `Variant@ Payload` and `Variant@Payload` are retired because they insert a
-  key/value rhythm into a vector delimiter.
+  The retired sigil-pair spelling is not used because it inserts a key/value
+  rhythm into a vector delimiter.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`

@@ -171,9 +171,9 @@ is compatibility syntax while fixtures migrate, not the target structure.*
 
 *Enum bodies are homogeneous vectors of variant-signature objects. A unit
 variant is a bare PascalCase symbol, and a data-carrying variant is a
-parenthesized record `(Variant PayloadType)`. The retired `Variant@ Payload`
-or `Variant@Payload` spelling is not structurally honest inside `[]` because
-it smuggles key/value rhythm into a vector delimiter.*
+parenthesized record `(Variant PayloadType)`. The retired sigil-pair spelling
+is not structurally honest inside `[]` because it smuggles key/value rhythm
+into a vector delimiter.*
 
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
