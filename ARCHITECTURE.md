@@ -59,12 +59,11 @@ objects are the input and output enum bodies directly. They are not serialized
 as `(Input ...)` or `(Output ...)` records; those names come from the expected
 root fields.
 
-This uses the `nota-next` document-body codec. `Asschema::from_nota_source`
-delegates to `NotaSource::parse_document_body`, and `Asschema::to_nota`
-delegates to the `#[nota(known_root)]`-derived document encoder. The root body
-mechanism belongs to NOTA; schema-next only implements the named-field
-projection that turns the input/output body slots into `EnumDeclaration`
-values named by the root type.
+This uses the `nota-next` body codec. `Asschema::from_nota_source` delegates
+to `NotaSource::parse_body`, and `Asschema::to_nota` delegates to the
+`#[nota(known_root)]`-derived body encoder. The root body mechanism belongs to
+NOTA; schema-next only implements the named-field projection that turns the
+input/output body slots into `EnumDeclaration` values named by the root type.
 
 Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Asschema` through NOTA and rkyv:
@@ -219,10 +218,11 @@ diagnostic. Type-reference positions retain their existing
 `UnknownTypeReferenceForm` path so unknown collection heads remain precise.
 
 Schema-next is now a consumer of the NOTA-layer macro mechanism for structural
-cases. The remaining convergence work is to route successful nota-next
-`MacroMatch` captures directly into schema handlers, then load the schema macro
-vocabulary from serialized Asschema data instead of constructing the bootstrap
-registry in Rust.
+cases. Delimited captures from nota-next already expose inner `NotaBody`
+streams, so the next convergence work is to route successful `MacroMatch`
+captures directly into schema handlers, then load the schema macro vocabulary
+from serialized Asschema data instead of constructing the bootstrap registry
+in Rust.
 
 ## Schema Package Entry
 

@@ -4,9 +4,8 @@ use std::{
 };
 
 use nota_next::{
-    AtomClassification, Block, Delimiter, NotaBlock, NotaDecode, NotaDecodeError,
-    NotaDocumentEncode, NotaEncode, NotaNamedDocumentFieldDecode, NotaNamedDocumentFieldEncode,
-    NotaSource, NotaString,
+    AtomClassification, Block, Delimiter, NotaBlock, NotaBodyEncode, NotaDecode, NotaDecodeError,
+    NotaEncode, NotaNamedDocumentFieldDecode, NotaNamedDocumentFieldEncode, NotaSource, NotaString,
 };
 
 use crate::{
@@ -171,12 +170,12 @@ impl Asschema {
 
     pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
         NotaSource::new(source)
-            .parse_document_body()
+            .parse_body()
             .map_err(SchemaError::from)
     }
 
     pub fn to_nota(&self) -> String {
-        self.to_nota_document_body().to_nota()
+        self.to_nota_body().to_nota()
     }
 
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {

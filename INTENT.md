@@ -117,11 +117,11 @@ outer parenthesized record. The input and output positions are known fields and
 serialize their enum bodies directly; they are not labeled data-carrying
 variants named `Input` or `Output`.*
 
-*Known-root `.asschema` reading goes through the NOTA document-body codec, not
-through ad hoc field-string joins. `Asschema` derives the NOTA document-body
-traits with `#[nota(known_root)]`; schema-next only supplies the semantic
-projection for the named input and output enum fields. NOTA owns the body
-parse/format boundary while schema owns the field semantics.*
+*Known-root `.asschema` reading goes through the NOTA body codec, not through
+ad hoc field-string joins. `Asschema` derives the body-aware NOTA codec with
+`#[nota(known_root)]`; schema-next only supplies the semantic projection for
+the named input and output enum fields. NOTA owns the body parse/format
+boundary while schema owns the field semantics.*
 
 *The assembled schema artifact is a first-class data object. `AsschemaArtifact`
 wraps an `Asschema` value and owns the read/write methods for `.asschema`
@@ -217,9 +217,11 @@ shapes are `nota-next` patterns with named captures. Schema-next remains the
 semantic consumer that lowers those matches into assembled-schema fragments.*
 
 *Declarative macro expansion keeps matched NOTA structure as data through the
-schema lowering path. Captures remain `Block` values, rest captures remain
-ordered `Block` vectors, and template expansion lowers an owned structural
-object tree instead of producing text that is parsed back into blocks.*
+schema lowering path. Atom captures remain `Block` values, rest captures
+remain ordered `Block` vectors, delimited captures expose the matched
+delimiter's inner body stream, and template expansion lowers an owned
+structural object tree instead of producing text that is parsed back into
+blocks.*
 
 *For `name@( ... )`, the parenthesized body is resolved at the
 assembled-schema reference layer: recognized type-reference heads such as
