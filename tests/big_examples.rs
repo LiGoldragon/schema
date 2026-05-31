@@ -67,18 +67,13 @@ fn assert_asschema_data_shape(name: &str, asschema: &Asschema) {
         !asschema.output().variants.is_empty(),
         "{name} should lower typed output variants"
     );
-    assert_eq!(
-        asschema.roots().len(),
-        2,
-        "{name} should lower root enums into root declarations"
-    );
     assert!(
         asschema.root_named("Input").is_some(),
-        "{name} should expose Input as a root declaration"
+        "{name} should expose Input as a direct root enum"
     );
     assert!(
         asschema.root_named("Output").is_some(),
-        "{name} should expose Output as a root declaration"
+        "{name} should expose Output as a direct root enum"
     );
     assert!(
         !asschema.namespace().is_empty(),

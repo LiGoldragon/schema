@@ -9,9 +9,8 @@ mod syntax;
 
 pub use asschema::{
     Asschema, AsschemaArtifact, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RootDeclaration, SchemaNode, SchemaNodeData,
-    SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, TypeDeclaration,
-    TypeReference, Visibility,
+    ImportDeclaration, Name, NewtypeDeclaration, SchemaNode, SchemaNodeData, SchemaNodePair,
+    SchemaNodeValue, StructDeclaration, StructFieldMap, TypeDeclaration, TypeReference, Visibility,
 };
 pub use declarative::{
     DeclarativeMacroLibrary, MacroDefinition, MacroDefinitionData, MacroDelimiter,

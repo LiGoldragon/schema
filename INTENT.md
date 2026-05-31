@@ -104,6 +104,13 @@ string that qualifies as a NOTA symbol candidate must emit as a bare symbol
 strings remain the fallback for non-symbol text and for actual `String`
 values.*
 
+*Asschema notation must truthfully represent the underlying data shape. A
+homogeneous vector is only used for one element type, never to hold different
+schema positions such as input and output. Semantically empty wrapper records
+are not introduced to make a representation fit; root input and output are
+known product fields of `Asschema`, while namespace declarations remain a
+homogeneous vector of declaration objects.*
+
 *The assembled schema artifact is a first-class data object. `AsschemaArtifact`
 wraps an `Asschema` value and owns the read/write methods for `.asschema`
 NOTA files and `.asschema.rkyv` binary files, so downstream Rust emission can

@@ -9,8 +9,11 @@ NOTA before schema-specific reading. Core schema files can be inspected at the
 raw layer as a known root struct named from the file stem, containing one
 native brace key/value map of datatype names to raw NOTA datatype objects.
 `Asschema` is the in-memory macro-free endpoint produced by lowering. It stores
-ordered root declarations plus ordered datatype declarations. Each namespace
-declaration is visibility-tagged as `(Public Name Value)` or
+the known `Input` and `Output` enum declarations as direct fields plus ordered
+datatype declarations. They are not serialized as a vector of root wrappers:
+vectors remain homogeneous, and the root product shape carries the
+heterogeneous positions. Each namespace declaration is visibility-tagged as
+`(Public Name Value)` or
 `(Private Name Value)` at the assembled-data level; top-level authored
 declarations become public and inline PascalCase declarations become private
 module-local types. Compatibility accessors still expose the current `Input`

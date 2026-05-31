@@ -12,15 +12,10 @@ fn lowers_spirit_schema_into_ordered_asschema() {
         .expect("schema lowers");
 
     assert_eq!(asschema.imports().len(), 0);
-    assert_eq!(asschema.roots().len(), 2);
-    assert_eq!(asschema.roots()[0].name().as_str(), "Input");
-    assert_eq!(asschema.roots()[1].name().as_str(), "Output");
+    assert_eq!(asschema.input().name.as_str(), "Input");
+    assert_eq!(asschema.output().name.as_str(), "Output");
     assert_eq!(
-        asschema
-            .root_named("Input")
-            .expect("input root")
-            .enum_declaration()
-            .variants[0]
+        asschema.root_named("Input").expect("input root").variants[0]
             .name
             .as_str(),
         "Record"
@@ -485,7 +480,6 @@ fn default_engine_lowers_through_registered_structural_forms() {
     let input = asschema.root_named("Input").expect("input root");
     assert_eq!(
         input
-            .enum_declaration()
             .variants
             .iter()
             .map(|variant| variant.name.as_str())
@@ -496,7 +490,6 @@ fn default_engine_lowers_through_registered_structural_forms() {
     let output = asschema.root_named("Output").expect("output root");
     assert_eq!(
         output
-            .enum_declaration()
             .variants
             .iter()
             .map(|variant| variant.name.as_str())

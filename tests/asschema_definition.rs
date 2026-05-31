@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use nota_next::{Document, NotaEncode};
+use nota_next::{Block, Delimiter, Document, NotaEncode};
 use schema_next::{
     Asschema, AsschemaArtifact, ImportResolver, Name, SchemaEngine, SchemaIdentity,
     TypeDeclaration, TypeReference,
@@ -96,7 +96,35 @@ fn asschema_is_a_live_nota_and_rkyv_data_artifact() {
         .expect("schema lowers into typed Asschema data");
 
     let nota = asschema.to_nota();
-    Document::parse(&nota).expect("emitted asschema is legal NOTA");
+    let document = Document::parse(&nota).expect("emitted asschema is legal NOTA");
+    let Block::Delimited {
+        delimiter: Delimiter::Parenthesis,
+        root_objects,
+        ..
+    } = document.root_object_at(0).expect("asschema root")
+    else {
+        panic!("asschema root should be a positional record");
+    };
+    assert!(
+        matches!(
+            root_objects.get(3),
+            Some(Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            })
+        ),
+        "input is a direct asschema field, not a vector of root wrappers: {nota}"
+    );
+    assert!(
+        matches!(
+            root_objects.get(4),
+            Some(Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            })
+        ),
+        "output is a direct asschema field, not a vector of root wrappers: {nota}"
+    );
     let from_nota = schema_next::Asschema::from_nota_source(&nota)
         .expect("asschema decodes from its NOTA form");
     assert_eq!(from_nota, asschema);

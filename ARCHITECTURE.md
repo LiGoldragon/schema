@@ -216,8 +216,10 @@ module schema and checking that the imported type is declared there.
   trace strings as the load-bearing witness.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
-- `Asschema` stores root declarations and visibility-tagged namespace
-  declarations in `Vec` order; lookup maps are derived.
+- `Asschema` stores the known `Input` and `Output` enum declarations as
+  direct fields, then stores visibility-tagged namespace declarations in
+  `Vec` order. The two roots are heterogeneous product positions, not a
+  homogeneous vector of root wrappers.
 - Active code does not keep hand-written assembled-schema text fixtures.
   `Asschema` can serialize itself to NOTA and rkyv after lowering, and tests
   read those serialized forms back through the same typed object.

@@ -96,7 +96,8 @@ pub struct Asschema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
-    roots: Vec<RootDeclaration>,
+    input: EnumDeclaration,
+    output: EnumDeclaration,
     namespace: Vec<Declaration>,
 }
 
@@ -113,7 +114,8 @@ impl Asschema {
             identity,
             imports,
             resolved_imports,
-            roots: vec![RootDeclaration::new(input), RootDeclaration::new(output)],
+            input,
+            output,
             namespace,
         }
     }
@@ -135,25 +137,21 @@ impl Asschema {
     }
 
     pub fn input(&self) -> &EnumDeclaration {
-        &self.roots[0].enum_declaration
+        &self.input
     }
 
     pub fn output(&self) -> &EnumDeclaration {
-        &self.roots[1].enum_declaration
+        &self.output
     }
 
     pub fn input_and_output(&self) -> [&EnumDeclaration; 2] {
         [self.input(), self.output()]
     }
 
-    pub fn roots(&self) -> &[RootDeclaration] {
-        &self.roots
-    }
-
-    pub fn root_named(&self, name: &str) -> Option<&RootDeclaration> {
-        self.roots
-            .iter()
-            .find(|declaration| declaration.name().as_str() == name)
+    pub fn root_named(&self, name: &str) -> Option<&EnumDeclaration> {
+        self.input_and_output()
+            .into_iter()
+            .find(|declaration| declaration.name.as_str() == name)
     }
 
     pub fn namespace(&self) -> &[Declaration] {
@@ -270,35 +268,6 @@ impl AsschemaArtifactPath {
             path: self.path.display().to_string(),
             reason: error.to_string(),
         }
-    }
-}
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub struct RootDeclaration {
-    pub enum_declaration: EnumDeclaration,
-}
-
-impl RootDeclaration {
-    pub fn new(enum_declaration: EnumDeclaration) -> Self {
-        Self { enum_declaration }
-    }
-
-    pub fn name(&self) -> &Name {
-        &self.enum_declaration.name
-    }
-
-    pub fn enum_declaration(&self) -> &EnumDeclaration {
-        &self.enum_declaration
     }
 }
 
