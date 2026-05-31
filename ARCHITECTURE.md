@@ -157,7 +157,7 @@ exposes owned structural macro objects.
 
 The authored syntax preserves NOTA brace meaning: every brace is a key/value
 map. Schema sugar may shorten values, but it must not turn a brace entry into
-a single self-named object.
+one logical declaration object.
 
 - Root input/output positions are known by the schema reader and are written
   as bare bracket bodies: `[]`, `[(Record Entry)]`, or
@@ -172,24 +172,25 @@ a single self-named object.
 - Enum bodies are bracket/vector structure. Each object in that vector is a
   variant signature: a bare PascalCase symbol for a unit variant or a
   parenthesized `(Variant PayloadType)` record for a data-carrying variant.
-  The retired sigil-pair spelling is not used because it inserts a key/value
-  rhythm into a vector delimiter.
+  A variant signature is one object, so the bracket remains a homogeneous
+  vector of variant-signature objects.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`
 data. If a composite appears unnamed as a struct field, the field/type name can
 be derived from the composite shape when it does not collide.
 
-Inline PascalCase declarations remain a compatibility feature during the
-syntax migration. The target model still distinguishes public top-level
-declarations from private module-local declarations, but the strict
-key/value surface must represent those inline declarations as pairs rather
-than as single brace entries.
+Inline PascalCase declarations are strict pairs inside struct maps:
+`Receipt { recordIdentifier RecordIdentifier }` creates a private
+module-local `Receipt` type and the containing struct field derives the
+field name `receipt`. Top-level declarations are public; inline PascalCase
+declarations are private and appear before the containing public type in
+`Asschema.namespace`.
 
-The pipe-family forms `Name {| Name ... |}` / `Name (| Name ... |)` and the
-self-named `Name@{...}` / `Name@[...]` forms are legacy compatibility
-surfaces only. New authored schema uses brace key/value pairs and bare root
-bracket bodies.
+The default authored-schema path accepts brace key/value pairs, square-bracket
+enum bodies, parenthesized references, and bare root bracket bodies. Earlier
+forms that require a declaration to repeat its own name are not registered in
+the default parser.
 
 ## Macro Node Structural Matching
 
@@ -279,18 +280,16 @@ module schema and checking that the imported type is declared there.
   engine lowers all three planes uniformly; the runtime meaning differs after
   lowering.
 - A namespace key followed by a square-bracket value defines an enum
-  declaration: `Kind [Decision Correction]`. The older `Name@[...]`,
-  `Name@(...)`, and `Name (| Name ... |)` forms are compatibility syntax.
+  declaration: `Kind [Decision Correction]`.
 - Braces are key/value maps only. They are not enum sugar.
 - A namespace key followed by a brace value defines a struct declaration:
   `Entry { topic Topic Topics * }`. `TypeName *` derives the field name from
   an existing type; explicit `field TypeReference` remains available when the
   field name differs. A namespace key followed by an atom or parenthesized
-  reference defines a newtype: `Topic String`, `Topics (Vec Topic)`. The older
-  `Name@{...}` and `Name {| Name ... |}` forms are compatibility syntax.
-- Plain square brackets are NOTA vector/bracket structure. They may appear as
-  macro payload data or value data, but they are not the authored declaration
-  syntax for a schema datatype.
+  reference defines a newtype: `Topic String`, `Topics (Vec Topic)`.
+- Square brackets are NOTA vector/bracket structure. At enum-body positions
+  they contain homogeneous variant-signature objects: bare symbols for unit
+  variants and parenthesized `(Variant PayloadType)` records for data variants.
 - The root `Schema` name is implicit when reading a `.schema` file. Nested
   enum, struct, and newtype definitions still carry their own names.
 - `schemas/root.schema` describes that known root `Schema` type.
@@ -299,8 +298,8 @@ module schema and checking that the imported type is declared there.
   global disambiguation and future import resolution.
 - Root namespace braces hold key/value declaration pairs such as
   `Entry { topic Topic }` and `Kind [Decision Correction]`. Redundant
-  `Entry Entry@{...}` key/value pairs and parenthesized `(Name Body)` entries
-  are rejected.
+  doubled-name key/value pairs and parenthesized `(Name Body)` entries are
+  rejected.
 - Schema objects are the shared language for Signal, Nexus, SEMA,
   upgrade, and mail-event surfaces. Signal is the wire/message plane,
   Nexus is the execution-IO plane for internal effects, external calls, and
@@ -333,16 +332,16 @@ module schema and checking that the imported type is declared there.
   is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
   text parser.
 - Collection references reach every reference position. Struct fields are
-  written as `field@(Composite Reference)` inside an at-brace declaration:
-  `serviceVector@(Vec Service)`, `byTopic@(Map (Topic RecordIdentifier))`,
-  `optionalCache@(Optional Cache)`. Enum-variant payloads, root input/output
+  written as strict pairs such as `serviceVector (Vec Service)`,
+  `byTopic (Map (Topic RecordIdentifier))`, and
+  `optionalCache (Optional Cache)`. Enum-variant payloads, root input/output
   variant payloads, and import sources all lower their type through
   `TypeReference::from_block`.
-- Inline PascalCase at-declarations at a type-reference position lower to a
-  `Plain` reference and insert a private declaration before the containing
-  public declaration in `Asschema.namespace`. This makes
-  `Entry@{ Receipt@{ ... } later@Receipt }` declare private `Receipt` first
-  and then public `Entry`, so later fields can reuse the inline type by name.
+- Inline PascalCase declaration pairs insert a private declaration before the
+  containing public declaration in `Asschema.namespace`. `Entry { Receipt
+  { recordIdentifier RecordIdentifier } later Receipt }` declares private
+  `Receipt` first and then public `Entry`, so later fields can reuse the
+  inline type by name.
 - `SchemaNode` is the data model for macro calls before execution. It reads a
   parenthesized object as a tagged/data-carrying node: first object is the tag,
   second object is the data. This prevents macro invocation from being a hidden
@@ -350,21 +349,18 @@ module schema and checking that the imported type is declared there.
 
 ## Syntax Schema Layer
 
-`SyntaxSchema` is the typed layer directly above `RawSchemaFile`. It currently
-preserves the older self-named `@` declaration surface for raw-layer
-experiments while the macro engine migrates to strict key/value authored
-schema:
+`SyntaxSchema` is the typed layer directly above `RawSchemaFile`. It reads the
+strict key/value authored surface without invoking macro lowering:
 
 1. `RawSchemaFile` parses a `.schema` file as legal NOTA and preserves raw
    delimiter objects.
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
-3. `@` braces at datatype declaration position are legacy struct field lists.
-   Plain square brackets are rejected there.
+3. Brace values become struct field maps; square-bracket values become enum
+   bodies; atom or parenthesized reference values become aliases/newtypes.
 4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
-5. `Name@[...]` is a legacy enum declaration and `Name@{...}` is a legacy
-   struct declaration. The declared name must match the namespace key, so the
-   raw map key and the self-named declaration cannot silently drift.
+5. The root map key is the declaration name. There is no second declaration
+   name inside the value.
 
 The proof fixture is `tests/fixtures/syntax-layer/schema.schema`; the tests in
 `tests/syntax_layer.rs` assert the raw-to-syntax result directly.

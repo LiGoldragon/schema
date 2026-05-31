@@ -33,7 +33,6 @@ pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use store::{AsschemaStore, AsschemaStoreKey};
 pub use syntax::{
-    SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField,
-    SyntaxKeyValueDeclaration, SyntaxKeyValueEntry, SyntaxReference, SyntaxSchema,
-    SyntaxStructDeclaration, SyntaxVariant,
+    SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField, SyntaxReference,
+    SyntaxSchema, SyntaxStructDeclaration, SyntaxVariant,
 };

@@ -5,7 +5,7 @@ use crate::{
         Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
         NewtypeDeclaration, StructDeclaration, TypeDeclaration, TypeReference,
     },
-    declarative::{AssembledFields, AssembledVariants, DeclarativeMacroLibrary},
+    declarative::{AssembledFields, AssembledVariants},
     macros::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
         MacroRegistry, SchemaBlockExt, SchemaMacro,
@@ -402,13 +402,6 @@ impl MacroRegistry {
         ));
         registry.register(RootNamespaceMacro::new());
         registry.register(KeyValueDeclarationMacro::new());
-        registry.register(SimpleNewtypeDeclarationMacro::new());
-        for schema_macro in DeclarativeMacroLibrary::builtin()
-            .expect("builtin schema macros parse")
-            .into_macros()
-        {
-            registry.register_box(schema_macro);
-        }
         registry
     }
 }
@@ -528,96 +521,13 @@ impl<'schema> KeyValueDeclaration<'schema> {
             }
         ) {
             return Err(SchemaError::ExpectedDelimiter {
-                expected: "namespace value reference, not self-named declaration",
+                expected: "namespace value reference, not pipe declaration block",
             });
         }
         let reference = TypeReference::from_block_with_registry(definition, registry, context)?;
         Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
             name, reference,
         )))
-    }
-}
-
-#[derive(Clone, Debug)]
-struct SimpleNewtypeDeclarationMacro {
-    signature: MacroSignature,
-}
-
-impl SimpleNewtypeDeclarationMacro {
-    fn new() -> Self {
-        Self {
-            signature: MacroSignature::new(
-                "SimpleNewtypeDeclaration",
-                MacroPosition::NamespaceDeclaration,
-                "Name@Type",
-            ),
-        }
-    }
-}
-
-impl SchemaMacro for SimpleNewtypeDeclarationMacro {
-    fn name(&self) -> &str {
-        self.signature.name()
-    }
-
-    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        self.signature.accepts_position(position)
-            && object
-                .block()
-                .and_then(SimpleNewtypeDeclarationBlock::from_block)
-                .is_some()
-    }
-
-    fn lower(
-        &self,
-        object: MacroObject<'_>,
-        position: MacroPosition,
-        context: &mut MacroContext,
-        _registry: &MacroRegistry,
-    ) -> Result<MacroOutput, SchemaError> {
-        self.signature.remember(position, context);
-        let block = object.block().ok_or(SchemaError::ExpectedDelimiter {
-            expected: self.signature.expected_delimiter(),
-        })?;
-        let declaration = SimpleNewtypeDeclarationBlock::from_block(block).ok_or(
-            SchemaError::ExpectedDelimiter {
-                expected: self.signature.expected_delimiter(),
-            },
-        )?;
-        Ok(MacroOutput::Type(TypeDeclaration::Newtype(
-            NewtypeDeclaration::new(
-                declaration.name().clone(),
-                TypeReference::from_name(declaration.reference().clone()),
-            ),
-        )))
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SimpleNewtypeDeclarationBlock {
-    name: Name,
-    reference: Name,
-}
-
-impl SimpleNewtypeDeclarationBlock {
-    fn from_block(block: &Block) -> Option<Self> {
-        let text = block.demote_to_string()?;
-        let (name, reference) = text.split_once('@')?;
-        if name.is_empty() || reference.is_empty() || reference.contains('@') {
-            return None;
-        }
-        Some(Self {
-            name: Name::new(name),
-            reference: Name::new(reference),
-        })
-    }
-
-    fn name(&self) -> &Name {
-        &self.name
-    }
-
-    fn reference(&self) -> &Name {
-        &self.reference
     }
 }
 
@@ -759,10 +669,7 @@ impl<'schema> NamespaceBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<Declaration>, SchemaError> {
-        if self.contains_key_value_pairs() {
-            return self.lower_key_value_declarations(registry, context);
-        }
-        self.lower_legacy_declarations(registry, context)
+        self.lower_key_value_declarations(registry, context)
     }
 
     fn lower_key_value_declarations(
@@ -786,40 +693,6 @@ impl<'schema> NamespaceBlock<'schema> {
             )?;
         }
         Ok(declarations)
-    }
-
-    fn lower_legacy_declarations(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Vec<Declaration>, SchemaError> {
-        let mut declarations = Vec::new();
-        for declaration_object in self.body.root_objects() {
-            let name = NamespaceDeclarationBlock::new(declaration_object).name()?;
-            if TypeReference::is_reserved_scalar_name(&name) {
-                return Err(SchemaError::ReservedScalarTypeName {
-                    name: name.as_str().to_owned(),
-                });
-            }
-            self.push_declaration(
-                MacroObject::Block(declaration_object),
-                registry,
-                context,
-                &mut declarations,
-            )?;
-        }
-        Ok(declarations)
-    }
-
-    fn contains_key_value_pairs(&self) -> bool {
-        self.body.root_objects().is_empty()
-            || (self.body.root_objects().len() % 2 == 0
-                && self
-                    .body
-                    .root_objects()
-                    .iter()
-                    .step_by(2)
-                    .all(|object| object.schema_name().is_ok()))
     }
 
     fn key_value_pairs(&self) -> Result<Vec<MacroPair<'schema>>, SchemaError> {
@@ -860,29 +733,6 @@ impl<'schema> NamespaceBlock<'schema> {
             }
         }
         Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct NamespaceDeclarationBlock<'schema> {
-    object: &'schema Block,
-}
-
-impl<'schema> NamespaceDeclarationBlock<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
-    }
-
-    fn name(&self) -> Result<Name, SchemaError> {
-        if let Some(declaration) = SimpleNewtypeDeclarationBlock::from_block(self.object) {
-            return Ok(declaration.name().clone());
-        }
-        self.object
-            .root_object_at(0)
-            .ok_or(SchemaError::ExpectedDelimiter {
-                expected: "self-named namespace declaration",
-            })?
-            .schema_name()
     }
 }
 

@@ -55,8 +55,7 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
 
 /// Illustrates: the schema namespace is an honest brace key/value map.
 /// Each declaration is two objects: the type name key and the definition
-/// value. The declaration no longer repeats its name inside a self-named
-/// `Name@Delimiter` object.
+/// value. The declaration no longer repeats its name inside the value object.
 ///
 /// This is the positive complement of
 /// `brace_namespace_rejects_parenthesized_named_objects` in
@@ -92,16 +91,15 @@ fn design_example_namespace_brace_contains_key_value_declarations() {
 }
 
 /// Illustrates: a declarative `SchemaMacro` declaration uses `$Name`
-/// for single captures and `$*Name` for rest captures, AND those
-/// names flow through to the macro context as `MacroName::Name` and
-/// `MacroName::*Name` bindings when the macro fires.
+/// for single captures, and those names flow through to the macro
+/// context as `MacroName::Name` bindings when the macro fires.
 ///
 /// Intent record 890 (Medium): macro bodies need an explicit binding
 /// and reference mechanism for assigned symbols; a sigil such as
 /// dollar sign is the candidate. This test pins the dollar-sigil
 /// shape in working code.
 #[test]
-fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
+fn design_example_type_reference_macro_captures_use_dollar_sigils() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
 
     let struct_definition = library
@@ -111,13 +109,24 @@ fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
         .expect("struct macro definition");
     assert_eq!(struct_definition.capture_names(), vec!["$Name", "$*Fields"]);
 
-    // The captures FIRE — feed a minimal schema where the struct macro
-    // matches one legacy declaration and observe the recorded binding
-    // names. The production namespace path now uses key/value pairs;
-    // this test is specifically about the declarative macro library.
-    let source = "[] [] { Entry@{ topic@Topic description@Description } }";
+    let user_macros = DeclarativeMacroLibrary::from_source(
+        "
+        (SchemaMacro Bag TypeReference
+          (Bag $Type)
+          (Reference (Vector $Type)))
+        ",
+    )
+    .expect("user macro definitions parse");
+    assert_eq!(user_macros.definitions()[0].capture_names(), vec!["$Type"]);
+
+    let mut registry = MacroRegistry::with_schema_defaults();
+    for schema_macro in user_macros.into_macros() {
+        registry.register_box(schema_macro);
+    }
+    let engine = SchemaEngine::with_registry(registry);
+    let source = "[] [] { Topic String Topics (Bag Topic) }";
     let mut context = MacroContext::default();
-    SchemaEngine::default()
+    engine
         .lower_source_with_context(
             source,
             SchemaIdentity::new("example", "0.1.0"),
@@ -127,16 +136,8 @@ fn design_example_macro_captures_use_dollar_and_dollar_star_sigils() {
 
     let bindings = context.bindings_seen();
     assert!(
-        bindings
-            .iter()
-            .any(|binding| binding == "SchemaStructDefinition::Name"),
-        "single capture $Name binds as Name",
-    );
-    assert!(
-        bindings
-            .iter()
-            .any(|binding| binding == "SchemaStructDefinition::*Fields"),
-        "rest capture $*Fields binds as *Fields",
+        bindings.iter().any(|binding| binding == "Bag::Type"),
+        "single capture $Type binds as Type",
     );
 }
 
@@ -169,19 +170,16 @@ fn design_example_colon_qualified_name_decomposes_into_segments() {
     assert_eq!(bare.field_name(), "topic");
 }
 
-/// Illustrates: the default `SchemaEngine` registers macro layers:
-/// Rust-hand-coded for the root positions and type-reference tagged calls
-/// (RootImports, RootInput, RootOutput, RootNamespace) plus
-/// declarative-from-`builtin-macros.schema` for the inner structural
-/// positions (NamespaceDeclaration / StructFields / EnumVariants —
-/// the SchemaStructDefinition / SchemaEnumDefinition /
-/// SchemaStructFields / SchemaEnumVariants library).
+/// Illustrates: the default `SchemaEngine` registers the strict
+/// structural schema macros. The old declarative built-in library is
+/// still loadable as data, but it is not part of the default authored
+/// syntax path.
 ///
 /// Intent record 864 (Maximum): real macro registry / macro-dispatch
 /// design. This test asserts the layered shape from outside the
 /// engine — no Spirit fixture needed.
 #[test]
-fn design_example_default_engine_has_two_macro_layers() {
+fn design_example_default_engine_uses_strict_structural_macros() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
     let declarative_names: Vec<&str> = library
         .definitions()
@@ -215,12 +213,17 @@ fn design_example_default_engine_has_two_macro_layers() {
         "declarative macros target the structural inner positions",
     );
 
-    // The four ROOT positions are not in the declarative set — they
-    // are hand-coded Rust macros registered in
-    // `MacroRegistry::with_schema_defaults`. Observed indirectly:
-    // when the default engine processes a schema, all four ROOT
-    // macro names appear in the applied trace.
-    let source = "[] [] {}";
+    let default_macro_names = MacroRegistry::with_schema_defaults().macro_names();
+    assert!(
+        default_macro_names.contains(&"KeyValueDeclaration".to_owned()),
+        "strict namespace key/value macro is in the default path"
+    );
+    assert!(
+        !default_macro_names.contains(&"SchemaStructDefinition".to_owned()),
+        "legacy pipe declaration macro is loadable data, not default syntax"
+    );
+
+    let source = "[] [] { Topic String }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -234,12 +237,21 @@ fn design_example_default_engine_has_two_macro_layers() {
         .iter()
         .map(String::as_str)
         .collect();
-    for root_macro in ["RootInput", "RootOutput", "RootNamespace"] {
+    for root_macro in [
+        "RootInput",
+        "RootOutput",
+        "RootNamespace",
+        "KeyValueDeclaration",
+    ] {
         assert!(
             applied.contains(&root_macro),
-            "root macro {root_macro} fires on a minimal schema; applied = {applied:?}",
+            "strict macro {root_macro} fires on a minimal schema; applied = {applied:?}",
         );
     }
+    assert!(
+        !applied.contains(&"SchemaStructDefinition"),
+        "legacy declaration macros do not fire on the default path"
+    );
 }
 
 /// Illustrates: the schema engine consumes the NOTA first-pass
@@ -458,9 +470,6 @@ fn design_example_same_name_payload_variant_uses_explicit_payload() {
 fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let user_macros = DeclarativeMacroLibrary::from_source(
         "
-        (SchemaMacro StringNewtype NamespaceDeclaration
-          ($Name StringNewtype)
-          (Type (Struct $Name [String])))
         (SchemaMacro Bag TypeReference
           (Bag $Type)
           (Reference (Vector $Type)))
@@ -474,7 +483,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let asschema = engine
         .lower_source(
-            "[] [] { Topic@(StringNewtype) Topics@{ items@(Bag Topic) } }",
+            "[] [] { Topic String Topics (Bag Topic) }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");

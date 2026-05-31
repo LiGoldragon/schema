@@ -10,14 +10,14 @@
  (Committed CommitSequence)
  (Rejected Rejection)]
 {
-  Topic@{ string@String }
-  Topics@{ values@(Vec Topic) }
-  Description@{ string@String }
-  AgentName@{ string@String }
-  RecordIdentifier@{ integer@Integer }
-  Rejection@{ description@Description }
-  Entry@{ topics@Topics description@Description agentName@AgentName databaseMarker@DatabaseMarker }
-  Query@{ topics@Topics limit@(Optional Integer) }
-  RecordReceipt@{ recordIdentifier@RecordIdentifier databaseMarker@DatabaseMarker commitSequence@CommitSequence }
-  RecordSet@{ records@(Vec Entry) byTopic@(Map (Topic RecordIdentifier)) }
+  Topic { string String }
+  Topics { values (Vec Topic) }
+  Description { string String }
+  AgentName { string String }
+  RecordIdentifier { integer Integer }
+  Rejection { description Description }
+  Entry { topics Topics description Description agentName AgentName databaseMarker DatabaseMarker }
+  Query { topics Topics limit (Optional Integer) }
+  RecordReceipt { recordIdentifier RecordIdentifier databaseMarker DatabaseMarker commitSequence CommitSequence }
+  RecordSet { records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) }
 }

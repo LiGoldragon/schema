@@ -46,9 +46,7 @@ fn newtype_reference<'asschema>(
 
 #[test]
 fn vec_field_lowers_to_vector_reference() {
-    let asschema = lower(&roots(
-        "Service@{ string@String } Cluster@{ serviceVector@(Vec Service) }",
-    ));
+    let asschema = lower(&roots("Service String Cluster (Vec Service)"));
     assert_eq!(
         newtype_reference(&asschema, "Cluster"),
         &TypeReference::Vector(Box::new(TypeReference::new("Service")))
@@ -58,7 +56,7 @@ fn vec_field_lowers_to_vector_reference() {
 #[test]
 fn scalar_field_names_lower_to_reserved_references() {
     let asschema = lower(&roots(
-        "Entry@{ string@String integer@Integer boolean@Boolean path@Path }",
+        "Entry { string String integer Integer boolean Boolean path Path }",
     ));
     let fields = struct_fields(&asschema, "Entry");
     assert_eq!(fields[0].name.as_str(), "string");
@@ -74,7 +72,7 @@ fn scalar_field_names_lower_to_reserved_references() {
 #[test]
 fn scalar_references_nest_inside_collections() {
     let asschema = lower(&roots(
-        "Query@{ optionalInteger@(Optional Integer) stringVector@(Vec String) booleanByString@(Map (String Boolean)) optionalPath@(Optional Path) }",
+        "Query { optionalInteger (Optional Integer) stringVector (Vec String) booleanByString (Map (String Boolean)) optionalPath (Optional Path) }",
     ));
     let fields = struct_fields(&asschema, "Query");
     assert_eq!(
@@ -102,7 +100,7 @@ fn scalar_references_nest_inside_collections() {
 fn scalar_names_are_reserved_at_namespace_declaration_position() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { String@{ integer@Integer } }",
+            "[] [] { String { integer Integer } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("reserved scalar names cannot be user-declared schema types");
@@ -117,7 +115,7 @@ fn scalar_names_are_reserved_at_namespace_declaration_position() {
 #[test]
 fn key_value_field_lowers_to_map_reference() {
     let asschema = lower(&roots(
-        "NodeName@{ string@String } NodeProposal@{ string@String } Cluster@{ nodeProposalByNodeName@(Map (NodeName NodeProposal)) }",
+        "NodeName String NodeProposal String Cluster (Map (NodeName NodeProposal))",
     ));
     assert_eq!(
         newtype_reference(&asschema, "Cluster"),
@@ -130,9 +128,7 @@ fn key_value_field_lowers_to_map_reference() {
 
 #[test]
 fn option_field_lowers_to_optional_reference() {
-    let asschema = lower(&roots(
-        "Cache@{ string@String } Cluster@{ optionalCache@(Optional Cache) }",
-    ));
+    let asschema = lower(&roots("Cache String Cluster (Optional Cache)"));
     assert_eq!(
         newtype_reference(&asschema, "Cluster"),
         &TypeReference::Optional(Box::new(TypeReference::new("Cache")))
@@ -143,7 +139,7 @@ fn option_field_lowers_to_optional_reference() {
 fn square_bracket_field_is_not_vec_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Service@{ string@String } Cluster@{ service [Service] } }",
+            "[] [] { Service { string String } Cluster { service [Service] } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw square bracket is not a Vec reference");
@@ -160,7 +156,7 @@ fn square_bracket_field_is_not_vec_type_syntax() {
 fn brace_field_is_not_map_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { NodeName@{ string@String } NodeProposal@{ string@String } Cluster@{ nodes {NodeName NodeProposal} } }",
+            "[] [] { NodeName { string String } NodeProposal { string String } Cluster { nodes {NodeName NodeProposal} } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw brace map is not a Map reference");
@@ -176,7 +172,7 @@ fn brace_field_is_not_map_type_syntax() {
 #[test]
 fn collection_field_and_plain_field_coexist_in_one_struct() {
     let asschema = lower(&roots(
-        "Trust@{ string@String } Service@{ string@String } Cluster@{ trust@Trust serviceVector@(Vec Service) optionalTrust@(Optional Trust) }",
+        "Trust { string String } Service { string String } Cluster { trust Trust serviceVector (Vec Service) optionalTrust (Optional Trust) }",
     ));
     let fields = struct_fields(&asschema, "Cluster");
     // Bare symbol stays the legacy plain field (name derived from type).
@@ -192,7 +188,7 @@ fn collection_field_and_plain_field_coexist_in_one_struct() {
 fn nested_collections_lower_recursively() {
     // A map whose value is itself a vector of an optional leaf.
     let asschema = lower(&roots(
-        "Leaf@{ string@String } Key@{ string@String } Nest@{ leafByKey@(Map (Key (Vec (Optional Leaf)))) }",
+        "Leaf String Key String Nest (Map (Key (Vec (Optional Leaf))))",
     ));
     assert_eq!(
         newtype_reference(&asschema, "Nest"),
@@ -210,7 +206,7 @@ fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
     let asschema = lower(
-        "[] [Projected@(Map (NodeName NodeConfig))] { NodeName@{ string@String } NodeConfig@{ string@String } }",
+        "[] [(Projected (Map (NodeName NodeConfig)))] { NodeName { string String } NodeConfig { string String } }",
     );
     let payload = asschema.output().variants[0]
         .payload
@@ -229,7 +225,7 @@ fn collection_payload_lowers_in_an_output_variant() {
 fn unknown_collection_head_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Leaf@{ string@String } Bad@{ hashSet@(HashSet (Vec Leaf)) } }",
+            "[] [] { Leaf { string String } Bad { hashSet (HashSet (Vec Leaf)) } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("unknown collection head should fail");
@@ -246,7 +242,7 @@ fn unknown_collection_head_is_rejected() {
 fn map_with_wrong_argument_count_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Leaf@{ string@String } Bad@{ map@(Map (Leaf)) } }",
+            "[] [] { Leaf { string String } Bad { map (Map (Leaf)) } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("Map needs two arguments");

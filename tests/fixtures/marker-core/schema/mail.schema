@@ -1,7 +1,7 @@
 []
 []
 {
-  CommitSequence@{ integer@Integer }
-  StateDigest@{ integer@Integer }
-  DatabaseMarker@{ commitSequence@CommitSequence stateDigest@StateDigest }
+  CommitSequence { integer Integer }
+  StateDigest { integer Integer }
+  DatabaseMarker { commitSequence CommitSequence stateDigest StateDigest }
 }

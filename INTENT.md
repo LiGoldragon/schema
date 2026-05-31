@@ -156,7 +156,7 @@ tagged schema nodes only when the expected type is `SchemaNode` or another
 tag-plus-payload struct.*
 
 *Authored schema braces are strict key/value maps. Namespace braces contain
-`TypeName Value` pairs, not self-named single objects; struct braces contain
+`TypeName Value` pairs, not one-object declarations; struct braces contain
 `fieldName TypeReference` pairs. A PascalCase key followed by `*` is the
 derived-member shorthand: `Topics *` lowers to field `topics` with type
 `Topics`. Root input/output positions are known by the schema reader and are
@@ -166,14 +166,15 @@ enum bodies; brace namespace values define struct field maps; atom or
 parenthesized reference values define newtypes (`Topic String`,
 `Topics (Vec Topic)`). Parentheses remain the composite/type-reference and
 macro-call argument form (`(Vec Entry)`, `(Optional Kind)`,
-`(Map (Key Value))`). The older self-named `Type@{...}` / `Type@[...]` surface
-is compatibility syntax while fixtures migrate, not the target structure.*
+`(Map (Key Value))`). The default parser accepts only this strict authored
+surface; declaration forms that repeat their own name are removed from the
+production lowering path.*
 
 *Enum bodies are homogeneous vectors of variant-signature objects. A unit
 variant is a bare PascalCase symbol, and a data-carrying variant is a
-parenthesized record `(Variant PayloadType)`. The retired sigil-pair spelling
-is not structurally honest inside `[]` because it smuggles key/value rhythm
-into a vector delimiter.*
+parenthesized record `(Variant PayloadType)`. This keeps each bracket member
+one variant-signature object instead of smuggling key/value rhythm into a
+vector delimiter.*
 
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
@@ -193,9 +194,10 @@ not a one-field map with an invented field name. The intended long-form
 notation is `(Public Topic { String })`, not `(Public Topic { text String })`,
 and Rust emission treats it as a real tuple newtype.*
 
-*The earlier pipe-family declaration syntax and the self-named `@` declaration
-syntax remain compatibility surfaces in the parser and macro engine while
-existing fixtures migrate. They are not the authored-schema target.*
+*The earlier declaration forms that repeat their own name are removed from the
+default parser and macro engine. Explicit macro-library data can still describe
+arbitrary NOTA patterns for experiments, but the authored schema path is strict
+key/value syntax.*
 
 *Macro nodes are first-class structural expectations, not just prose around
 registered Rust macros. A macro node definition carries named cases with
@@ -229,13 +231,14 @@ delimiter's inner body stream, and template expansion lowers an owned
 structural object tree instead of producing text that is parsed back into
 blocks.*
 
-*For `name@( ... )`, the parenthesized body is resolved at the
+*At reference positions, parenthesized bodies are resolved at the
 assembled-schema reference layer: recognized type-reference heads such as
 `Vec`, `Optional`, and `Map` remain composite references, and future user macro
-heads can use the same argument shape. Enum declarations use `Name@[...]`
-instead, so declaration shape and composite/reference shape are no longer
-overloaded. Unnamed composites used as fields may derive names such as
-`vec_of_entry` / `VecOfEntry` when there is no conflict.*
+heads can use the same argument shape. Enum declarations use namespace
+key/value pairs with square-bracket values, so declaration shape and
+composite/reference shape are no longer overloaded. Unnamed composites used as
+fields may derive names such as `vec_of_entry` / `VecOfEntry` when there is no
+conflict.*
 
 This repository owns the schema macro engine and the ordered assembled schema
 data model. It does not emit Rust source code.

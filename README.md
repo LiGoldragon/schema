@@ -31,8 +31,9 @@ braces are strict key/value maps: `Topic String`, `Topics (Vec Topic)`,
 `Entry { topic Topic Topics * }`, and `Kind [Decision Correction]`. Struct
 declarations lower to the asschema key/value map form: field name -> type
 reference. Newtypes lower as one contained type reference, not as a one-entry
-field map. The older pipe-family and self-named `@` declaration forms remain
-compatibility surfaces while fixtures migrate.
+field map. The default parser accepts the strict surface only; older
+declaration forms that repeat their own name are not on the production lowering
+path.
 
 Declarative schema macros have a typed data surface. The built-in macro source
 projects to `MacroLibraryData`, and the checked-in macro-library artifact is

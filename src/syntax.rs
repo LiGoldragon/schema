@@ -72,24 +72,22 @@ pub enum SyntaxDeclaration {
     Text(String),
     Struct(SyntaxStructDeclaration),
     Enum(SyntaxEnumDeclaration),
-    KeyValue(SyntaxKeyValueDeclaration),
 }
 
 impl SyntaxDeclaration {
     fn from_named_raw(name: &Name, raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
         match raw {
-            RawNotaDatatype::Atom(_) => Ok(Self::Alias(SyntaxReference::from_raw(raw)?)),
+            RawNotaDatatype::Atom(_) | RawNotaDatatype::Record(_) => {
+                Ok(Self::Alias(SyntaxReference::from_raw(raw)?))
+            }
             RawNotaDatatype::Text(text) => Ok(Self::Text(text.clone())),
-            RawNotaDatatype::KeyValue(map) => Ok(Self::KeyValue(
-                SyntaxKeyValueDeclaration::from_map(name.clone(), map)?,
+            RawNotaDatatype::KeyValue(map) => {
+                Ok(Self::Struct(SyntaxStructDeclaration::from_map(name, map)?))
+            }
+            RawNotaDatatype::Vector(sequence) => Ok(Self::Enum(
+                SyntaxEnumDeclaration::from_vector(name.clone(), sequence)?,
             )),
-            RawNotaDatatype::PipeParenthesis(sequence) => Ok(Self::Enum(
-                SyntaxEnumDeclaration::from_self_named(name, sequence)?,
-            )),
-            RawNotaDatatype::PipeBrace(sequence) => Ok(Self::Struct(
-                SyntaxStructDeclaration::from_self_named(name, sequence)?,
-            )),
-            RawNotaDatatype::Vector(_) | RawNotaDatatype::Record(_) => {
+            RawNotaDatatype::PipeParenthesis(_) | RawNotaDatatype::PipeBrace(_) => {
                 Err(SchemaError::ExpectedSyntaxDeclaration {
                     found: raw.syntax_description(),
                 })
@@ -117,43 +115,17 @@ impl SyntaxStructDeclaration {
         self.fields.len() == 1
     }
 
-    fn from_self_named(
-        expected_name: &Name,
-        sequence: &RawNotaSequence,
-    ) -> Result<Self, SchemaError> {
-        let items = sequence.items();
-        let declared_name = SyntaxDeclaredName::from_items(items)?;
-        declared_name.must_match(expected_name)?;
+    fn from_map(name: &Name, map: &RawDatatypeMap) -> Result<Self, SchemaError> {
         let mut fields = Vec::new();
-        let mut index = 1;
-        while index < items.len() {
-            if let Some(field) = SyntaxField::from_binding(index - 1, &items[index])? {
-                fields.push(field);
-                index += 1;
-                continue;
-            }
-            if let Some(field) = SyntaxField::from_explicit_pair(index - 1, &items[index])? {
-                fields.push(field);
-                index += 1;
-                continue;
-            }
-            let Some(reference_item) = items.get(index + 1) else {
-                fields.push(SyntaxField::from_derived_reference(
-                    index - 1,
-                    &items[index],
-                )?);
-                index += 1;
-                continue;
-            };
-            fields.push(SyntaxField::from_named_pair(
-                index - 1,
-                &items[index],
-                reference_item,
+        for (index, entry) in map.entries().iter().enumerate() {
+            fields.push(SyntaxField::from_map_entry(
+                index,
+                entry.name(),
+                entry.datatype(),
             )?);
-            index += 2;
         }
         Ok(Self {
-            name: expected_name.clone(),
+            name: name.clone(),
             fields,
         })
     }
@@ -174,67 +146,20 @@ impl SyntaxField {
         &self.reference
     }
 
-    fn from_named_pair(
+    fn from_map_entry(
         index: usize,
-        name_item: &RawNotaDatatype,
+        name: &Name,
         reference_item: &RawNotaDatatype,
     ) -> Result<Self, SchemaError> {
-        let Some(field_name) = name_item.as_atom() else {
-            return Err(SchemaError::ExpectedSymbol {
-                found: name_item.syntax_description(),
-            });
+        let reference = if reference_item.as_atom() == Some("*") {
+            SyntaxReference::Plain(name.clone())
+        } else {
+            SyntaxReference::from_raw(reference_item)?
         };
-        let reference = SyntaxReference::from_raw(reference_item)?;
         Ok(Self {
-            name: Name::new(field_name),
+            name: Name::new(name.field_name()),
             reference: reference.with_positional_fallback(index),
         })
-    }
-
-    fn from_derived_reference(index: usize, item: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        let reference = SyntaxReference::from_raw(item)?.with_positional_fallback(index);
-        let name = reference.derived_field_name();
-        Ok(Self { name, reference })
-    }
-
-    fn from_binding(index: usize, item: &RawNotaDatatype) -> Result<Option<Self>, SchemaError> {
-        let Some(text) = item.as_atom() else {
-            return Ok(None);
-        };
-        let Some(binding) = SyntaxBinding::from_text(text) else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            name: binding.field_name(),
-            reference: SyntaxReference::Plain(binding.reference).with_positional_fallback(index),
-        }))
-    }
-
-    fn from_explicit_pair(
-        index: usize,
-        item: &RawNotaDatatype,
-    ) -> Result<Option<Self>, SchemaError> {
-        let Some(sequence) = item.as_record() else {
-            return Ok(None);
-        };
-        if sequence.items().len() != 2 {
-            return Ok(None);
-        }
-        let Some(field_name) = sequence.items()[0].as_atom() else {
-            return Ok(None);
-        };
-        if !field_name
-            .chars()
-            .next()
-            .is_some_and(|character| character.is_ascii_lowercase())
-        {
-            return Ok(None);
-        }
-        Ok(Some(Self {
-            name: Name::new(field_name),
-            reference: SyntaxReference::from_raw(&sequence.items()[1])?
-                .with_positional_fallback(index),
-        }))
     }
 }
 
@@ -253,14 +178,8 @@ impl SyntaxEnumDeclaration {
         &self.variants
     }
 
-    fn from_self_named(
-        expected_name: &Name,
-        sequence: &RawNotaSequence,
-    ) -> Result<Self, SchemaError> {
-        let items = sequence.items();
-        let declared_name = SyntaxDeclaredName::from_items(items)?;
-        declared_name.must_match(expected_name)?;
-        Self::from_variant_items(expected_name.clone(), &items[1..])
+    fn from_vector(name: Name, sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
+        Self::from_variant_items(name, sequence.items())
     }
 
     fn from_variant_items(name: Name, items: &[RawNotaDatatype]) -> Result<Self, SchemaError> {
@@ -338,89 +257,6 @@ impl SyntaxVariant {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct SyntaxBinding {
-    name: Name,
-    reference: Name,
-    derives_name_from_reference: bool,
-}
-
-impl SyntaxBinding {
-    fn field_name(&self) -> Name {
-        if self.derives_name_from_reference {
-            Name::new(self.name.field_name())
-        } else {
-            self.name.clone()
-        }
-    }
-
-    fn from_text(text: &str) -> Option<Self> {
-        if let Some(reference) = text.strip_prefix('@') {
-            if reference.is_empty() || reference.contains('@') {
-                return None;
-            }
-            let reference = Name::new(reference);
-            return Some(Self {
-                name: reference.clone(),
-                reference,
-                derives_name_from_reference: true,
-            });
-        }
-        let (name, reference) = text.split_once('@')?;
-        if name.is_empty() || reference.is_empty() || reference.contains('@') {
-            return None;
-        }
-        Some(Self {
-            name: Name::new(name),
-            reference: Name::new(reference),
-            derives_name_from_reference: false,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxKeyValueDeclaration {
-    name: Name,
-    entries: Vec<SyntaxKeyValueEntry>,
-}
-
-impl SyntaxKeyValueDeclaration {
-    pub fn name(&self) -> &Name {
-        &self.name
-    }
-
-    pub fn entries(&self) -> &[SyntaxKeyValueEntry] {
-        &self.entries
-    }
-
-    fn from_map(name: Name, map: &RawDatatypeMap) -> Result<Self, SchemaError> {
-        let mut entries = Vec::new();
-        for entry in map.entries() {
-            entries.push(SyntaxKeyValueEntry {
-                key: entry.name().clone(),
-                value: SyntaxReference::from_raw(entry.datatype())?,
-            });
-        }
-        Ok(Self { name, entries })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxKeyValueEntry {
-    key: Name,
-    value: SyntaxReference,
-}
-
-impl SyntaxKeyValueEntry {
-    pub fn key(&self) -> &Name {
-        &self.key
-    }
-
-    pub fn value(&self) -> &SyntaxReference {
-        &self.value
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxReference {
     Plain(Name),
     Vector(Box<SyntaxReference>),
@@ -435,24 +271,10 @@ impl SyntaxReference {
         match raw {
             RawNotaDatatype::Atom(name) => Ok(Self::Plain(Name::new(name))),
             RawNotaDatatype::Record(sequence) => Self::from_record(sequence),
-            RawNotaDatatype::PipeBrace(sequence) => {
-                let name = SyntaxDeclaredName::from_items(sequence.items())?
-                    .name()
-                    .clone();
-                Ok(Self::InlineStruct(
-                    SyntaxStructDeclaration::from_self_named(&name, sequence)?,
-                ))
-            }
-            RawNotaDatatype::PipeParenthesis(sequence) => {
-                let name = SyntaxDeclaredName::from_items(sequence.items())?
-                    .name()
-                    .clone();
-                Ok(Self::InlineEnum(SyntaxEnumDeclaration::from_self_named(
-                    &name, sequence,
-                )?))
-            }
             RawNotaDatatype::Vector(_)
             | RawNotaDatatype::KeyValue(_)
+            | RawNotaDatatype::PipeBrace(_)
+            | RawNotaDatatype::PipeParenthesis(_)
             | RawNotaDatatype::Text(_) => Err(SchemaError::ExpectedSyntaxReference {
                 found: raw.syntax_description(),
             }),
@@ -504,58 +326,6 @@ impl SyntaxReference {
 
     fn with_positional_fallback(self, _index: usize) -> Self {
         self
-    }
-
-    fn derived_field_name(&self) -> Name {
-        match self {
-            Self::Plain(name) => Name::new(name.field_name()),
-            Self::Vector(inner) => Name::new(format!("{}_vector", inner.derived_field_name())),
-            Self::Optional(inner) => Name::new(format!("optional_{}", inner.derived_field_name())),
-            Self::Map(key, value) => Name::new(format!(
-                "{}_by_{}",
-                value.derived_field_name(),
-                key.derived_field_name()
-            )),
-            Self::InlineStruct(declaration) => Name::new(declaration.name().field_name()),
-            Self::InlineEnum(declaration) => Name::new(declaration.name().field_name()),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SyntaxDeclaredName {
-    name: Name,
-}
-
-impl SyntaxDeclaredName {
-    fn from_items(items: &[RawNotaDatatype]) -> Result<Self, SchemaError> {
-        let Some(first) = items.first() else {
-            return Err(SchemaError::ExpectedRawDeclarationName {
-                found: "empty declaration".to_owned(),
-            });
-        };
-        let Some(name) = first.as_atom() else {
-            return Err(SchemaError::ExpectedRawDeclarationName {
-                found: first.syntax_description(),
-            });
-        };
-        Ok(Self {
-            name: Name::new(name),
-        })
-    }
-
-    fn name(&self) -> &Name {
-        &self.name
-    }
-
-    fn must_match(&self, expected_name: &Name) -> Result<(), SchemaError> {
-        if self.name == *expected_name {
-            return Ok(());
-        }
-        Err(SchemaError::RawDeclarationNameMismatch {
-            key: expected_name.as_str().to_owned(),
-            declared: self.name.as_str().to_owned(),
-        })
     }
 }
 

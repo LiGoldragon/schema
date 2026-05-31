@@ -6,9 +6,9 @@ use std::{
 use nota_next::{AtomClassification, Block, Delimiter, Document, NotaEncode, NotaSource};
 
 use crate::{
-    EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject, MacroOutput,
-    MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError, SchemaMacro,
-    StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
+    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
+    SchemaMacro, StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1707,11 +1707,11 @@ impl<'template> AssembledFields<'template> {
                 );
                 index += 2;
             } else if self.starts_ambiguous_pascal_pair(index) {
-                return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                    form: "derived struct field pair",
-                    expected: "PascalCase type plus * marker",
-                    found: 2,
-                });
+                fields.push(
+                    AssembledField::new_named_pair(self.objects[index], self.objects[index + 1])
+                        .lower(registry, context)?,
+                );
+                index += 2;
             } else {
                 fields.push(AssembledField::new(self.objects[index]).lower(registry, context)?);
                 index += 1;
@@ -1755,14 +1755,15 @@ impl<'template> AssembledFields<'template> {
 
 /// One field inside a struct body.
 ///
-/// `@Topic` derives the field name from an already-declared type
-/// (`topic`) and creates a `Plain` reference. Native NOTA
-/// type-reference objects can also sit directly in a field position:
-/// `(Vec Topic)`, `(Map (Topic RecordIdentifier))`, and
-/// `(Optional Topic)` lower to vector, map, and optional references
-/// with names derived from the reference shape. A parenthesised pair
-/// whose first object is a lower-case field symbol remains the
-/// explicit escape hatch for uncommon names.
+/// Strict struct bodies are key/value maps. `Topic *` derives the
+/// field name from an already-declared type (`topic`) and creates a
+/// `Plain` reference. Native NOTA type-reference objects can also sit
+/// directly in a field position: `(Vec Topic)`,
+/// `(Map (Topic RecordIdentifier))`, and `(Optional Topic)` lower to
+/// vector, map, and optional references with names derived from the
+/// reference shape. A parenthesised pair whose first object is a
+/// lower-case field symbol remains the explicit escape hatch for
+/// uncommon names.
 #[derive(Clone, Copy, Debug)]
 struct AssembledField<'template> {
     object: ObjectView<'template>,
@@ -1789,15 +1790,18 @@ impl<'template> AssembledField<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<FieldDeclaration, SchemaError> {
-        if let Some(binding) = AssembledBinding::from_object(self.object) {
-            return Ok(FieldDeclaration {
-                name: Name::new(binding.name.field_name()),
-                reference: TypeReference::from_name(binding.reference),
-            });
-        }
         if let Some(reference_object) = self.paired_reference {
             let field_name = self.object.schema_name()?;
             let reference = if reference_object.demote_to_string() == Some("*") {
+                TypeReference::from_name(field_name.clone())
+            } else if Self::is_pascal_case_name(&field_name) {
+                let declaration = self.inline_declaration(
+                    field_name.clone(),
+                    reference_object,
+                    registry,
+                    context,
+                )?;
+                context.remember_inline_declaration(Declaration::private(declaration));
                 TypeReference::from_name(field_name.clone())
             } else {
                 reference_object.type_reference(registry, context)?
@@ -1835,6 +1839,36 @@ impl<'template> AssembledField<'template> {
             name: Name::new(name.field_name()),
             reference: TypeReference::from_name(name),
         })
+    }
+
+    fn inline_declaration(
+        &self,
+        name: Name,
+        object: ObjectView<'template>,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        if let Some(children) = object.delimited_children(Delimiter::Brace) {
+            let fields = AssembledFields::from_objects(children).lower(registry, context)?;
+            return Ok(TypeDeclaration::Struct(StructDeclaration::new(
+                name, fields,
+            )));
+        }
+        if let Some(children) = object.delimited_children(Delimiter::SquareBracket) {
+            let variants = AssembledVariants::from_objects(children).lower(registry, context)?;
+            return Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)));
+        }
+        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+            name,
+            object.type_reference(registry, context)?,
+        )))
+    }
+
+    fn is_pascal_case_name(name: &Name) -> bool {
+        name.as_str()
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase())
     }
 
     fn is_explicit_field_pair(&self) -> bool {
@@ -1950,36 +1984,6 @@ impl<'template> AssembledVariant<'template> {
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct AssembledBinding {
-    name: Name,
-    reference: Name,
-}
-
-impl AssembledBinding {
-    fn from_object(object: ObjectView<'_>) -> Option<Self> {
-        let text = object.demote_to_string()?;
-        if let Some(reference) = text.strip_prefix('@') {
-            if reference.is_empty() || reference.contains('@') {
-                return None;
-            }
-            let reference = Name::new(reference);
-            return Some(Self {
-                name: reference.clone(),
-                reference,
-            });
-        }
-        let (name, reference) = text.split_once('@')?;
-        if name.is_empty() || reference.is_empty() || reference.contains('@') {
-            return None;
-        }
-        Some(Self {
-            name: Name::new(name),
-            reference: Name::new(reference),
-        })
     }
 }
 

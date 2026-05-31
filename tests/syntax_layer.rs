@@ -1,7 +1,7 @@
 use std::fs;
 
 use schema_next::{
-    Name, SchemaError, SyntaxDeclaration, SyntaxReference, SyntaxSchema, SyntaxStructDeclaration,
+    Name, SyntaxDeclaration, SyntaxReference, SyntaxSchema, SyntaxStructDeclaration,
 };
 
 #[test]
@@ -10,6 +10,12 @@ fn syntax_schema_reads_real_schema_file_through_raw_nota_first() {
 
     assert_eq!("Schema", schema.root_name().as_str());
     assert_eq!(11, schema.datatypes().len());
+
+    let SyntaxDeclaration::Alias(text) = schema.datatype_named("Text").unwrap().declaration()
+    else {
+        panic!("Text should be an alias declaration");
+    };
+    assert_eq!(&name_reference("String"), text);
 
     let topic = struct_named(&schema, "Topic");
     assert_eq!("Topic", topic.name().as_str());
@@ -27,7 +33,7 @@ fn typed_composite_objects_are_read_from_parenthesis_records() {
     assert_eq!(&name_reference("Topics"), entry.fields()[0].reference());
     assert_eq!("related", entry.fields()[3].name().as_str());
     assert_eq!(&name_reference("TopicIndex"), entry.fields()[3].reference());
-    assert_eq!("maybeTopic", entry.fields()[4].name().as_str());
+    assert_eq!("maybe_topic", entry.fields()[4].name().as_str());
     assert_eq!(
         &SyntaxReference::Optional(Box::new(name_reference("Topic"))),
         entry.fields()[4].reference()
@@ -50,7 +56,7 @@ fn typed_composite_objects_are_read_from_parenthesis_records() {
 }
 
 #[test]
-fn at_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
+fn bracket_declaration_creates_unit_and_data_carrying_variants() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/schema.schema");
     let input = enum_declaration(&schema, "SpiritInput");
 
@@ -71,7 +77,7 @@ fn at_parenthesis_declaration_creates_unit_and_data_carrying_variants() {
 }
 
 #[test]
-fn at_type_shorthand_derives_syntax_fields_and_variant_payloads() {
+fn star_marker_derives_syntax_fields_and_parenthesis_variants_carry_payloads() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/derived-members.schema");
     let entry = struct_named(&schema, "Entry");
 
@@ -113,32 +119,30 @@ fn at_type_shorthand_derives_syntax_fields_and_variant_payloads() {
 }
 
 #[test]
-fn at_brace_at_datatype_declaration_position_creates_struct_field_lists() {
+fn atom_datatype_declaration_creates_alias_reference() {
     let schema = syntax_schema("tests/fixtures/syntax-layer/schema.schema");
-    let text = struct_named(&schema, "Text");
+    let declaration = schema.datatype_named("Text").unwrap().declaration();
 
-    assert!(text.is_newtype());
-    assert_eq!("string", text.fields()[0].name().as_str());
-    assert_eq!(&name_reference("String"), text.fields()[0].reference());
+    assert!(matches!(
+        declaration,
+        SyntaxDeclaration::Alias(SyntaxReference::Plain(name)) if name.as_str() == "String"
+    ));
 }
 
 #[test]
-fn plain_square_bracket_datatype_declarations_are_rejected() {
+fn square_bracket_datatype_declaration_creates_enum() {
     let source = "{ Text [String] }";
-    let error =
+    let schema =
         SyntaxSchema::from_path_and_source("tests/fixtures/syntax-layer/plain.schema", source)
-            .unwrap_err();
+            .unwrap();
+    let text = enum_declaration(&schema, "Text");
 
-    assert_eq!(
-        SchemaError::ExpectedSyntaxDeclaration {
-            found: "square-bracket vector".to_owned(),
-        },
-        error
-    );
+    assert_eq!("String", text.variants()[0].name().as_str());
+    assert_eq!(None, text.variants()[0].payload());
 }
 
 #[test]
-fn at_declaration_name_must_match_namespace_key() {
+fn strict_root_map_rejects_odd_entries() {
     let source = fs::read_to_string("tests/fixtures/syntax-layer/name-mismatch.schema").unwrap();
     let error = SyntaxSchema::from_path_and_source(
         "tests/fixtures/syntax-layer/name-mismatch.schema",
@@ -147,10 +151,7 @@ fn at_declaration_name_must_match_namespace_key() {
     .unwrap_err();
 
     assert_eq!(
-        SchemaError::RawDeclarationNameMismatch {
-            key: "Entry".to_owned(),
-            declared: "Other".to_owned()
-        },
+        schema_next::SchemaError::ExpectedEvenMapEntries { found: 3 },
         error
     );
 }

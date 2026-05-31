@@ -33,9 +33,6 @@ pub struct RawDatatypeMap {
 
 impl RawDatatypeMap {
     pub fn from_blocks(objects: &[Block]) -> Result<Self, SchemaError> {
-        if SelfNamedDatatypeBlocks::new(objects).all_self_named() {
-            return SelfNamedDatatypeBlocks::new(objects).to_map();
-        }
         if objects.len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
                 found: objects.len(),
@@ -60,65 +57,6 @@ impl RawDatatypeMap {
             .iter()
             .find(|entry| entry.name.as_str() == name)
             .map(RawDatatypeEntry::datatype)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SelfNamedDatatypeBlocks<'schema> {
-    objects: &'schema [Block],
-}
-
-impl<'schema> SelfNamedDatatypeBlocks<'schema> {
-    fn new(objects: &'schema [Block]) -> Self {
-        Self { objects }
-    }
-
-    fn all_self_named(&self) -> bool {
-        !self.objects.is_empty()
-            && self
-                .objects
-                .iter()
-                .all(|object| SelfNamedDatatypeBlock::new(object).name().is_ok())
-    }
-
-    fn to_map(self) -> Result<RawDatatypeMap, SchemaError> {
-        let mut entries = Vec::new();
-        for object in self.objects {
-            entries.push(SelfNamedDatatypeBlock::new(object).to_entry()?);
-        }
-        Ok(RawDatatypeMap { entries })
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SelfNamedDatatypeBlock<'schema> {
-    object: &'schema Block,
-}
-
-impl<'schema> SelfNamedDatatypeBlock<'schema> {
-    fn new(object: &'schema Block) -> Self {
-        Self { object }
-    }
-
-    fn name(&self) -> Result<Name, SchemaError> {
-        if !self.object.is_pipe_brace() && !self.object.is_pipe_parenthesis() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: "self-named datatype declaration",
-            });
-        }
-        self.object
-            .root_object_at(0)
-            .ok_or(SchemaError::ExpectedDelimiter {
-                expected: "self-named datatype declaration",
-            })?
-            .schema_name()
-    }
-
-    fn to_entry(self) -> Result<RawDatatypeEntry, SchemaError> {
-        Ok(RawDatatypeEntry {
-            name: self.name()?,
-            datatype: RawNotaDatatype::from_block(self.object)?,
-        })
     }
 }
 

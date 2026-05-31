@@ -53,7 +53,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 }
 
 #[test]
-fn at_declarations_lower_to_structs_and_enums() {
+fn strict_key_value_declarations_lower_to_structs_and_enums() {
     let source = "[] [] { Entry { topic Topic kind Kind } Kind [Decision Constraint] }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
@@ -93,14 +93,15 @@ fn simple_newtype_declarations_lower_to_single_contained_reference() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
-    let source = "[] [] { (Entry Entry@{ topic@Topic kind@Kind }) }";
+    let source = "[] [] { (Entry Entry { topic Topic kind Kind }) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("brace namespaces contain self-named declarations only");
+        .expect_err("brace namespaces contain key/value declarations only");
 
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedDelimiter { .. }
+        schema_next::SchemaError::ExpectedEvenMapEntries { .. }
+            | schema_next::SchemaError::ExpectedDelimiter { .. }
             | schema_next::SchemaError::MacroDidNotMatch { .. }
             | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
@@ -108,14 +109,15 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
 
 #[test]
 fn brace_namespace_rejects_redundant_key_value_declarations() {
-    let source = "[] [] { Entry Entry@{ topic@Topic kind@Kind } }";
+    let source = "[] [] { Entry Entry { topic Topic kind Kind } }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("namespace declarations must be key/value pairs without duplicated names");
 
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedDelimiter { .. }
+        schema_next::SchemaError::ExpectedEvenMapEntries { .. }
+            | schema_next::SchemaError::ExpectedDelimiter { .. }
             | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
 }
@@ -589,20 +591,32 @@ impl SchemaMacro for RejectingRootImports {
 }
 
 #[test]
-fn brace_body_is_not_enum_sugar_inside_namespace() {
+fn brace_body_lowers_as_struct_map_with_inline_private_types() {
     let source = "[] [] { Routing {ToInbox Address ToOutbox Address} }";
-    let error = SchemaEngine::default()
+    let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("brace values are maps, not enum sugar");
+        .expect("brace values are struct maps, not enum sugar");
 
+    assert_eq!(
+        asschema
+            .namespace()
+            .iter()
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("ToInbox", Visibility::Private),
+            ("ToOutbox", Visibility::Private),
+            ("Routing", Visibility::Public),
+        ]
+    );
     assert!(matches!(
-        error,
-        schema_next::SchemaError::ExpectedSyntaxReferenceArity { .. }
+        asschema.type_named("Routing").expect("routing type"),
+        TypeDeclaration::Struct(_)
     ));
 }
 
 #[test]
-fn at_declaration_field_pairs_lower_through_default_engine() {
+fn strict_declaration_field_pairs_lower_through_default_engine() {
     let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
@@ -620,7 +634,7 @@ fn at_declaration_field_pairs_lower_through_default_engine() {
 }
 
 #[test]
-fn at_type_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
+fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
     let source = include_str!("fixtures/big-schemas/derived-members.schema");
     let asschema = SchemaEngine::default()
         .lower_source(
@@ -684,8 +698,8 @@ fn at_type_shorthand_derives_fields_and_data_variant_payloads_from_real_schema()
 }
 
 #[test]
-fn inline_at_declaration_creates_ordered_namespace_type() {
-    let source = "[] [] { Entry@{ Receipt@{ recordIdentifier@RecordIdentifier } later@Receipt } }";
+fn inline_pascal_declaration_creates_ordered_namespace_type() {
+    let source = "[] [] { Entry { Receipt { recordIdentifier RecordIdentifier } later Receipt } }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline declaration lowers");
@@ -731,7 +745,7 @@ fn root_enum_positions_supply_input_and_output_names() {
 
     let error = SchemaEngine::default()
         .lower_source(
-            "[] Reply@[(Accepted Receipt)] {}",
+            "[] Reply [(Accepted Receipt)] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect_err("labeled root wrapper should not be accepted");

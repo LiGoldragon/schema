@@ -10,53 +10,53 @@
  (Event RuntimeEvent)
  (Rejected Rejected)]
 {
-  CommitSequence@{ integer@Integer }
-  DatabaseDigest@{ integer@Integer }
-  ActorIdentifier@{ string@String }
-  SocketPath@{ string@String }
-  SignalRequest@[(RecordIntent RecordIntent) (ObserveIntent ObserveIntent) (SubscribeIntent SubscribeIntent)]
-  SignalReply@[(RecordAccepted RecordAccepted) (ObservationReturned ObservationReturned) (SubscriptionStarted SubscriptionStarted)]
-  NexusRequest@[(PushSignal PushSignal) (PushSemaResult PushSemaResult) ResolveMail ExpireMail]
-  NexusReply@[(PushedToSema PushedToSema) (MailResolved MailResolved) MailExpired]
-  SemaRequest@[(WriteEntry WriteEntry) (ReadEntries ReadEntries) (OpenSubscription OpenSubscription) (CloseSubscription CloseSubscription)]
-  SemaReply@[(EntryWritten EntryWritten) (EntriesRead EntriesRead) (SubscriptionOpened SubscriptionOpened) (SubscriptionClosed SubscriptionClosed)]
-  AdminRequest@[Drain Pause Resume (Snapshot Snapshot)]
-  AdminReply@[Drained Paused Resumed (SnapshotReady SnapshotReady)]
-  RuntimeEvent@[(MailSent MailSent) (MessageAccepted MessageAccepted) (MessageCommitted MessageCommitted) (MessageFailed MessageFailed)]
-  Rejected@{ rejectionReason@RejectionReason }
-  RejectionReason@[Malformed Unauthorized Conflict Unsupported StaleVersion InternalError]
-  RecordIntent@{ actorIdentifier@ActorIdentifier entry@Entry }
-  ObserveIntent@{ query@Query }
-  SubscribeIntent@{ query@Query }
-  RecordAccepted@{ recordIdentifier@RecordIdentifier commitSequence@CommitSequence }
-  ObservationReturned@{ recordSet@RecordSet }
-  SubscriptionStarted@{ subscriptionToken@SubscriptionToken }
-  PushSignal@{ signalRequest@SignalRequest }
-  PushSemaResult@{ semaReply@SemaReply }
-  PushedToSema@{ semaRequest@SemaRequest }
-  MailResolved@{ signalReply@SignalReply }
-  WriteEntry@{ entry@Entry }
-  ReadEntries@{ query@Query }
-  OpenSubscription@{ query@Query }
-  CloseSubscription@{ subscriptionToken@SubscriptionToken }
-  EntryWritten@{ recordIdentifier@RecordIdentifier commitSequence@CommitSequence databaseDigest@DatabaseDigest }
-  EntriesRead@{ recordSet@RecordSet databaseDigest@DatabaseDigest }
-  SubscriptionOpened@{ subscriptionToken@SubscriptionToken commitSequence@CommitSequence }
-  SubscriptionClosed@{ subscriptionToken@SubscriptionToken commitSequence@CommitSequence }
-  Snapshot@{ socketPath@SocketPath }
-  SnapshotReady@{ socketPath@SocketPath databaseDigest@DatabaseDigest }
-  MailSent@{ signalRequest@SignalRequest }
-  MessageAccepted@{ signalRequest@SignalRequest }
-  MessageCommitted@{ commitSequence@CommitSequence }
-  MessageFailed@{ rejectionReason@RejectionReason }
-  Entry@{ topics@Topics kind@Kind description@Description magnitude@Magnitude actorIdentifier@ActorIdentifier }
-  Topic@{ string@String }
-  Topics@{ values@(Vec Topic) }
-  Description@{ string@String }
-  Kind@[Decision Principle Correction Clarification Constraint Observation Question]
-  Magnitude@[Minimum VeryLow Low Medium High VeryHigh Maximum]
-  Query@{ topics@Topics kinds@(Vec Kind) limit@(Optional Integer) }
-  RecordIdentifier@{ integer@Integer }
-  SubscriptionToken@{ integer@Integer }
-  RecordSet@{ records@(Vec Entry) byTopic@(Map (Topic RecordIdentifier)) }
+  CommitSequence { integer Integer }
+  DatabaseDigest { integer Integer }
+  ActorIdentifier { string String }
+  SocketPath { string String }
+  SignalRequest [(RecordIntent RecordIntent) (ObserveIntent ObserveIntent) (SubscribeIntent SubscribeIntent)]
+  SignalReply [(RecordAccepted RecordAccepted) (ObservationReturned ObservationReturned) (SubscriptionStarted SubscriptionStarted)]
+  NexusRequest [(PushSignal PushSignal) (PushSemaResult PushSemaResult) ResolveMail ExpireMail]
+  NexusReply [(PushedToSema PushedToSema) (MailResolved MailResolved) MailExpired]
+  SemaRequest [(WriteEntry WriteEntry) (ReadEntries ReadEntries) (OpenSubscription OpenSubscription) (CloseSubscription CloseSubscription)]
+  SemaReply [(EntryWritten EntryWritten) (EntriesRead EntriesRead) (SubscriptionOpened SubscriptionOpened) (SubscriptionClosed SubscriptionClosed)]
+  AdminRequest [Drain Pause Resume (Snapshot Snapshot)]
+  AdminReply [Drained Paused Resumed (SnapshotReady SnapshotReady)]
+  RuntimeEvent [(MailSent MailSent) (MessageAccepted MessageAccepted) (MessageCommitted MessageCommitted) (MessageFailed MessageFailed)]
+  Rejected { rejectionReason RejectionReason }
+  RejectionReason [Malformed Unauthorized Conflict Unsupported StaleVersion InternalError]
+  RecordIntent { actorIdentifier ActorIdentifier entry Entry }
+  ObserveIntent { query Query }
+  SubscribeIntent { query Query }
+  RecordAccepted { recordIdentifier RecordIdentifier commitSequence CommitSequence }
+  ObservationReturned { recordSet RecordSet }
+  SubscriptionStarted { subscriptionToken SubscriptionToken }
+  PushSignal { signalRequest SignalRequest }
+  PushSemaResult { semaReply SemaReply }
+  PushedToSema { semaRequest SemaRequest }
+  MailResolved { signalReply SignalReply }
+  WriteEntry { entry Entry }
+  ReadEntries { query Query }
+  OpenSubscription { query Query }
+  CloseSubscription { subscriptionToken SubscriptionToken }
+  EntryWritten { recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest }
+  EntriesRead { recordSet RecordSet databaseDigest DatabaseDigest }
+  SubscriptionOpened { subscriptionToken SubscriptionToken commitSequence CommitSequence }
+  SubscriptionClosed { subscriptionToken SubscriptionToken commitSequence CommitSequence }
+  Snapshot { socketPath SocketPath }
+  SnapshotReady { socketPath SocketPath databaseDigest DatabaseDigest }
+  MailSent { signalRequest SignalRequest }
+  MessageAccepted { signalRequest SignalRequest }
+  MessageCommitted { commitSequence CommitSequence }
+  MessageFailed { rejectionReason RejectionReason }
+  Entry { topics Topics kind Kind description Description magnitude Magnitude actorIdentifier ActorIdentifier }
+  Topic { string String }
+  Topics { values (Vec Topic) }
+  Description { string String }
+  Kind [Decision Principle Correction Clarification Constraint Observation Question]
+  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]
+  Query { topics Topics kinds (Vec Kind) limit (Optional Integer) }
+  RecordIdentifier { integer Integer }
+  SubscriptionToken { integer Integer }
+  RecordSet { records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) }
 }
