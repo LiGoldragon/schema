@@ -191,6 +191,7 @@ fn design_example_default_engine_uses_strict_structural_macros() {
         vec![
             "SchemaStructDefinition",
             "SchemaEnumDefinition",
+            "SchemaNewtypeDefinition",
             "SchemaStructFields",
             "SchemaEnumVariants",
         ],
@@ -205,6 +206,7 @@ fn design_example_default_engine_uses_strict_structural_macros() {
     assert_eq!(
         positions,
         vec![
+            MacroPosition::NamespaceDeclaration,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::NamespaceDeclaration,
             MacroPosition::StructFields,

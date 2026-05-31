@@ -16,40 +16,40 @@
   Magnitude (Trace Low Medium High Maximum)
   Certainty (Possible Likely Certain)
   RecordKind (Decision Principle Correction Clarification Constraint Observation Question)
-  RawAtom {| RawAtom text Text |}
-  RawText {| RawText text Text |}
-  RawRecord {| RawRecord items RawDatatypeList |}
-  RawVector {| RawVector items RawDatatypeList |}
-  RawKeyValue {| RawKeyValue entries RawDatatypeMap |}
-  RawPipeParenthesis {| RawPipeParenthesis items RawDatatypeList |}
-  RawPipeBrace {| RawPipeBrace items RawDatatypeList |}
-  RawDatatype (| RawDatatype RawAtom RawText RawRecord RawVector RawKeyValue RawPipeParenthesis RawPipeBrace |)
+  RawAtom { text Text }
+  RawText { text Text }
+  RawRecord { items RawDatatypeList }
+  RawVector { items RawDatatypeList }
+  RawKeyValue { entries RawDatatypeMap }
+  RawPipeParenthesis { items RawDatatypeList }
+  RawPipeBrace { items RawDatatypeList }
+  RawDatatype [RawAtom RawText RawRecord RawVector RawKeyValue RawPipeParenthesis RawPipeBrace]
   RawDatatypeList [(Vec RawDatatype)]
   RawDatatypeMap { key Name value RawDatatype }
   OptionalTopic (Optional Topic)
   DescriptionIndex { key Topic value Description }
-  Field {| Field name FieldName datatype RawDatatype |}
+  Field { name FieldName datatype RawDatatype }
   Fields [(Vec Field)]
-  StructDeclaration {| StructDeclaration name TypeName fields Fields |}
-  UnitVariant {| UnitVariant name TypeName |}
-  DataVariant {| DataVariant name TypeName payload RawDatatype |}
-  EnumVariant (| EnumVariant UnitVariant DataVariant |)
+  StructDeclaration { name TypeName fields Fields }
+  UnitVariant { name TypeName }
+  DataVariant { name TypeName payload RawDatatype }
+  EnumVariant [UnitVariant DataVariant]
   EnumVariants [(Vec EnumVariant)]
-  EnumDeclaration {| EnumDeclaration name TypeName variants EnumVariants |}
-  NewtypeDeclaration {| NewtypeDeclaration name TypeName inner RawDatatype |}
-  DatatypeDeclaration (| DatatypeDeclaration StructDeclaration EnumDeclaration NewtypeDeclaration |)
+  EnumDeclaration { name TypeName variants EnumVariants }
+  NewtypeDeclaration { name TypeName inner RawDatatype }
+  DatatypeDeclaration [StructDeclaration EnumDeclaration NewtypeDeclaration]
   DatatypeDeclarations [(Vec DatatypeDeclaration)]
   ImportPath [ModuleName]
-  ImportAll {| ImportAll path ImportPath |}
-  ImportSome {| ImportSome path ImportPath names TypeNames |}
+  ImportAll { path ImportPath }
+  ImportSome { path ImportPath names TypeNames }
   TypeNames [(Vec TypeName)]
-  ImportDeclaration (| ImportDeclaration ImportAll ImportSome |)
+  ImportDeclaration [ImportAll ImportSome]
   ImportDeclarations [ImportDeclaration]
-  SchemaNode {| SchemaNode tag Name data RawDatatype |}
-  MacroParameter {| MacroParameter name Name datatype RawDatatype |}
+  SchemaNode { tag Name data RawDatatype }
+  MacroParameter { name Name datatype RawDatatype }
   MacroParameters [(Vec MacroParameter)]
-  MacroExpansion {| MacroExpansion output RawDatatype |}
-  MacroDefinition {| MacroDefinition name Name parameters MacroParameters expansion MacroExpansion |}
+  MacroExpansion { output RawDatatype }
+  MacroDefinition { name Name parameters MacroParameters expansion MacroExpansion }
   MacroDefinitions [(Vec MacroDefinition)]
-  CoreSchemaFile {| CoreSchemaFile datatypes RawDatatypeMap |}
+  CoreSchemaFile { datatypes RawDatatypeMap }
 }

@@ -387,6 +387,7 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
         vec![
             "SchemaStructDefinition",
             "SchemaEnumDefinition",
+            "SchemaNewtypeDefinition",
             "SchemaStructFields",
             "SchemaEnumVariants",
         ]

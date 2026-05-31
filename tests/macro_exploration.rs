@@ -17,8 +17,8 @@
 use nota_next::Document;
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroLibraryArtifact, MacroLibraryData, MacroObject,
-    MacroOutput, MacroPosition, MacroRegistry, SchemaError, SchemaMacro, TypeDeclaration,
-    TypeReference,
+    MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaError, SchemaMacro,
+    TypeDeclaration, TypeReference,
 };
 
 // ---------------------------------------------------------------------
@@ -269,7 +269,7 @@ fn object_count_match_distinguishes_by_root_object_count() {
 fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
     let data = library.to_data();
-    assert_eq!(data.definitions().len(), 4);
+    assert_eq!(data.definitions().len(), 5);
     assert!(
         data.definitions()
             .iter()
@@ -293,11 +293,15 @@ fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
         registry.register_box(schema_macro);
     }
 
-    let document = Document::parse("{| Entry Topic * Kind * |}").expect("macro input parses");
-    let object = document.root_object_at(0).expect("macro input root");
+    let document = Document::parse("{ Entry { Topic * Kind * } }").expect("macro input parses");
+    let namespace = document.root_object_at(0).expect("macro input root");
+    let pair = MacroPair {
+        name: namespace.root_object_at(0).expect("macro input key"),
+        definition: namespace.root_object_at(1).expect("macro input value"),
+    };
     let output = registry
         .lower(
-            MacroObject::Block(object),
+            MacroObject::Pair(pair),
             MacroPosition::NamespaceDeclaration,
             &mut MacroContext::default(),
         )

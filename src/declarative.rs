@@ -1613,6 +1613,7 @@ impl<'template> AssembledType<'template> {
         match kind.as_str() {
             "Struct" => self.lower_struct(&children, registry, context),
             "Enum" => self.lower_enum(&children, registry, context),
+            "Newtype" => self.lower_newtype(&children, registry, context),
             found => Err(SchemaError::UnknownAssembledTemplate {
                 found: found.to_owned(),
             }),
@@ -1651,6 +1652,21 @@ impl<'template> AssembledType<'template> {
         let variants =
             AssembledVariants::from_objects(body.root_objects()).lower(registry, context)?;
         Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
+    }
+
+    fn lower_newtype(
+        &self,
+        children: &[ObjectView<'template>],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        let name = self.child(children, 1, "Newtype")?.schema_name()?;
+        let reference = self
+            .child(children, 2, "Newtype")?
+            .type_reference(registry, context)?;
+        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+            name, reference,
+        )))
     }
 
     fn child(

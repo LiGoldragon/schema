@@ -72,7 +72,7 @@ fn raw_core_schema_reads_datatype_key_value_map() {
 }
 
 #[test]
-fn raw_core_schema_preserves_native_key_value_and_pipe_forms() {
+fn raw_core_schema_preserves_native_key_value_and_enum_forms() {
     let schema = RawSchemaFile::from_path_and_source("schemas/core.schema", CORE_SCHEMA)
         .expect("raw core schema parses");
 
@@ -91,27 +91,19 @@ fn raw_core_schema_preserves_native_key_value_and_pipe_forms() {
         .datatypes()
         .datatype_named("StructDeclaration")
         .expect("StructDeclaration entry")
-        .as_pipe_brace()
-        .expect("pipe brace keeps named struct-wrapper raw form");
-    assert_atom_sequence(
-        entry_struct,
-        &["StructDeclaration", "name", "TypeName", "fields", "Fields"],
-    );
+        .as_key_value()
+        .expect("struct declaration uses key-value map");
+    assert_map_atoms(entry_struct, &[("name", "TypeName"), ("fields", "Fields")]);
 
     let datatype_enum = schema
         .datatypes()
         .datatype_named("DatatypeDeclaration")
         .expect("DatatypeDeclaration entry")
-        .as_pipe_parenthesis()
-        .expect("pipe parenthesis keeps named enum-wrapper raw form");
+        .as_vector()
+        .expect("enum declaration uses bracket vector");
     assert_atom_sequence(
         datatype_enum,
-        &[
-            "DatatypeDeclaration",
-            "StructDeclaration",
-            "EnumDeclaration",
-            "NewtypeDeclaration",
-        ],
+        &["StructDeclaration", "EnumDeclaration", "NewtypeDeclaration"],
     );
 }
 
