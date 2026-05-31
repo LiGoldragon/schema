@@ -141,6 +141,19 @@ schema-emitted macro table type directly. The macro table is already real
 serializable data and is already the runtime load path; the remaining loop is
 making its Rust noun schema-emitted.
 
+Declarative macro expansion preserves structural NOTA objects while lowering.
+Pattern captures store the matched `Block` values, rest captures store ordered
+`Block` vectors, and templates expand into an owned object tree before
+`AssembledTemplate` lowers the result. Compact notation remains only as a
+diagnostic string for `MacroContext`; the live expansion path does not emit a
+template string and parse it back through `Document::parse`.
+
+The current structural expansion object can lower template-owned atoms and
+delimiter nodes plus captured source blocks. Registry dispatch for arbitrary
+type-reference macro invocations still operates on source `Block` values; the
+fully shared version belongs with the nota-next macro-node substrate once it
+exposes owned structural macro objects.
+
 ## Strict Key/Value Schema Syntax
 
 The authored syntax preserves NOTA brace meaning: every brace is a key/value

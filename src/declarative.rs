@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nota_next::{Block, Delimiter, Document, NotaEncode, NotaSource};
+use nota_next::{AtomClassification, Block, Delimiter, Document, NotaEncode, NotaSource};
 
 use crate::{
     EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject, MacroOutput,
@@ -729,10 +729,7 @@ impl PatternObject {
         bindings: &mut MacroBindings,
     ) -> Result<bool, SchemaError> {
         match self {
-            Self::Capture(capture) => bindings.bind_single(
-                capture.name(),
-                NotationBlock::new(object).compact_notation(),
-            ),
+            Self::Capture(capture) => bindings.bind_single(capture.name(), object),
             Self::RestCapture(_) => Ok(false),
             Self::Atom(expected) => Ok(object.demote_to_string() == Some(expected.as_str())),
             Self::Delimited {
@@ -829,13 +826,7 @@ impl<'pattern> PatternChildren<'pattern> {
         let capture = self.children[rest_index]
             .as_rest_capture()
             .expect("rest index came from rest capture");
-        bindings.bind_repeated(
-            capture.name(),
-            objects[before..repeated_end]
-                .iter()
-                .map(|object| NotationBlock::new(object).compact_notation())
-                .collect(),
-        )?;
+        bindings.bind_repeated(capture.name(), &objects[before..repeated_end])?;
         for index in 0..after {
             let pattern_index = rest_index + 1 + index;
             let object_index = repeated_end + index;
@@ -870,16 +861,17 @@ impl MacroTemplate {
     }
 
     fn expand(&self, bindings: &MacroBindings) -> Result<ExpandedTemplate, SchemaError> {
-        let mut pieces = self.object.expand_notations(bindings)?;
-        let source = pieces
+        let mut objects = self.object.expand_objects(bindings)?;
+        let object = objects
             .pop()
             .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
                 found: String::new(),
             })?;
-        if !pieces.is_empty() {
+        let source = object.compact_notation();
+        if !objects.is_empty() {
             return Err(SchemaError::UnknownAssembledTemplate { found: source });
         }
-        Ok(ExpandedTemplate { source })
+        Ok(ExpandedTemplate { object, source })
     }
 }
 
@@ -956,22 +948,30 @@ impl TemplateObject {
         }
     }
 
-    fn expand_notations(&self, bindings: &MacroBindings) -> Result<Vec<String>, SchemaError> {
+    fn expand_objects(&self, bindings: &MacroBindings) -> Result<Vec<ExpandedObject>, SchemaError> {
         match self {
-            Self::Capture(capture) => Ok(vec![bindings.single(capture.name())?.to_owned()]),
-            Self::RestCapture(capture) => Ok(bindings.repeated(capture.name())?.to_vec()),
-            Self::Atom(text) => Ok(vec![text.clone()]),
+            Self::Capture(capture) => Ok(vec![ExpandedObject::Captured(
+                bindings.single(capture.name())?.clone(),
+            )]),
+            Self::RestCapture(capture) => Ok(bindings
+                .repeated(capture.name())?
+                .iter()
+                .cloned()
+                .map(ExpandedObject::Captured)
+                .collect()),
+            Self::Atom(text) => Ok(vec![ExpandedObject::Atom(text.clone())]),
             Self::Delimited {
                 delimiter,
                 children,
             } => {
-                let mut child_notations = Vec::new();
+                let mut expanded_children = Vec::new();
                 for child in children {
-                    child_notations.extend(child.expand_notations(bindings)?);
+                    expanded_children.extend(child.expand_objects(bindings)?);
                 }
-                Ok(vec![
-                    DelimitedNotation::new(*delimiter).wrap_children(&child_notations),
-                ])
+                Ok(vec![ExpandedObject::Delimited {
+                    delimiter: *delimiter,
+                    children: expanded_children,
+                }])
             }
         }
     }
@@ -1030,18 +1030,18 @@ struct MacroBindings {
 }
 
 impl MacroBindings {
-    fn bind_single(&mut self, name: &str, value: String) -> Result<bool, SchemaError> {
+    fn bind_single(&mut self, name: &str, value: &Block) -> Result<bool, SchemaError> {
         if let Some(existing) = self.singles.iter().find(|binding| binding.name == name) {
-            return Ok(existing.value == value);
+            return Ok(existing.value == *value);
         }
         self.singles.push(SingleMacroBinding {
             name: name.to_owned(),
-            value,
+            value: value.clone(),
         });
         Ok(true)
     }
 
-    fn bind_repeated(&mut self, name: &str, values: Vec<String>) -> Result<(), SchemaError> {
+    fn bind_repeated(&mut self, name: &str, values: &[Block]) -> Result<(), SchemaError> {
         if let Some(existing) = self.repeated.iter().find(|binding| binding.name == name) {
             if existing.values == values {
                 return Ok(());
@@ -1052,22 +1052,22 @@ impl MacroBindings {
         }
         self.repeated.push(RepeatedMacroBinding {
             name: name.to_owned(),
-            values,
+            values: values.to_vec(),
         });
         Ok(())
     }
 
-    fn single(&self, name: &str) -> Result<&str, SchemaError> {
+    fn single(&self, name: &str) -> Result<&Block, SchemaError> {
         self.singles
             .iter()
             .find(|binding| binding.name == name)
-            .map(|binding| binding.value.as_str())
+            .map(|binding| &binding.value)
             .ok_or_else(|| SchemaError::MissingMacroBinding {
                 name: name.to_owned(),
             })
     }
 
-    fn repeated(&self, name: &str) -> Result<&[String], SchemaError> {
+    fn repeated(&self, name: &str) -> Result<&[Block], SchemaError> {
         self.repeated
             .iter()
             .find(|binding| binding.name == name)
@@ -1090,13 +1090,13 @@ impl MacroBindings {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SingleMacroBinding {
     name: String,
-    value: String,
+    value: Block,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RepeatedMacroBinding {
     name: String,
-    values: Vec<String>,
+    values: Vec<Block>,
 }
 
 #[derive(Clone, Debug)]
@@ -1146,6 +1146,7 @@ impl SchemaMacro for DeclarativeSchemaMacro {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ExpandedTemplate {
+    object: ExpandedObject,
     source: String,
 }
 
@@ -1159,28 +1160,375 @@ impl ExpandedTemplate {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<MacroOutput, SchemaError> {
-        let document = Document::parse(&self.source)?;
-        if document.holds_root_objects() != 1 {
-            return Err(SchemaError::UnknownAssembledTemplate {
-                found: self.source.clone(),
+        AssembledTemplate::new(ObjectView::Expanded(&self.object)).lower(registry, context)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ObjectView<'object> {
+    Block(&'object Block),
+    Expanded(&'object ExpandedObject),
+}
+
+impl<'object> ObjectView<'object> {
+    fn compact_notation(&self) -> String {
+        match self {
+            Self::Block(block) => NotationBlock::new(block).compact_notation(),
+            Self::Expanded(object) => object.compact_notation(),
+        }
+    }
+
+    fn demote_to_string(&self) -> Option<&'object str> {
+        match self {
+            Self::Block(block) => block.demote_to_string(),
+            Self::Expanded(object) => object.demote_to_string(),
+        }
+    }
+
+    fn schema_name(&self) -> Result<Name, SchemaError> {
+        match self {
+            Self::Block(block) => block.schema_name(),
+            Self::Expanded(object) => object.schema_name(),
+        }
+    }
+
+    fn is_parenthesis(&self) -> bool {
+        self.delimited_children(Delimiter::Parenthesis).is_some()
+    }
+
+    fn holds_root_objects(&self) -> usize {
+        match self {
+            Self::Block(block) => block.holds_root_objects(),
+            Self::Expanded(object) => object.holds_root_objects(),
+        }
+    }
+
+    fn root_object_at(&self, index: usize) -> Option<Self> {
+        match self {
+            Self::Block(block) => block.root_object_at(index).map(Self::Block),
+            Self::Expanded(ExpandedObject::Captured(block)) => {
+                block.root_object_at(index).map(Self::Block)
+            }
+            Self::Expanded(object) => object.root_object_at(index).map(Self::Expanded),
+        }
+    }
+
+    fn root_objects(&self) -> Vec<Self> {
+        match self {
+            Self::Block(block) => block.root_objects().iter().map(Self::Block).collect(),
+            Self::Expanded(ExpandedObject::Captured(block)) => {
+                block.root_objects().iter().map(Self::Block).collect()
+            }
+            Self::Expanded(object) => object.root_objects().iter().map(Self::Expanded).collect(),
+        }
+    }
+
+    fn delimited_children(&self, expected: Delimiter) -> Option<Vec<Self>> {
+        match self {
+            Self::Block(Block::Delimited {
+                delimiter,
+                root_objects,
+                ..
+            }) if *delimiter == expected => Some(root_objects.iter().map(Self::Block).collect()),
+            Self::Expanded(ExpandedObject::Delimited {
+                delimiter,
+                children,
+            }) if *delimiter == expected => Some(children.iter().map(Self::Expanded).collect()),
+            Self::Expanded(ExpandedObject::Captured(block)) => {
+                ObjectView::Block(block).delimited_children(expected)
+            }
+            Self::Block(_) | Self::Expanded(_) => None,
+        }
+    }
+
+    fn qualifies_as_pascal_case_symbol(&self) -> bool {
+        match self {
+            Self::Block(block) => block.qualifies_as_pascal_case_symbol(),
+            Self::Expanded(object) => object.qualifies_as_pascal_case_symbol(),
+        }
+    }
+
+    fn type_reference(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        match self {
+            Self::Block(block) => TypeReference::from_block_with_registry(block, registry, context),
+            Self::Expanded(object) => object.type_reference(registry, context),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ExpandedObject {
+    Captured(Block),
+    Atom(String),
+    Delimited {
+        delimiter: Delimiter,
+        children: Vec<ExpandedObject>,
+    },
+}
+
+impl ExpandedObject {
+    fn compact_notation(&self) -> String {
+        match self {
+            Self::Captured(block) => NotationBlock::new(block).compact_notation(),
+            Self::Atom(text) => text.clone(),
+            Self::Delimited {
+                delimiter,
+                children,
+            } => DelimitedNotation::new(*delimiter).wrap_children(
+                &children
+                    .iter()
+                    .map(Self::compact_notation)
+                    .collect::<Vec<_>>(),
+            ),
+        }
+    }
+
+    fn demote_to_string(&self) -> Option<&str> {
+        match self {
+            Self::Captured(block) => block.demote_to_string(),
+            Self::Atom(text) => Some(text.as_str()),
+            Self::Delimited { .. } => None,
+        }
+    }
+
+    fn schema_name(&self) -> Result<Name, SchemaError> {
+        match self {
+            Self::Captured(block) => block.schema_name(),
+            Self::Atom(text) => {
+                let name = Name::new(text);
+                if name.qualifies_as_symbol_name() {
+                    Ok(name)
+                } else {
+                    Err(SchemaError::ExpectedSymbol {
+                        found: text.clone(),
+                    })
+                }
+            }
+            Self::Delimited { .. } => Err(SchemaError::ExpectedSymbol {
+                found: self.compact_notation(),
+            }),
+        }
+    }
+
+    fn holds_root_objects(&self) -> usize {
+        match self {
+            Self::Captured(block) => block.holds_root_objects(),
+            Self::Delimited { children, .. } => children.len(),
+            Self::Atom(_) => 0,
+        }
+    }
+
+    fn root_object_at(&self, index: usize) -> Option<&ExpandedObject> {
+        match self {
+            Self::Delimited { children, .. } => children.get(index),
+            Self::Captured(_) | Self::Atom(_) => None,
+        }
+    }
+
+    fn root_objects(&self) -> &[ExpandedObject] {
+        match self {
+            Self::Delimited { children, .. } => children,
+            Self::Captured(_) | Self::Atom(_) => &[],
+        }
+    }
+
+    fn qualifies_as_pascal_case_symbol(&self) -> bool {
+        match self {
+            Self::Captured(block) => block.qualifies_as_pascal_case_symbol(),
+            Self::Atom(text) => {
+                AtomClassification::classify(text) == AtomClassification::SymbolCandidate
+                    && text
+                        .chars()
+                        .next()
+                        .is_some_and(|character| character.is_ascii_uppercase())
+                    && !text.contains('-')
+            }
+            Self::Delimited { .. } => false,
+        }
+    }
+
+    fn type_reference(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        match self {
+            Self::Captured(block) => {
+                TypeReference::from_block_with_registry(block, registry, context)
+            }
+            Self::Atom(_) => Ok(TypeReference::from_name(self.schema_name()?)),
+            Self::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                children,
+            } => ExpandedReference::new(children).type_reference(registry, context),
+            Self::Delimited {
+                delimiter: Delimiter::SquareBracket,
+                children,
+            } => Err(SchemaError::UnknownTypeReferenceForm {
+                head: "SquareBracket".to_owned(),
+                argument_count: children.len(),
+            }),
+            Self::Delimited {
+                delimiter: Delimiter::Brace,
+                children,
+            } => Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Brace".to_owned(),
+                argument_count: children.len(),
+            }),
+            Self::Delimited {
+                delimiter: Delimiter::PipeBrace,
+                children,
+            } => ExpandedReference::new(children).inline_struct(registry, context),
+            Self::Delimited {
+                delimiter: Delimiter::PipeParenthesis,
+                children,
+            } => ExpandedReference::new(children).inline_enum(registry, context),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExpandedReference<'object> {
+    children: &'object [ExpandedObject],
+}
+
+impl<'object> ExpandedReference<'object> {
+    fn new(children: &'object [ExpandedObject]) -> Self {
+        Self { children }
+    }
+
+    fn type_reference(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        if self.children.len() == 2 {
+            if let Some(head) = self.children[0].demote_to_string() {
+                match head {
+                    "Vec" | "Vector" => {
+                        return Ok(TypeReference::Vector(Box::new(
+                            self.children[1].type_reference(registry, context)?,
+                        )));
+                    }
+                    "Optional" | "Option" => {
+                        return Ok(TypeReference::Optional(Box::new(
+                            self.children[1].type_reference(registry, context)?,
+                        )));
+                    }
+                    "Map" | "KeyValue" => {
+                        return self.grouped_map_payload(&self.children[1], registry, context);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Err(SchemaError::UnknownTypeReferenceForm {
+            head: self
+                .children
+                .first()
+                .and_then(ExpandedObject::demote_to_string)
+                .unwrap_or("<missing>")
+                .to_owned(),
+            argument_count: self.children.len().saturating_sub(1),
+        })
+    }
+
+    fn grouped_map_payload(
+        &self,
+        payload: &'object ExpandedObject,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        let ExpandedObject::Delimited {
+            delimiter: Delimiter::Parenthesis,
+            children,
+        } = payload
+        else {
+            return Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Map".to_owned(),
+                argument_count: 1,
+            });
+        };
+        if children.len() != 2 {
+            return Err(SchemaError::UnknownTypeReferenceForm {
+                head: "Map".to_owned(),
+                argument_count: children.len(),
             });
         }
-        AssembledTemplate::new(
-            document
-                .root_object_at(0)
-                .expect("expanded template root count checked"),
+        Ok(TypeReference::Map(
+            Box::new(children[0].type_reference(registry, context)?),
+            Box::new(children[1].type_reference(registry, context)?),
+        ))
+    }
+
+    fn inline_struct(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        let name = self.inline_declaration_name("inline struct declaration")?;
+        let fields = AssembledFields::from_objects(
+            self.children[1..]
+                .iter()
+                .map(ObjectView::Expanded)
+                .collect(),
         )
-        .lower(registry, context)
+        .lower(registry, context)?;
+        if fields.len() == 1 {
+            let reference = fields.into_iter().next().expect("length checked").reference;
+            context.remember_inline_declaration(crate::Declaration::private(
+                TypeDeclaration::Newtype(NewtypeDeclaration::new(name.clone(), reference)),
+            ));
+        } else {
+            context.remember_inline_declaration(crate::Declaration::private(
+                TypeDeclaration::Struct(StructDeclaration::new(name.clone(), fields)),
+            ));
+        }
+        Ok(TypeReference::Plain(name))
+    }
+
+    fn inline_enum(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeReference, SchemaError> {
+        let name = self.inline_declaration_name("inline enum declaration")?;
+        let variants = AssembledVariants::from_objects(
+            self.children[1..]
+                .iter()
+                .map(ObjectView::Expanded)
+                .collect(),
+        )
+        .lower(registry, context)?;
+        context.remember_inline_declaration(crate::Declaration::private(TypeDeclaration::Enum(
+            EnumDeclaration::new(name.clone(), variants),
+        )));
+        Ok(TypeReference::Plain(name))
+    }
+
+    fn inline_declaration_name(&self, form: &'static str) -> Result<Name, SchemaError> {
+        let Some(name) = self.children.first() else {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form,
+                expected: "declaration name plus body",
+                found: 0,
+            });
+        };
+        ObjectView::Expanded(name).schema_name()
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct AssembledTemplate<'template> {
-    object: &'template Block,
+    object: ObjectView<'template>,
 }
 
 impl<'template> AssembledTemplate<'template> {
-    fn new(object: &'template Block) -> Self {
+    fn new(object: ObjectView<'template>) -> Self {
         Self { object }
     }
 
@@ -1193,20 +1541,20 @@ impl<'template> AssembledTemplate<'template> {
         let head = children
             .first()
             .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
-                found: NotationBlock::new(self.object).compact_notation(),
+                found: self.object.compact_notation(),
             })?
             .schema_name()?;
         match head.as_str() {
-            "Type" => AssembledType::new(self.child(children, 1, "Type")?)
+            "Type" => AssembledType::new(self.child(&children, 1, "Type")?)
                 .lower(registry, context)
                 .map(MacroOutput::Type),
-            "Fields" => AssembledFields::new(&children[1..])
+            "Fields" => AssembledFields::from_objects(children[1..].to_vec())
                 .lower(registry, context)
                 .map(MacroOutput::Fields),
-            "Variants" => AssembledVariants::new(&children[1..])
+            "Variants" => AssembledVariants::from_objects(children[1..].to_vec())
                 .lower(registry, context)
                 .map(MacroOutput::Variants),
-            "Reference" => AssembledReference::new(&children[1..])
+            "Reference" => AssembledReference::new(children[1..].to_vec())
                 .lower(registry, context)
                 .map(MacroOutput::Reference),
             found => Err(SchemaError::UnknownAssembledTemplate {
@@ -1217,12 +1565,13 @@ impl<'template> AssembledTemplate<'template> {
 
     fn child(
         &self,
-        children: &'template [Block],
+        children: &[ObjectView<'template>],
         index: usize,
         template_name: &'static str,
-    ) -> Result<&'template Block, SchemaError> {
+    ) -> Result<ObjectView<'template>, SchemaError> {
         children
             .get(index)
+            .copied()
             .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
                 found: template_name.to_owned(),
             })
@@ -1231,25 +1580,20 @@ impl<'template> AssembledTemplate<'template> {
     fn parenthesized_children(
         &self,
         expected: &'static str,
-    ) -> Result<&'template [Block], SchemaError> {
-        match self.object {
-            Block::Delimited {
-                delimiter: Delimiter::Parenthesis,
-                root_objects,
-                ..
-            } => Ok(root_objects),
-            _ => Err(SchemaError::ExpectedDelimiter { expected }),
-        }
+    ) -> Result<Vec<ObjectView<'template>>, SchemaError> {
+        self.object
+            .delimited_children(Delimiter::Parenthesis)
+            .ok_or(SchemaError::ExpectedDelimiter { expected })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct AssembledType<'template> {
-    object: &'template Block,
+    object: ObjectView<'template>,
 }
 
 impl<'template> AssembledType<'template> {
-    fn new(object: &'template Block) -> Self {
+    fn new(object: ObjectView<'template>) -> Self {
         Self { object }
     }
 
@@ -1267,8 +1611,8 @@ impl<'template> AssembledType<'template> {
             })?
             .schema_name()?;
         match kind.as_str() {
-            "Struct" => self.lower_struct(children, registry, context),
-            "Enum" => self.lower_enum(children, registry, context),
+            "Struct" => self.lower_struct(&children, registry, context),
+            "Enum" => self.lower_enum(&children, registry, context),
             found => Err(SchemaError::UnknownAssembledTemplate {
                 found: found.to_owned(),
             }),
@@ -1277,25 +1621,13 @@ impl<'template> AssembledType<'template> {
 
     fn lower_struct(
         &self,
-        children: &'template [Block],
+        children: &[ObjectView<'template>],
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
         let name = self.child(children, 1, "Struct")?.schema_name()?;
         let body = self.child(children, 2, "Struct")?;
-        let fields = match registry.lower(
-            MacroObject::Block(body),
-            MacroPosition::StructFields,
-            context,
-        )? {
-            MacroOutput::Fields(fields) => fields,
-            _ => {
-                return Err(SchemaError::UnexpectedMacroOutput {
-                    macro_name: "StructFields".to_owned(),
-                    expected: "fields",
-                });
-            }
-        };
+        let fields = AssembledFields::from_objects(body.root_objects()).lower(registry, context)?;
         if fields.len() == 1 {
             let reference = fields.into_iter().next().expect("length checked").reference;
             Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
@@ -1310,49 +1642,45 @@ impl<'template> AssembledType<'template> {
 
     fn lower_enum(
         &self,
-        children: &'template [Block],
+        children: &[ObjectView<'template>],
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
         let name = self.child(children, 1, "Enum")?.schema_name()?;
         let body = self.child(children, 2, "Enum")?;
-        let variants = match registry.lower(
-            MacroObject::Block(body),
-            MacroPosition::EnumVariants,
-            context,
-        )? {
-            MacroOutput::Variants(variants) => variants,
-            _ => {
-                return Err(SchemaError::UnexpectedMacroOutput {
-                    macro_name: "EnumVariants".to_owned(),
-                    expected: "variants",
-                });
-            }
-        };
+        let variants =
+            AssembledVariants::from_objects(body.root_objects()).lower(registry, context)?;
         Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
     }
 
     fn child(
         &self,
-        children: &'template [Block],
+        children: &[ObjectView<'template>],
         index: usize,
         template_name: &'static str,
-    ) -> Result<&'template Block, SchemaError> {
+    ) -> Result<ObjectView<'template>, SchemaError> {
         children
             .get(index)
+            .copied()
             .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
                 found: template_name.to_owned(),
             })
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct AssembledFields<'template> {
-    objects: &'template [Block],
+    objects: Vec<ObjectView<'template>>,
 }
 
 impl<'template> AssembledFields<'template> {
     pub(crate) fn new(objects: &'template [Block]) -> Self {
+        Self {
+            objects: objects.iter().map(ObjectView::Block).collect(),
+        }
+    }
+
+    fn from_objects(objects: Vec<ObjectView<'template>>) -> Self {
         Self { objects }
     }
 
@@ -1374,7 +1702,7 @@ impl<'template> AssembledFields<'template> {
                     });
                 }
                 fields.push(
-                    AssembledField::new_named_pair(&self.objects[index], &self.objects[next_index])
+                    AssembledField::new_named_pair(self.objects[index], self.objects[next_index])
                         .lower(registry, context)?,
                 );
                 index += 2;
@@ -1385,7 +1713,7 @@ impl<'template> AssembledFields<'template> {
                     found: 2,
                 });
             } else {
-                fields.push(AssembledField::new(&self.objects[index]).lower(registry, context)?);
+                fields.push(AssembledField::new(self.objects[index]).lower(registry, context)?);
                 index += 1;
             }
         }
@@ -1399,7 +1727,7 @@ impl<'template> AssembledFields<'template> {
         if self
             .objects
             .get(index + 1)
-            .and_then(Block::demote_to_string)
+            .and_then(ObjectView::demote_to_string)
             == Some("*")
         {
             return true;
@@ -1437,19 +1765,19 @@ impl<'template> AssembledFields<'template> {
 /// explicit escape hatch for uncommon names.
 #[derive(Clone, Copy, Debug)]
 struct AssembledField<'template> {
-    object: &'template Block,
-    paired_reference: Option<&'template Block>,
+    object: ObjectView<'template>,
+    paired_reference: Option<ObjectView<'template>>,
 }
 
 impl<'template> AssembledField<'template> {
-    fn new(object: &'template Block) -> Self {
+    fn new(object: ObjectView<'template>) -> Self {
         Self {
             object,
             paired_reference: None,
         }
     }
 
-    fn new_named_pair(name: &'template Block, reference: &'template Block) -> Self {
+    fn new_named_pair(name: ObjectView<'template>, reference: ObjectView<'template>) -> Self {
         Self {
             object: name,
             paired_reference: Some(reference),
@@ -1461,7 +1789,7 @@ impl<'template> AssembledField<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<FieldDeclaration, SchemaError> {
-        if let Some(binding) = AssembledBinding::from_block(self.object) {
+        if let Some(binding) = AssembledBinding::from_object(self.object) {
             return Ok(FieldDeclaration {
                 name: Name::new(binding.name.field_name()),
                 reference: TypeReference::from_name(binding.reference),
@@ -1472,7 +1800,7 @@ impl<'template> AssembledField<'template> {
             let reference = if reference_object.demote_to_string() == Some("*") {
                 TypeReference::from_name(field_name.clone())
             } else {
-                TypeReference::from_block_with_registry(reference_object, registry, context)?
+                reference_object.type_reference(registry, context)?
             };
             return Ok(FieldDeclaration {
                 name: Name::new(field_name.field_name()),
@@ -1485,19 +1813,18 @@ impl<'template> AssembledField<'template> {
                 .root_object_at(0)
                 .expect("count checked")
                 .schema_name()?;
-            let reference = TypeReference::from_block_with_registry(
-                self.object.root_object_at(1).expect("count checked"),
-                registry,
-                context,
-            )?;
+            let reference = self
+                .object
+                .root_object_at(1)
+                .expect("count checked")
+                .type_reference(registry, context)?;
             return Ok(FieldDeclaration {
                 name: Name::new(field_name.field_name()),
                 reference,
             });
         }
-        if !matches!(self.object, Block::Atom(_)) {
-            let reference =
-                TypeReference::from_block_with_registry(self.object, registry, context)?;
+        if self.object.demote_to_string().is_none() {
+            let reference = self.object.type_reference(registry, context)?;
             return Ok(FieldDeclaration {
                 name: self.derived_name_for_reference(&reference),
                 reference,
@@ -1516,7 +1843,7 @@ impl<'template> AssembledField<'template> {
             && self
                 .object
                 .root_object_at(0)
-                .and_then(Block::demote_to_string)
+                .and_then(|object| object.demote_to_string())
                 .is_some_and(|name| {
                     name.chars()
                         .next()
@@ -1547,13 +1874,19 @@ impl<'template> AssembledField<'template> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct AssembledVariants<'template> {
-    objects: &'template [Block],
+    objects: Vec<ObjectView<'template>>,
 }
 
 impl<'template> AssembledVariants<'template> {
     pub(crate) fn new(objects: &'template [Block]) -> Self {
+        Self {
+            objects: objects.iter().map(ObjectView::Block).collect(),
+        }
+    }
+
+    fn from_objects(objects: Vec<ObjectView<'template>>) -> Self {
         Self { objects }
     }
 
@@ -1576,15 +1909,14 @@ impl<'template> AssembledVariants<'template> {
                 }
                 variants.push(
                     AssembledVariant::new_payload_pair(
-                        &self.objects[index],
-                        &self.objects[payload_index],
+                        self.objects[index],
+                        self.objects[payload_index],
                     )
                     .lower(registry, context)?,
                 );
                 index += 2;
             } else {
-                variants
-                    .push(AssembledVariant::new(&self.objects[index]).lower(registry, context)?);
+                variants.push(AssembledVariant::new(self.objects[index]).lower(registry, context)?);
                 index += 1;
             }
         }
@@ -1600,26 +1932,26 @@ impl<'template> AssembledVariants<'template> {
             || self
                 .objects
                 .get(index + 1)
-                .and_then(Block::demote_to_string)
+                .and_then(ObjectView::demote_to_string)
                 == Some("*")
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct AssembledVariant<'template> {
-    object: &'template Block,
-    paired_payload: Option<&'template Block>,
+    object: ObjectView<'template>,
+    paired_payload: Option<ObjectView<'template>>,
 }
 
 impl<'template> AssembledVariant<'template> {
-    fn new(object: &'template Block) -> Self {
+    fn new(object: ObjectView<'template>) -> Self {
         Self {
             object,
             paired_payload: None,
         }
     }
 
-    fn new_payload_pair(name: &'template Block, payload: &'template Block) -> Self {
+    fn new_payload_pair(name: ObjectView<'template>, payload: ObjectView<'template>) -> Self {
         Self {
             object: name,
             paired_payload: Some(payload),
@@ -1634,7 +1966,7 @@ impl<'template> AssembledVariant<'template> {
         if let Some(payload) = self.paired_payload {
             return self.lower_payload_pair(payload, registry, context);
         }
-        if let Some(binding) = AssembledBinding::from_block(self.object) {
+        if let Some(binding) = AssembledBinding::from_object(self.object) {
             return Ok(EnumVariant {
                 name: binding.name,
                 payload: Some(TypeReference::from_name(binding.reference)),
@@ -1654,7 +1986,7 @@ impl<'template> AssembledVariant<'template> {
 
     fn lower_payload_pair(
         &self,
-        payload: &Block,
+        payload: ObjectView<'template>,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
@@ -1662,7 +1994,7 @@ impl<'template> AssembledVariant<'template> {
         let reference = if payload.demote_to_string() == Some("*") {
             TypeReference::from_name(name.clone())
         } else {
-            TypeReference::from_block_with_registry(payload, registry, context)?
+            payload.type_reference(registry, context)?
         };
         Ok(EnumVariant {
             name,
@@ -1701,11 +2033,12 @@ impl<'template> AssembledVariant<'template> {
                     .root_object_at(0)
                     .expect("count checked")
                     .schema_name()?,
-                payload: Some(TypeReference::from_block_with_registry(
-                    self.object.root_object_at(1).expect("count checked"),
-                    registry,
-                    context,
-                )?),
+                payload: Some(
+                    self.object
+                        .root_object_at(1)
+                        .expect("count checked")
+                        .type_reference(registry, context)?,
+                ),
             }),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }
@@ -1719,8 +2052,8 @@ struct AssembledBinding {
 }
 
 impl AssembledBinding {
-    fn from_block(block: &Block) -> Option<Self> {
-        let text = block.demote_to_string()?;
+    fn from_object(object: ObjectView<'_>) -> Option<Self> {
+        let text = object.demote_to_string()?;
         if let Some(reference) = text.strip_prefix('@') {
             if reference.is_empty() || reference.contains('@') {
                 return None;
@@ -1742,13 +2075,13 @@ impl AssembledBinding {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct AssembledReference<'template> {
-    objects: &'template [Block],
+    objects: Vec<ObjectView<'template>>,
 }
 
 impl<'template> AssembledReference<'template> {
-    fn new(objects: &'template [Block]) -> Self {
+    fn new(objects: Vec<ObjectView<'template>>) -> Self {
         Self { objects }
     }
 
@@ -1762,16 +2095,16 @@ impl<'template> AssembledReference<'template> {
                 found: "Reference".to_owned(),
             });
         }
-        Self::lower_object(&self.objects[0], registry, context)
+        Self::lower_object(self.objects[0], registry, context)
     }
 
     fn lower_object(
-        object: &'template Block,
+        object: ObjectView<'template>,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
         if !object.is_parenthesis() {
-            return TypeReference::from_block_with_registry(object, registry, context);
+            return object.type_reference(registry, context);
         }
         let children =
             AssembledTemplate::new(object).parenthesized_children("assembled reference")?;
@@ -1783,16 +2116,16 @@ impl<'template> AssembledReference<'template> {
             .schema_name()?;
         match head.as_str() {
             "Vector" if children.len() == 2 => Ok(TypeReference::Vector(Box::new(
-                Self::lower_object(&children[1], registry, context)?,
+                Self::lower_object(children[1], registry, context)?,
             ))),
             "Optional" if children.len() == 2 => Ok(TypeReference::Optional(Box::new(
-                Self::lower_object(&children[1], registry, context)?,
+                Self::lower_object(children[1], registry, context)?,
             ))),
             "Map" if children.len() == 3 => Ok(TypeReference::Map(
-                Box::new(Self::lower_object(&children[1], registry, context)?),
-                Box::new(Self::lower_object(&children[2], registry, context)?),
+                Box::new(Self::lower_object(children[1], registry, context)?),
+                Box::new(Self::lower_object(children[2], registry, context)?),
             )),
-            _ => TypeReference::from_block_with_registry(object, registry, context),
+            _ => object.type_reference(registry, context),
         }
     }
 }

@@ -216,6 +216,11 @@ macro-node data. Schema still owns schema positions such as
 shapes are `nota-next` patterns with named captures. Schema-next remains the
 semantic consumer that lowers those matches into assembled-schema fragments.*
 
+*Declarative macro expansion keeps matched NOTA structure as data through the
+schema lowering path. Captures remain `Block` values, rest captures remain
+ordered `Block` vectors, and template expansion lowers an owned structural
+object tree instead of producing text that is parsed back into blocks.*
+
 *For `name@( ... )`, the parenthesized body is resolved at the
 assembled-schema reference layer: recognized type-reference heads such as
 `Vec`, `Optional`, and `Map` remain composite references, and future user macro
