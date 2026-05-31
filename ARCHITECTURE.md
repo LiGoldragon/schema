@@ -82,6 +82,14 @@ through NOTA and rkyv. This makes the schema substrate visible in review as
 three data stages: authored `.schema`, assembled `.asschema`, and downstream
 emitted Rust.
 
+`AsschemaStore` is the SEMA persistence surface for assembled schema. It owns a
+redb database, stores rkyv-archived `Asschema` values in the
+`assembled-schemas` table keyed by schema identity, reads them back through the
+same `Asschema::from_binary_bytes` path, and exports `.asschema` NOTA through
+`AsschemaArtifact`. The store does not parse authored schema and does not
+render text itself; it persists binary typed values and delegates projection to
+the artifact object.
+
 Namespace declarations are assembled as ordinary data-carrying visibility
 objects: `(Public Name Value)` for exported top-level types and
 `(Private Name Value)` for module-local types. The Rust storage keeps a
@@ -220,6 +228,9 @@ module schema and checking that the imported type is declared there.
   direct fields, then stores visibility-tagged namespace declarations in
   `Vec` order. The two roots are heterogeneous product positions, not a
   homogeneous vector of root wrappers.
+- `AsschemaStore` persists assembled schemas as rkyv bytes in a redb-backed
+  `.sema` database and re-exports NOTA through `AsschemaArtifact`; the store
+  never owns a parallel text format.
 - Active code does not keep hand-written assembled-schema text fixtures.
   `Asschema` can serialize itself to NOTA and rkyv after lowering, and tests
   read those serialized forms back through the same typed object.

@@ -66,6 +66,13 @@ pub enum SchemaError {
         path: String,
         reason: String,
     },
+    SemaDatabase {
+        operation: SemaDatabaseOperation,
+        reason: String,
+    },
+    MissingAsschema {
+        key: String,
+    },
     MalformedSchemaPath {
         path: String,
     },
@@ -157,6 +164,17 @@ pub enum SchemaError {
     ExpectedSyntaxEnumVariant {
         found: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemaDatabaseOperation {
+    Open,
+    BeginRead,
+    BeginWrite,
+    OpenTable,
+    Read,
+    Write,
+    Commit,
 }
 
 impl From<nota_next::NotaError> for SchemaError {

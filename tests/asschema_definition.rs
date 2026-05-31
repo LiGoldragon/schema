@@ -2,7 +2,7 @@ use std::path::Path;
 
 use nota_next::{Block, Delimiter, Document, NotaEncode};
 use schema_next::{
-    Asschema, AsschemaArtifact, ImportResolver, Name, SchemaEngine, SchemaIdentity,
+    Asschema, AsschemaArtifact, AsschemaStore, ImportResolver, Name, SchemaEngine, SchemaIdentity,
     TypeDeclaration, TypeReference,
 };
 
@@ -197,6 +197,53 @@ fn asschema_artifact_reads_and_writes_real_nota_and_binary_files() {
 }
 
 #[test]
+fn asschema_store_round_trips_rkyv_and_reexports_nota() {
+    let source = include_str!("fixtures/big-schemas/spirit-reactive-large.schema");
+    let asschema = SchemaEngine::default()
+        .lower_source(
+            source,
+            SchemaIdentity::new("example:spirit-reactive-large", "0.1.0"),
+        )
+        .expect("schema lowers into typed Asschema data");
+    let paths = AsschemaArtifactTestPaths::new("spirit-reactive-large-store");
+    let store = AsschemaStore::open(paths.sema_path()).expect("open asschema sema store");
+
+    assert!(
+        store
+            .is_empty()
+            .expect("fresh asschema sema store is readable")
+    );
+    store
+        .put_asschema(&asschema)
+        .expect("persist asschema as rkyv bytes in sema store");
+    assert_eq!(store.len().expect("stored asschema count"), 1);
+
+    let recovered = store
+        .get_asschema(asschema.identity())
+        .expect("read asschema from sema store")
+        .expect("stored asschema is present");
+    assert_eq!(recovered, asschema);
+
+    store
+        .export_nota_file(asschema.identity(), paths.exported_nota_path())
+        .expect("export stored asschema back to NOTA");
+    let exported = std::fs::read_to_string(paths.exported_nota_path())
+        .expect("read exported asschema nota file");
+    assert_eq!(
+        Asschema::from_nota_source(&exported).expect("exported asschema decodes"),
+        asschema
+    );
+    assert_eq!(
+        exported,
+        asschema.to_nota(),
+        "re-exported NOTA must come from the recovered typed Asschema object"
+    );
+
+    drop(store);
+    paths.remove();
+}
+
+#[test]
 fn core_asschema_artifact_is_checked_in_and_fresh() {
     let expected = SchemaEngine::default()
         .lower_source(
@@ -241,6 +288,8 @@ struct AsschemaArtifactTestPaths {
     directory: std::path::PathBuf,
     nota_path: std::path::PathBuf,
     binary_path: std::path::PathBuf,
+    sema_path: std::path::PathBuf,
+    exported_nota_path: std::path::PathBuf,
 }
 
 impl AsschemaArtifactTestPaths {
@@ -254,6 +303,8 @@ impl AsschemaArtifactTestPaths {
         Self {
             nota_path: directory.join("lib.asschema"),
             binary_path: directory.join("lib.asschema.rkyv"),
+            sema_path: directory.join("schemas.sema"),
+            exported_nota_path: directory.join("exported.asschema"),
             directory,
         }
     }
@@ -264,6 +315,14 @@ impl AsschemaArtifactTestPaths {
 
     fn binary_path(&self) -> &std::path::Path {
         &self.binary_path
+    }
+
+    fn sema_path(&self) -> &std::path::Path {
+        &self.sema_path
+    }
+
+    fn exported_nota_path(&self) -> &std::path::Path {
+        &self.exported_nota_path
     }
 
     fn remove(&self) {

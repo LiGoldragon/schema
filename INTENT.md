@@ -120,6 +120,12 @@ schema substrate itself are checked into the repository and freshness-checked
 against their source schema so review sees authored schema, assembled schema,
 and emitted Rust as separate stages.*
 
+*Asschema can persist through SEMA storage as the same typed object. The store
+surface writes rkyv-archived `Asschema` bytes keyed by schema identity and
+re-exports the recovered typed object as `.asschema` NOTA through
+`AsschemaArtifact`, so durable storage, binary archive, and text artifact stay
+projections of one value.*
+
 *A core schema file can be read one layer lower than schema lowering: as raw
 NOTA object data. In that mode the root struct name is derived from the
 filename, mirroring Rust modules, and the file does not restate that root

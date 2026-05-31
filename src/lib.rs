@@ -5,6 +5,7 @@ mod macros;
 mod module;
 mod raw;
 mod resolution;
+mod store;
 mod syntax;
 
 pub use asschema::{
@@ -17,7 +18,7 @@ pub use declarative::{
     MacroLibraryArtifact, MacroLibraryData, MacroPatternData, MacroPatternDelimitedData,
     MacroPatternObjectData, MacroTemplateData, MacroTemplateDelimitedData, MacroTemplateObjectData,
 };
-pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
+pub use engine::{SchemaEngine, SchemaError, SchemaIdentity, SemaDatabaseOperation};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
     MacroPosition, MacroRegistry, SchemaMacro,
@@ -30,6 +31,7 @@ pub use nota_next::{
 };
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
+pub use store::{AsschemaStore, AsschemaStoreKey};
 pub use syntax::{
     SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField,
     SyntaxKeyValueDeclaration, SyntaxKeyValueEntry, SyntaxReference, SyntaxSchema,
