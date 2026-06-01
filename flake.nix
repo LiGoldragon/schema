@@ -131,8 +131,16 @@
             touch $out
           '';
           declarative-schema-macros = pkgs.runCommand "schema-next-declarative-schema-macros" { } ''
-            grep -R "DeclarativeMacroLibrary::builtin" ${src}/src/engine.rs >/dev/null
-            grep -R "pub struct MacroLibraryData" ${src}/src/declarative.rs >/dev/null
+            # Per operator 271 claim 1 — schema-next 99078b20 collapsed
+            # the macro library source/artifact split. The previous check
+            # asserted presence of `DeclarativeMacroLibrary::builtin` and
+            # `pub struct MacroLibraryData`; both were retired in the
+            # collapse, so the assertions are inverted (must NOT contain)
+            # and the present canonical nouns are asserted positively.
+            grep -R "MacroLibrary::builtin" ${src}/src/declarative.rs >/dev/null
+            grep -R "pub struct MacroLibrary {" ${src}/src/declarative.rs >/dev/null
+            grep -R "pub struct MacroLibraryArtifact {" ${src}/src/declarative.rs >/dev/null
+            grep -R "pub enum MacroLibrarySourceEntry {" ${src}/src/declarative.rs >/dev/null
             grep -R "builtin_macro_library_round_trips_as_typed_data_and_still_executes" ${src}/tests/macro_exploration.rs >/dev/null
             grep -R "SchemaStructDefinition" ${src}/schemas/builtin-macros.schema >/dev/null
             grep -R '\$Name' ${src}/schemas/builtin-macros.schema >/dev/null
@@ -142,6 +150,35 @@
             ! grep -R "struct TypeDeclarationMacro" ${src}/src
             ! grep -R "struct StructFieldsMacro" ${src}/src
             ! grep -R "struct EnumVariantsMacro" ${src}/src
+            # The collapsed-mirrors regression guard — present-shape
+            # negative witness covers the retired-data names.
+            ! grep -R "pub struct MacroLibraryData" ${src}/src
+            ! grep -R "pub struct DeclarativeMacroLibrary" ${src}/src
+            ! grep -R "MacroLibrarySourceEntryData" ${src}/src
+            ! grep -R "MacroDefinitionData" ${src}/src
+            ! grep -R "MacroPatternData" ${src}/src
+            ! grep -R "MacroTemplateData" ${src}/src
+            touch $out
+          '';
+          operator-271-closed-claims = pkgs.runCommand "schema-next-operator-271-closed-claims" { } ''
+            # Architectural-truth witnesses for the closed claims in
+            # operator 271. The test file at
+            # tests/operator_271_closed_claims.rs runs through cargo test;
+            # this Nix check verifies each named witness function is present
+            # so future drift is caught by the flake before reaching cargo.
+            test -f ${src}/tests/operator_271_closed_claims.rs
+            # Claim 1 — macro library source/artifact datatype split CLOSED.
+            grep -R "macro_library_source_entries_are_one_type" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "macro_library_artifact_wraps_the_one_library_type" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "macro_library_split_does_not_return_through_public_surface" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            # Claim 4 — honest enum bodies CLOSED.
+            grep -R "production_schema_sources_use_honest_enum_bodies" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "spirit_min_input_enum_body_has_parenthesized_data_variants" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            # Claim 5 — Asschema typed data + NOTA + rkyv + SEMA projection CLOSED.
+            grep -R "asschema_is_typed_data_with_named_field_accessors" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "asschema_round_trips_through_nota_and_rkyv" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "asschema_store_persists_through_redb_and_reexports_nota" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "checked_in_core_asschema_artifact_matches_lowered_schema" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             touch $out
           '';
           namespace-braces-are-key-value = pkgs.runCommand "schema-next-namespace-braces-are-key-value" { } ''
