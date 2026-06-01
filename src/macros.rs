@@ -127,7 +127,7 @@ pub struct MacroPair<'object> {
     pub definition: &'object Block,
 }
 
-pub trait SchemaMacro {
+pub trait SchemaMacroHandler {
     fn name(&self) -> &str;
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool;
@@ -232,7 +232,7 @@ pub enum MacroOutput {
 }
 
 pub struct MacroRegistry {
-    macros: Vec<Box<dyn SchemaMacro>>,
+    macros: Vec<Box<dyn SchemaMacroHandler>>,
     node_definitions: Vec<MacroNodeDefinition>,
 }
 
@@ -250,11 +250,11 @@ impl MacroRegistry {
         }
     }
 
-    pub fn register(&mut self, schema_macro: impl SchemaMacro + 'static) {
+    pub fn register(&mut self, schema_macro: impl SchemaMacroHandler + 'static) {
         self.macros.push(Box::new(schema_macro));
     }
 
-    pub fn register_box(&mut self, schema_macro: Box<dyn SchemaMacro>) {
+    pub fn register_box(&mut self, schema_macro: Box<dyn SchemaMacroHandler>) {
         self.macros.push(schema_macro);
     }
 

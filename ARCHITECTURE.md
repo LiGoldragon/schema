@@ -137,13 +137,13 @@ checked-in artifact.
 The authored bootstrap source is typed separately from the serialized
 artifact. `DeclarativeMacroLibrary` owns
 `Vec<MacroLibrarySourceEntry>`, and the current source-entry enum has one
-case: `SchemaMacro(MacroDefinition)`. Therefore the source notation
+case: `SchemaMacro(SchemaMacro)`. Therefore the source notation
 `(SchemaMacro Name Position Pattern Template)` is modeled as a tagged
 source-entry variant carrying a definition payload, not as a bare string
-sentinel. The checked-in `.macro-library` artifact preserves the same shape as
-`MacroLibraryData { source_entries: Vec<MacroLibrarySourceEntryData> }`, where
-`MacroLibrarySourceEntryData::SchemaMacro(MacroDefinitionData)` is the
-serialized variant.
+sentinel. The checked-in `.macro-library` artifact uses the same
+`MacroLibrarySourceEntry` enum inside
+`MacroLibraryData { source_entries: Vec<MacroLibrarySourceEntry> }`, so source
+and artifact share one datatype.
 
 The near target is to lower the core macro schema to asschema data, emit its
 Rust type, and replace the hand-written `MacroLibraryData` noun with the

@@ -9,7 +9,7 @@
 //! at the moment (the dispatch on the most-specific match is a TODO —
 //! see report 388, "Open questions").
 //!
-//! Each test defines a small custom `SchemaMacro` impl that exercises
+//! Each test defines a small custom `SchemaMacroHandler` impl that exercises
 //! ONE criterion in isolation, OR uses the declarative macro form to
 //! express the same idea, OR uses a combination. Fixtures are tight —
 //! one concept per test.
@@ -17,8 +17,8 @@
 use nota_next::Document;
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroLibraryArtifact, MacroLibraryData,
-    MacroLibrarySourceEntry, MacroLibrarySourceEntryData, MacroObject, MacroOutput, MacroPair,
-    MacroPosition, MacroRegistry, SchemaError, SchemaMacro, TypeDeclaration, TypeReference,
+    MacroLibrarySourceEntry, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry,
+    SchemaError, SchemaMacroHandler, TypeDeclaration, TypeReference,
 };
 
 // ---------------------------------------------------------------------
@@ -65,7 +65,7 @@ impl DelimiterOnlyMacro {
     }
 }
 
-impl SchemaMacro for DelimiterOnlyMacro {
+impl SchemaMacroHandler for DelimiterOnlyMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -138,7 +138,7 @@ impl NamedPayloadShapeMacro {
     }
 }
 
-impl SchemaMacro for NamedPayloadShapeMacro {
+impl SchemaMacroHandler for NamedPayloadShapeMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -219,7 +219,7 @@ impl FiveObjectMacro {
     }
 }
 
-impl SchemaMacro for FiveObjectMacro {
+impl SchemaMacroHandler for FiveObjectMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -349,7 +349,7 @@ fn schema_macro_artifact_records_preserve_the_source_entry_variant() {
     let first_entry = data.source_entries().first().expect("first macro entry");
 
     match first_entry {
-        MacroLibrarySourceEntryData::SchemaMacro(definition) => {
+        MacroLibrarySourceEntry::SchemaMacro(definition) => {
             assert_eq!(first_entry.variant_name(), "SchemaMacro");
             assert_eq!(definition.name().as_str(), "SchemaStructDefinition");
         }
@@ -478,7 +478,7 @@ impl SymbolCaseMacro {
     }
 }
 
-impl SchemaMacro for SymbolCaseMacro {
+impl SchemaMacroHandler for SymbolCaseMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -569,7 +569,7 @@ impl BraceNamedPairsMacro {
     }
 }
 
-impl SchemaMacro for BraceNamedPairsMacro {
+impl SchemaMacroHandler for BraceNamedPairsMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -650,7 +650,7 @@ impl AnyBraceMacro {
     }
 }
 
-impl SchemaMacro for AnyBraceMacro {
+impl SchemaMacroHandler for AnyBraceMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -739,7 +739,7 @@ impl PositionPinnedMacro {
     }
 }
 
-impl SchemaMacro for PositionPinnedMacro {
+impl SchemaMacroHandler for PositionPinnedMacro {
     fn name(&self) -> &str {
         self.label
     }
@@ -839,7 +839,7 @@ impl PairOnlyMacro {
     }
 }
 
-impl SchemaMacro for PairOnlyMacro {
+impl SchemaMacroHandler for PairOnlyMacro {
     fn name(&self) -> &str {
         self.label
     }

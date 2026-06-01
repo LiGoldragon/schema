@@ -1,7 +1,7 @@
 use schema_next::{
     DeclarativeMacroLibrary, MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry,
-    Name, SchemaEngine, SchemaIdentity, SchemaMacro, SchemaPackage, TypeDeclaration, TypeReference,
-    Visibility,
+    Name, SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage, TypeDeclaration,
+    TypeReference, Visibility,
 };
 
 #[test]
@@ -410,7 +410,7 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
 fn macro_lowering_receives_macro_position() {
     struct ProbeMacro;
 
-    impl SchemaMacro for ProbeMacro {
+    impl SchemaMacroHandler for ProbeMacro {
         fn name(&self) -> &str {
             "Probe"
         }
@@ -565,7 +565,7 @@ fn schema_engine_can_be_built_from_a_macro_registry() {
 
 struct RejectingRootImports;
 
-impl SchemaMacro for RejectingRootImports {
+impl SchemaMacroHandler for RejectingRootImports {
     fn name(&self) -> &str {
         "RejectingRootImports"
     }

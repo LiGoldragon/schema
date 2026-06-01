@@ -211,11 +211,10 @@ opaque parser magic.*
 
 *The authored macro library is typed as a vector of source-entry enum
 variants. A top-level `(SchemaMacro ...)` record is
-`MacroLibrarySourceEntry::SchemaMacro`, carrying the macro definition payload;
-it is not an untyped sentinel string checked by parser glue. Serialized
-macro-library artifacts preserve the same source-entry variant as
-`MacroLibrarySourceEntryData::SchemaMacro`, because the notation says it is a
-tagged record and the data artifact should not erase that fact.*
+`MacroLibrarySourceEntry::SchemaMacro(SchemaMacro)`, carrying the same
+`SchemaMacro` payload type in source and in the serialized artifact; it is not
+an untyped sentinel string checked by parser glue and it is not split into a
+separate source/data enum pair.*
 
 *The long-term macro-node mechanism belongs at the NOTA layer so other
 consumers can reuse it. Schema-next may host the bootstrap structural cases

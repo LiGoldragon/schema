@@ -14,15 +14,14 @@ pub use asschema::{
     SchemaNodeValue, StructDeclaration, StructFieldMap, TypeDeclaration, TypeReference, Visibility,
 };
 pub use declarative::{
-    DeclarativeMacroLibrary, MacroDefinition, MacroDefinitionData, MacroDelimiter,
-    MacroLibraryArtifact, MacroLibraryData, MacroLibrarySourceEntry, MacroLibrarySourceEntryData,
-    MacroPatternData, MacroPatternDelimitedData, MacroPatternObjectData, MacroTemplateData,
-    MacroTemplateDelimitedData, MacroTemplateObjectData,
+    DeclarativeMacroLibrary, MacroDelimiter, MacroLibraryArtifact, MacroLibraryData,
+    MacroLibrarySourceEntry, MacroPatternData, MacroPatternDelimitedData, MacroPatternObjectData,
+    MacroTemplateData, MacroTemplateDelimitedData, MacroTemplateObjectData, SchemaMacro,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity, SemaDatabaseOperation};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
-    MacroPosition, MacroRegistry, SchemaMacro,
+    MacroPosition, MacroRegistry, SchemaMacroHandler,
 };
 pub use module::{SchemaModuleSource, SchemaPackage};
 pub use nota_next::{

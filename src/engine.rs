@@ -8,7 +8,7 @@ use crate::{
     declarative::{AssembledFields, AssembledVariants},
     macros::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
-        MacroRegistry, SchemaBlockExt, SchemaMacro,
+        MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     resolution::ImportResolver,
 };
@@ -425,7 +425,7 @@ impl KeyValueDeclarationMacro {
     }
 }
 
-impl SchemaMacro for KeyValueDeclarationMacro {
+impl SchemaMacroHandler for KeyValueDeclarationMacro {
     fn name(&self) -> &str {
         self.signature.name()
     }
@@ -578,7 +578,7 @@ impl RootImportsMacro {
     }
 }
 
-impl SchemaMacro for RootImportsMacro {
+impl SchemaMacroHandler for RootImportsMacro {
     fn name(&self) -> &str {
         self.signature.name()
     }
@@ -629,7 +629,7 @@ impl RootNamespaceMacro {
     }
 }
 
-impl SchemaMacro for RootNamespaceMacro {
+impl SchemaMacroHandler for RootNamespaceMacro {
     fn name(&self) -> &str {
         self.signature.name()
     }
@@ -751,7 +751,7 @@ impl RootEnumMacro {
     }
 }
 
-impl SchemaMacro for RootEnumMacro {
+impl SchemaMacroHandler for RootEnumMacro {
     fn name(&self) -> &str {
         self.signature.name()
     }

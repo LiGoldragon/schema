@@ -8,7 +8,7 @@ use nota_next::{AtomClassification, Block, Delimiter, Document, NotaEncode, Nota
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
     MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
-    SchemaMacro, StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
+    SchemaMacroHandler, StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,35 +38,26 @@ impl DeclarativeMacroLibrary {
 
     pub fn from_data(data: MacroLibraryData) -> Self {
         Self {
-            source_entries: data
-                .into_source_entries()
-                .into_iter()
-                .map(MacroLibrarySourceEntry::from_data)
-                .collect(),
+            source_entries: data.into_source_entries(),
         }
     }
 
     pub fn to_data(&self) -> MacroLibraryData {
-        MacroLibraryData::new(
-            self.source_entries
-                .iter()
-                .map(MacroLibrarySourceEntry::to_data)
-                .collect(),
-        )
+        MacroLibraryData::new(self.source_entries.clone())
     }
 
     pub fn source_entries(&self) -> &[MacroLibrarySourceEntry] {
         &self.source_entries
     }
 
-    pub fn definitions(&self) -> Vec<&MacroDefinition> {
+    pub fn definitions(&self) -> Vec<&SchemaMacro> {
         self.source_entries
             .iter()
             .map(MacroLibrarySourceEntry::definition)
             .collect()
     }
 
-    pub fn into_macros(self) -> Vec<Box<dyn SchemaMacro>> {
+    pub fn into_macros(self) -> Vec<Box<dyn SchemaMacroHandler>> {
         self.source_entries
             .into_iter()
             .map(MacroLibrarySourceEntry::into_schema_macro)
@@ -171,26 +162,26 @@ impl MacroLibraryArtifactPath {
     PartialEq,
 )]
 pub struct MacroLibraryData {
-    source_entries: Vec<MacroLibrarySourceEntryData>,
+    source_entries: Vec<MacroLibrarySourceEntry>,
 }
 
 impl MacroLibraryData {
-    pub fn new(source_entries: Vec<MacroLibrarySourceEntryData>) -> Self {
+    pub fn new(source_entries: Vec<MacroLibrarySourceEntry>) -> Self {
         Self { source_entries }
     }
 
-    pub fn source_entries(&self) -> &[MacroLibrarySourceEntryData] {
+    pub fn source_entries(&self) -> &[MacroLibrarySourceEntry] {
         &self.source_entries
     }
 
-    pub fn definitions(&self) -> Vec<&MacroDefinitionData> {
+    pub fn definitions(&self) -> Vec<&SchemaMacro> {
         self.source_entries
             .iter()
-            .map(MacroLibrarySourceEntryData::definition)
+            .map(MacroLibrarySourceEntry::definition)
             .collect()
     }
 
-    pub fn into_source_entries(self) -> Vec<MacroLibrarySourceEntryData> {
+    pub fn into_source_entries(self) -> Vec<MacroLibrarySourceEntry> {
         self.source_entries
     }
 
@@ -224,77 +215,64 @@ impl MacroLibraryData {
     Eq,
     PartialEq,
 )]
-pub enum MacroLibrarySourceEntryData {
-    SchemaMacro(MacroDefinitionData),
+pub struct SchemaMacro {
+    macro_name: Name,
+    macro_position: MacroPosition,
+    macro_pattern: MacroPatternData,
+    macro_template: MacroTemplateData,
 }
 
-impl MacroLibrarySourceEntryData {
-    pub fn definition(&self) -> &MacroDefinitionData {
-        match self {
-            Self::SchemaMacro(definition) => definition,
-        }
-    }
-
-    pub fn into_definition(self) -> MacroDefinitionData {
-        match self {
-            Self::SchemaMacro(definition) => definition,
-        }
-    }
-
-    pub fn variant_name(&self) -> &'static str {
-        match self {
-            Self::SchemaMacro(_) => "SchemaMacro",
-        }
-    }
-}
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub struct MacroDefinitionData {
-    name: Name,
-    position: MacroPosition,
-    pattern: MacroPatternData,
-    template: MacroTemplateData,
-}
-
-impl MacroDefinitionData {
+impl SchemaMacro {
     pub fn new(
-        name: Name,
-        position: MacroPosition,
-        pattern: MacroPatternData,
-        template: MacroTemplateData,
+        macro_name: Name,
+        macro_position: MacroPosition,
+        macro_pattern: MacroPatternData,
+        macro_template: MacroTemplateData,
     ) -> Self {
         Self {
-            name,
-            position,
-            pattern,
-            template,
+            macro_name,
+            macro_position,
+            macro_pattern,
+            macro_template,
         }
+    }
+
+    fn from_record(record: MacroLibrarySourceEntryRecord<'_>) -> Result<Self, SchemaError> {
+        Ok(Self {
+            macro_name: record.name()?,
+            macro_position: record.position()?,
+            macro_pattern: record.pattern()?.to_data(),
+            macro_template: record.template()?.to_data(),
+        })
     }
 
     pub fn name(&self) -> &Name {
-        &self.name
+        &self.macro_name
     }
 
     pub fn position(&self) -> MacroPosition {
-        self.position
+        self.macro_position
     }
 
     pub fn pattern(&self) -> &MacroPatternData {
-        &self.pattern
+        &self.macro_pattern
     }
 
     pub fn template(&self) -> &MacroTemplateData {
-        &self.template
+        &self.macro_template
+    }
+
+    pub fn capture_names(&self) -> Vec<String> {
+        MacroPattern::from_data(self.macro_pattern.clone()).capture_names()
+    }
+
+    fn into_executable_definition(self) -> ExecutableMacroDefinition {
+        ExecutableMacroDefinition {
+            name: self.macro_name,
+            position: self.macro_position,
+            pattern: MacroPattern::from_data(self.macro_pattern),
+            template: MacroTemplate::from_data(self.macro_template),
+        }
     }
 }
 
@@ -538,37 +516,31 @@ impl MacroDelimiter {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum MacroLibrarySourceEntry {
-    SchemaMacro(MacroDefinition),
+    SchemaMacro(SchemaMacro),
 }
 
 impl MacroLibrarySourceEntry {
     pub fn from_block(object: &Block) -> Result<Self, SchemaError> {
         let record = MacroLibrarySourceEntryRecord::new(object)?;
         match record.variant_name()?.as_str() {
-            "SchemaMacro" => Ok(Self::SchemaMacro(MacroDefinition::from_record(record)?)),
+            "SchemaMacro" => Ok(Self::SchemaMacro(SchemaMacro::from_record(record)?)),
             _ => Err(record.expected_source_entry_error()),
         }
     }
 
-    fn from_data(data: MacroLibrarySourceEntryData) -> Self {
-        match data {
-            MacroLibrarySourceEntryData::SchemaMacro(definition) => {
-                Self::SchemaMacro(MacroDefinition::from_data(definition))
-            }
-        }
-    }
-
-    fn to_data(&self) -> MacroLibrarySourceEntryData {
-        match self {
-            Self::SchemaMacro(definition) => {
-                MacroLibrarySourceEntryData::SchemaMacro(definition.to_data())
-            }
-        }
-    }
-
-    pub fn definition(&self) -> &MacroDefinition {
+    pub fn definition(&self) -> &SchemaMacro {
         match self {
             Self::SchemaMacro(definition) => definition,
         }
@@ -580,74 +552,21 @@ impl MacroLibrarySourceEntry {
         }
     }
 
-    fn into_schema_macro(self) -> Box<dyn SchemaMacro> {
+    fn into_schema_macro(self) -> Box<dyn SchemaMacroHandler> {
         match self {
-            Self::SchemaMacro(definition) => {
-                Box::new(DeclarativeSchemaMacro { definition }) as Box<dyn SchemaMacro>
-            }
+            Self::SchemaMacro(definition) => Box::new(DeclarativeSchemaMacro {
+                definition: definition.into_executable_definition(),
+            }) as Box<dyn SchemaMacroHandler>,
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MacroDefinition {
+struct ExecutableMacroDefinition {
     name: Name,
     position: MacroPosition,
     pattern: MacroPattern,
     template: MacroTemplate,
-}
-
-impl MacroDefinition {
-    pub fn from_block(object: &Block) -> Result<Self, SchemaError> {
-        match MacroLibrarySourceEntry::from_block(object)? {
-            MacroLibrarySourceEntry::SchemaMacro(definition) => Ok(definition),
-        }
-    }
-
-    fn from_record(record: MacroLibrarySourceEntryRecord<'_>) -> Result<Self, SchemaError> {
-        Ok(Self {
-            name: record.name()?,
-            position: record.position()?,
-            pattern: record.pattern()?,
-            template: record.template()?,
-        })
-    }
-
-    fn from_data(data: MacroDefinitionData) -> Self {
-        Self {
-            name: data.name,
-            position: data.position,
-            pattern: MacroPattern::from_data(data.pattern),
-            template: MacroTemplate::from_data(data.template),
-        }
-    }
-
-    fn to_data(&self) -> MacroDefinitionData {
-        MacroDefinitionData::new(
-            self.name.clone(),
-            self.position,
-            self.pattern.to_data(),
-            self.template.to_data(),
-        )
-    }
-
-    pub fn name(&self) -> &Name {
-        &self.name
-    }
-
-    pub fn position(&self) -> MacroPosition {
-        self.position
-    }
-
-    pub fn capture_names(&self) -> Vec<String> {
-        let mut names = Vec::new();
-        for name in self.pattern.capture_names() {
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-        names
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1209,10 +1128,10 @@ struct RepeatedMacroBinding {
 
 #[derive(Clone, Debug)]
 struct DeclarativeSchemaMacro {
-    definition: MacroDefinition,
+    definition: ExecutableMacroDefinition,
 }
 
-impl SchemaMacro for DeclarativeSchemaMacro {
+impl SchemaMacroHandler for DeclarativeSchemaMacro {
     fn name(&self) -> &str {
         self.definition.name.as_str()
     }
