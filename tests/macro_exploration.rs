@@ -16,9 +16,9 @@
 
 use nota_next::Document;
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroLibraryArtifact, MacroLibraryData,
-    MacroLibrarySourceEntry, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry,
-    SchemaError, SchemaMacroHandler, TypeDeclaration, TypeReference,
+    MacroContext, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroObject,
+    MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaError, SchemaMacroHandler,
+    TypeDeclaration, TypeReference,
 };
 
 // ---------------------------------------------------------------------
@@ -267,35 +267,34 @@ fn object_count_match_distinguishes_by_root_object_count() {
 
 #[test]
 fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
-    let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
-    let data = library.to_data();
-    assert_eq!(data.source_entries().len(), 5);
+    let library = MacroLibrary::builtin().expect("builtin macros parse");
+    assert_eq!(library.source_entries().len(), 5);
     assert!(
-        data.source_entries()
+        library
+            .source_entries()
             .iter()
             .all(|entry| entry.variant_name() == "SchemaMacro")
     );
-    assert_eq!(data.definitions().len(), 5);
+    assert_eq!(library.definitions().len(), 5);
     assert!(
-        data.definitions()
+        library
+            .definitions()
             .iter()
             .any(|definition| definition.name().as_str() == "SchemaStructDefinition")
     );
 
-    let nota = data.to_nota_source();
-    let from_nota = MacroLibraryData::from_nota_source(&nota).expect("macro data reads as NOTA");
-    assert_eq!(from_nota, data);
+    let nota = library.to_nota_source();
+    let from_nota = MacroLibrary::from_nota_source(&nota).expect("macro data reads as NOTA");
+    assert_eq!(from_nota, library);
 
     let bytes = from_nota
         .to_binary_bytes()
         .expect("macro data archives to rkyv");
-    let from_binary =
-        MacroLibraryData::from_binary_bytes(&bytes).expect("macro data reads from rkyv");
-    assert_eq!(from_binary, data);
+    let from_binary = MacroLibrary::from_binary_bytes(&bytes).expect("macro data reads from rkyv");
+    assert_eq!(from_binary, library);
 
-    let rehydrated_library = DeclarativeMacroLibrary::from_data(from_binary);
     let mut registry = MacroRegistry::new();
-    for schema_macro in rehydrated_library.into_macros() {
+    for schema_macro in from_binary.into_macros() {
         registry.register_box(schema_macro);
     }
 
@@ -324,7 +323,7 @@ fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
 
 #[test]
 fn schema_macro_source_records_are_enum_variants_inside_the_library() {
-    let library = DeclarativeMacroLibrary::builtin_source().expect("builtin macro source parses");
+    let library = MacroLibrary::builtin_source().expect("builtin macro source parses");
     let entries = library.source_entries();
     assert_eq!(entries.len(), 5);
 
@@ -343,10 +342,8 @@ fn schema_macro_source_records_are_enum_variants_inside_the_library() {
 
 #[test]
 fn schema_macro_artifact_records_preserve_the_source_entry_variant() {
-    let data = DeclarativeMacroLibrary::builtin_source()
-        .expect("builtin macro source parses")
-        .to_data();
-    let first_entry = data.source_entries().first().expect("first macro entry");
+    let library = MacroLibrary::builtin_source().expect("builtin macro source parses");
+    let first_entry = library.source_entries().first().expect("first macro entry");
 
     match first_entry {
         MacroLibrarySourceEntry::SchemaMacro(definition) => {
@@ -358,34 +355,29 @@ fn schema_macro_artifact_records_preserve_the_source_entry_variant() {
 
 #[test]
 fn builtin_macro_library_artifact_is_checked_in_and_fresh() {
-    let source_data = DeclarativeMacroLibrary::builtin_source()
-        .expect("builtin macro source parses")
-        .to_data();
+    let source_library = MacroLibrary::builtin_source().expect("builtin macro source parses");
     let checked_in = MacroLibraryArtifact::from_nota_source(include_str!(
         "../schemas/builtin-macros.macro-library"
     ))
     .expect("checked-in macro library artifact decodes");
 
     assert_eq!(
-        checked_in.data(),
-        &source_data,
+        checked_in.library(),
+        &source_library,
         "schemas/builtin-macros.macro-library must be refreshed when builtin-macros.schema changes"
     );
 
-    let runtime_library = DeclarativeMacroLibrary::builtin().expect("builtin artifact loads");
+    let runtime_library = MacroLibrary::builtin().expect("builtin artifact loads");
     assert_eq!(
-        runtime_library.to_data(),
-        source_data,
+        runtime_library, source_library,
         "the default macro library must load through the serialized data artifact"
     );
 }
 
 #[test]
 fn macro_library_artifact_reads_and_writes_real_nota_and_binary_files() {
-    let data = DeclarativeMacroLibrary::builtin()
-        .expect("builtin artifact loads")
-        .to_data();
-    let artifact = MacroLibraryArtifact::new(data.clone());
+    let library = MacroLibrary::builtin().expect("builtin artifact loads");
+    let artifact = MacroLibraryArtifact::new(library.clone());
     let paths = MacroLibraryArtifactTestPaths::new("builtin-macros");
 
     artifact
@@ -400,10 +392,33 @@ fn macro_library_artifact_reads_and_writes_real_nota_and_binary_files() {
     let from_binary = MacroLibraryArtifact::read_binary_file(paths.binary_path())
         .expect("read macro library binary artifact");
 
-    assert_eq!(from_nota.data(), &data);
-    assert_eq!(from_binary.data(), &data);
+    assert_eq!(from_nota.library(), &library);
+    assert_eq!(from_binary.library(), &library);
 
     paths.remove();
+}
+
+#[test]
+fn retired_duplicate_macro_datatype_names_do_not_return() {
+    let sources = [
+        include_str!("../src/declarative.rs"),
+        include_str!("../src/lib.rs"),
+    ];
+    let retired_names = [
+        "MacroLibrarySourceEntryData",
+        "MacroDefinitionData",
+        "MacroPatternData",
+        "MacroTemplateData",
+    ];
+
+    for source in sources {
+        for retired_name in retired_names {
+            assert!(
+                !source.contains(retired_name),
+                "{retired_name} would reintroduce a source/artifact datatype split"
+            );
+        }
+    }
 }
 
 struct MacroLibraryArtifactTestPaths {

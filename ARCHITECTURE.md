@@ -127,26 +127,21 @@ It declares macro pattern and template bodies as typed object trees: captures,
 rest captures, atoms, delimiter nodes, and ordered child vectors. That makes
 the macro shape itself schema data instead of a string blob.
 
-The built-in registry reads `schemas/builtin-macros.macro-library`, a
-serialized `MacroLibraryData` artifact, and rebuilds the executable
-`DeclarativeMacroLibrary` from that data. `schemas/builtin-macros.schema`
-remains the bootstrap source: tests parse it through the declarative reader,
-project it to `MacroLibraryData`, and require exact equality with the
-checked-in artifact.
+The built-in registry reads `schemas/builtin-macros.macro-library` as one
+serialized `MacroLibrary` value and builds executable macro handlers from that
+same noun. `schemas/builtin-macros.schema` remains the bootstrap source: tests
+parse it through the declarative reader as a `MacroLibrary` and require exact
+equality with the checked-in artifact.
 
-The authored bootstrap source is typed separately from the serialized
-artifact. `DeclarativeMacroLibrary` owns
-`Vec<MacroLibrarySourceEntry>`, and the current source-entry enum has one
-case: `SchemaMacro(SchemaMacro)`. Therefore the source notation
-`(SchemaMacro Name Position Pattern Template)` is modeled as a tagged
-source-entry variant carrying a definition payload, not as a bare string
-sentinel. The checked-in `.macro-library` artifact uses the same
-`MacroLibrarySourceEntry` enum inside
-`MacroLibraryData { source_entries: Vec<MacroLibrarySourceEntry> }`, so source
-and artifact share one datatype.
+The authored bootstrap source and the serialized artifact share the same
+library noun. `MacroLibrary` owns `Vec<MacroLibrarySourceEntry>`, and the
+current source-entry enum has one case: `SchemaMacro(SchemaMacro)`. Therefore
+the source notation `(SchemaMacro Name Position Pattern Template)` is modeled
+as a tagged source-entry variant carrying a definition payload, not as a bare
+string sentinel or as a second artifact-only enum.
 
 The near target is to lower the core macro schema to asschema data, emit its
-Rust type, and replace the hand-written `MacroLibraryData` noun with the
+Rust type, and replace the hand-written `MacroLibrary` noun with the
 schema-emitted macro table type directly. The macro table is already real
 serializable data and is already the runtime load path; the remaining loop is
 making its Rust noun schema-emitted.

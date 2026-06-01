@@ -269,11 +269,11 @@ Current implementation target:
   schema data (`MacroPatternObject`, `MacroTemplateObject`, delimiter nodes,
   captures, atoms), not opaque strings. `schemas/core.asschema` is checked in
   as the assembled form of that source and freshness-checked by tests.
-- `DeclarativeMacroLibrary` projects its parsed built-in macros into
-  `MacroLibraryData`, a typed data object containing macro definitions,
-  pattern trees, template trees, delimiter values, captures, and atoms. The
+- `MacroLibrary` is the one typed noun for parsed built-in macros and the
+  checked-in macro-library artifact. It contains macro definitions, pattern
+  trees, template trees, delimiter values, captures, and atoms, and the
   checked-in `schemas/builtin-macros.macro-library` artifact is the runtime
-  load path for built-in declarative macros; `schemas/builtin-macros.schema`
+  load path for built-in declarative macros. `schemas/builtin-macros.schema`
   remains the bootstrap source that tests use to prove artifact freshness. The
-  remaining bootstrap step is replacing the hand-written macro-data noun with
-  the same noun emitted from core-schema asschema.
+  remaining bootstrap step is replacing the hand-written macro-library noun
+  with the same noun emitted from core-schema asschema.

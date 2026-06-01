@@ -11,7 +11,7 @@
 
 use nota_next::{Document, StructureShape};
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroDispatch, MacroObject, MacroPair, MacroPosition,
+    MacroContext, MacroDispatch, MacroLibrary, MacroObject, MacroPair, MacroPosition,
     MacroRegistry, Name, SchemaEngine, SchemaError, SchemaIdentity, SchemaNode, SchemaNodeData,
     SchemaNodeValue, TypeDeclaration, TypeReference,
 };
@@ -100,7 +100,7 @@ fn design_example_namespace_brace_contains_key_value_declarations() {
 /// shape in working code.
 #[test]
 fn design_example_type_reference_macro_captures_use_dollar_sigils() {
-    let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
+    let library = MacroLibrary::builtin().expect("builtin macros parse");
     let definitions = library.definitions();
 
     let struct_definition = definitions
@@ -109,7 +109,7 @@ fn design_example_type_reference_macro_captures_use_dollar_sigils() {
         .expect("struct macro definition");
     assert_eq!(struct_definition.capture_names(), vec!["$Name", "$*Fields"]);
 
-    let user_macros = DeclarativeMacroLibrary::from_source(
+    let user_macros = MacroLibrary::from_source(
         "
         (SchemaMacro Bag TypeReference
           (Bag $Type)
@@ -181,7 +181,7 @@ fn design_example_colon_qualified_name_decomposes_into_segments() {
 /// engine — no Spirit fixture needed.
 #[test]
 fn design_example_default_engine_uses_strict_structural_macros() {
-    let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
+    let library = MacroLibrary::builtin().expect("builtin macros parse");
     let definitions = library.definitions();
     let declarative_names: Vec<&str> = definitions
         .iter()
@@ -470,7 +470,7 @@ fn design_example_same_name_payload_variant_uses_explicit_payload() {
 /// tagged macro call.
 #[test]
 fn design_example_user_declared_macros_extend_structural_and_named_slots() {
-    let user_macros = DeclarativeMacroLibrary::from_source(
+    let user_macros = MacroLibrary::from_source(
         "
         (SchemaMacro Bag TypeReference
           (Bag $Type)

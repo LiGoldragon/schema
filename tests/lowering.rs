@@ -1,6 +1,6 @@
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry,
-    Name, SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage, TypeDeclaration,
+    MacroContext, MacroLibrary, MacroObject, MacroOutput, MacroPosition, MacroRegistry, Name,
+    SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage, TypeDeclaration,
     TypeReference, Visibility,
 };
 
@@ -376,7 +376,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
 
 #[test]
 fn builtin_macro_file_defines_visible_dollar_captures() {
-    let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
+    let library = MacroLibrary::builtin().expect("builtin macros parse");
     let definitions = library.definitions();
     let names = definitions
         .iter()

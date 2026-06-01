@@ -14,9 +14,9 @@ pub use asschema::{
     SchemaNodeValue, StructDeclaration, StructFieldMap, TypeDeclaration, TypeReference, Visibility,
 };
 pub use declarative::{
-    DeclarativeMacroLibrary, MacroDelimiter, MacroLibraryArtifact, MacroLibraryData,
-    MacroLibrarySourceEntry, MacroPatternData, MacroPatternDelimitedData, MacroPatternObjectData,
-    MacroTemplateData, MacroTemplateDelimitedData, MacroTemplateObjectData, SchemaMacro,
+    MacroDelimiter, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroPattern,
+    MacroPatternDelimited, MacroPatternObject, MacroTemplate, MacroTemplateDelimited,
+    MacroTemplateObject, SchemaMacro,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity, SemaDatabaseOperation};
 pub use macros::{

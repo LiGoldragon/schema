@@ -1,13 +1,12 @@
-use schema_next::{DeclarativeMacroLibrary, MacroLibraryArtifact, SchemaEngine, SchemaIdentity};
+use schema_next::{MacroLibrary, MacroLibraryArtifact, SchemaEngine, SchemaIdentity};
 
 fn main() {
-    let macro_library =
-        DeclarativeMacroLibrary::from_source(include_str!("../schemas/builtin-macros.schema"))
-            .expect("builtin macro source lowers");
+    let macro_library = MacroLibrary::from_source(include_str!("../schemas/builtin-macros.schema"))
+        .expect("builtin macro source lowers");
     println!("=== builtin-macros.macro-library ===");
     println!(
         "{}",
-        MacroLibraryArtifact::new(macro_library.to_data()).to_nota_source()
+        MacroLibraryArtifact::new(macro_library).to_nota_source()
     );
 
     let core_source = include_str!("../schemas/core.schema");
