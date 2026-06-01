@@ -101,9 +101,9 @@ fn design_example_namespace_brace_contains_key_value_declarations() {
 #[test]
 fn design_example_type_reference_macro_captures_use_dollar_sigils() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
+    let definitions = library.definitions();
 
-    let struct_definition = library
-        .definitions()
+    let struct_definition = definitions
         .iter()
         .find(|definition| definition.name().as_str() == "SchemaStructDefinition")
         .expect("struct macro definition");
@@ -117,7 +117,8 @@ fn design_example_type_reference_macro_captures_use_dollar_sigils() {
         ",
     )
     .expect("user macro definitions parse");
-    assert_eq!(user_macros.definitions()[0].capture_names(), vec!["$Type"]);
+    let user_macro_definitions = user_macros.definitions();
+    assert_eq!(user_macro_definitions[0].capture_names(), vec!["$Type"]);
 
     let mut registry = MacroRegistry::with_schema_defaults();
     for schema_macro in user_macros.into_macros() {
@@ -181,8 +182,8 @@ fn design_example_colon_qualified_name_decomposes_into_segments() {
 #[test]
 fn design_example_default_engine_uses_strict_structural_macros() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
-    let declarative_names: Vec<&str> = library
-        .definitions()
+    let definitions = library.definitions();
+    let declarative_names: Vec<&str> = definitions
         .iter()
         .map(|definition| definition.name().as_str())
         .collect();
@@ -198,8 +199,7 @@ fn design_example_default_engine_uses_strict_structural_macros() {
         "declarative structural macros loaded from builtin-macros.schema",
     );
 
-    let positions: Vec<MacroPosition> = library
-        .definitions()
+    let positions: Vec<MacroPosition> = definitions
         .iter()
         .map(|definition| definition.position())
         .collect();

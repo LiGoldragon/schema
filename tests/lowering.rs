@@ -377,8 +377,8 @@ fn core_schema_describes_default_builtin_macro_positions() {
 #[test]
 fn builtin_macro_file_defines_visible_dollar_captures() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
-    let names = library
-        .definitions()
+    let definitions = library.definitions();
+    let names = definitions
         .iter()
         .map(|definition| definition.name().as_str())
         .collect::<Vec<_>>();
@@ -393,15 +393,13 @@ fn builtin_macro_file_defines_visible_dollar_captures() {
         ]
     );
 
-    let struct_definition = library
-        .definitions()
+    let struct_definition = definitions
         .iter()
         .find(|definition| definition.name().as_str() == "SchemaStructDefinition")
         .expect("struct macro definition");
     assert_eq!(struct_definition.capture_names(), vec!["$Name", "$*Fields"]);
 
-    let enum_definition = library
-        .definitions()
+    let enum_definition = definitions
         .iter()
         .find(|definition| definition.name().as_str() == "SchemaEnumDefinition")
         .expect("enum macro definition");

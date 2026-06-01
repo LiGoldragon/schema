@@ -134,6 +134,17 @@ remains the bootstrap source: tests parse it through the declarative reader,
 project it to `MacroLibraryData`, and require exact equality with the
 checked-in artifact.
 
+The authored bootstrap source is typed separately from the serialized
+artifact. `DeclarativeMacroLibrary` owns
+`Vec<MacroLibrarySourceEntry>`, and the current source-entry enum has one
+case: `SchemaMacro(MacroDefinition)`. Therefore the source notation
+`(SchemaMacro Name Position Pattern Template)` is modeled as a tagged
+source-entry variant carrying a definition payload, not as a bare string
+sentinel. The checked-in `.macro-library` artifact preserves the same shape as
+`MacroLibraryData { source_entries: Vec<MacroLibrarySourceEntryData> }`, where
+`MacroLibrarySourceEntryData::SchemaMacro(MacroDefinitionData)` is the
+serialized variant.
+
 The near target is to lower the core macro schema to asschema data, emit its
 Rust type, and replace the hand-written `MacroLibraryData` noun with the
 schema-emitted macro table type directly. The macro table is already real

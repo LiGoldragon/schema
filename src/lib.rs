@@ -15,8 +15,9 @@ pub use asschema::{
 };
 pub use declarative::{
     DeclarativeMacroLibrary, MacroDefinition, MacroDefinitionData, MacroDelimiter,
-    MacroLibraryArtifact, MacroLibraryData, MacroPatternData, MacroPatternDelimitedData,
-    MacroPatternObjectData, MacroTemplateData, MacroTemplateDelimitedData, MacroTemplateObjectData,
+    MacroLibraryArtifact, MacroLibraryData, MacroLibrarySourceEntry, MacroLibrarySourceEntryData,
+    MacroPatternData, MacroPatternDelimitedData, MacroPatternObjectData, MacroTemplateData,
+    MacroTemplateDelimitedData, MacroTemplateObjectData,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity, SemaDatabaseOperation};
 pub use macros::{

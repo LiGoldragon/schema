@@ -16,9 +16,9 @@
 
 use nota_next::Document;
 use schema_next::{
-    DeclarativeMacroLibrary, MacroContext, MacroLibraryArtifact, MacroLibraryData, MacroObject,
-    MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaError, SchemaMacro,
-    TypeDeclaration, TypeReference,
+    DeclarativeMacroLibrary, MacroContext, MacroLibraryArtifact, MacroLibraryData,
+    MacroLibrarySourceEntry, MacroLibrarySourceEntryData, MacroObject, MacroOutput, MacroPair,
+    MacroPosition, MacroRegistry, SchemaError, SchemaMacro, TypeDeclaration, TypeReference,
 };
 
 // ---------------------------------------------------------------------
@@ -269,6 +269,12 @@ fn object_count_match_distinguishes_by_root_object_count() {
 fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
     let library = DeclarativeMacroLibrary::builtin().expect("builtin macros parse");
     let data = library.to_data();
+    assert_eq!(data.source_entries().len(), 5);
+    assert!(
+        data.source_entries()
+            .iter()
+            .all(|entry| entry.variant_name() == "SchemaMacro")
+    );
     assert_eq!(data.definitions().len(), 5);
     assert!(
         data.definitions()
@@ -314,6 +320,40 @@ fn builtin_macro_library_round_trips_as_typed_data_and_still_executes() {
     assert_eq!(declaration.fields.len(), 2);
     assert_eq!(declaration.fields[0].name.as_str(), "topic");
     assert_eq!(declaration.fields[1].name.as_str(), "kind");
+}
+
+#[test]
+fn schema_macro_source_records_are_enum_variants_inside_the_library() {
+    let library = DeclarativeMacroLibrary::builtin_source().expect("builtin macro source parses");
+    let entries = library.source_entries();
+    assert_eq!(entries.len(), 5);
+
+    for entry in entries {
+        match entry {
+            MacroLibrarySourceEntry::SchemaMacro(definition) => {
+                assert_eq!(entry.variant_name(), "SchemaMacro");
+                assert!(
+                    definition.name().as_str().starts_with("Schema"),
+                    "source variant carries the parsed macro definition payload"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn schema_macro_artifact_records_preserve_the_source_entry_variant() {
+    let data = DeclarativeMacroLibrary::builtin_source()
+        .expect("builtin macro source parses")
+        .to_data();
+    let first_entry = data.source_entries().first().expect("first macro entry");
+
+    match first_entry {
+        MacroLibrarySourceEntryData::SchemaMacro(definition) => {
+            assert_eq!(first_entry.variant_name(), "SchemaMacro");
+            assert_eq!(definition.name().as_str(), "SchemaStructDefinition");
+        }
+    }
 }
 
 #[test]

@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarativeMacroLibrary {
-    definitions: Vec<MacroDefinition>,
+    source_entries: Vec<MacroLibrarySourceEntry>,
 }
 
 impl DeclarativeMacroLibrary {
@@ -29,42 +29,47 @@ impl DeclarativeMacroLibrary {
 
     pub fn from_source(source: &str) -> Result<Self, SchemaError> {
         let document = Document::parse(source)?;
-        let mut definitions = Vec::new();
+        let mut source_entries = Vec::new();
         for object in document.root_objects() {
-            definitions.push(MacroDefinition::from_block(object)?);
+            source_entries.push(MacroLibrarySourceEntry::from_block(object)?);
         }
-        Ok(Self { definitions })
+        Ok(Self { source_entries })
     }
 
     pub fn from_data(data: MacroLibraryData) -> Self {
         Self {
-            definitions: data
-                .into_definitions()
+            source_entries: data
+                .into_source_entries()
                 .into_iter()
-                .map(MacroDefinition::from_data)
+                .map(MacroLibrarySourceEntry::from_data)
                 .collect(),
         }
     }
 
     pub fn to_data(&self) -> MacroLibraryData {
         MacroLibraryData::new(
-            self.definitions
+            self.source_entries
                 .iter()
-                .map(MacroDefinition::to_data)
+                .map(MacroLibrarySourceEntry::to_data)
                 .collect(),
         )
     }
 
-    pub fn definitions(&self) -> &[MacroDefinition] {
-        &self.definitions
+    pub fn source_entries(&self) -> &[MacroLibrarySourceEntry] {
+        &self.source_entries
+    }
+
+    pub fn definitions(&self) -> Vec<&MacroDefinition> {
+        self.source_entries
+            .iter()
+            .map(MacroLibrarySourceEntry::definition)
+            .collect()
     }
 
     pub fn into_macros(self) -> Vec<Box<dyn SchemaMacro>> {
-        self.definitions
+        self.source_entries
             .into_iter()
-            .map(|definition| {
-                Box::new(DeclarativeSchemaMacro { definition }) as Box<dyn SchemaMacro>
-            })
+            .map(MacroLibrarySourceEntry::into_schema_macro)
             .collect()
     }
 }
@@ -166,20 +171,27 @@ impl MacroLibraryArtifactPath {
     PartialEq,
 )]
 pub struct MacroLibraryData {
-    definitions: Vec<MacroDefinitionData>,
+    source_entries: Vec<MacroLibrarySourceEntryData>,
 }
 
 impl MacroLibraryData {
-    pub fn new(definitions: Vec<MacroDefinitionData>) -> Self {
-        Self { definitions }
+    pub fn new(source_entries: Vec<MacroLibrarySourceEntryData>) -> Self {
+        Self { source_entries }
     }
 
-    pub fn definitions(&self) -> &[MacroDefinitionData] {
-        &self.definitions
+    pub fn source_entries(&self) -> &[MacroLibrarySourceEntryData] {
+        &self.source_entries
     }
 
-    pub fn into_definitions(self) -> Vec<MacroDefinitionData> {
-        self.definitions
+    pub fn definitions(&self) -> Vec<&MacroDefinitionData> {
+        self.source_entries
+            .iter()
+            .map(MacroLibrarySourceEntryData::definition)
+            .collect()
+    }
+
+    pub fn into_source_entries(self) -> Vec<MacroLibrarySourceEntryData> {
+        self.source_entries
     }
 
     pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
@@ -198,6 +210,41 @@ impl MacroLibraryData {
         rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum MacroLibrarySourceEntryData {
+    SchemaMacro(MacroDefinitionData),
+}
+
+impl MacroLibrarySourceEntryData {
+    pub fn definition(&self) -> &MacroDefinitionData {
+        match self {
+            Self::SchemaMacro(definition) => definition,
+        }
+    }
+
+    pub fn into_definition(self) -> MacroDefinitionData {
+        match self {
+            Self::SchemaMacro(definition) => definition,
+        }
+    }
+
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            Self::SchemaMacro(_) => "SchemaMacro",
+        }
     }
 }
 
@@ -492,6 +539,57 @@ impl MacroDelimiter {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MacroLibrarySourceEntry {
+    SchemaMacro(MacroDefinition),
+}
+
+impl MacroLibrarySourceEntry {
+    pub fn from_block(object: &Block) -> Result<Self, SchemaError> {
+        let record = MacroLibrarySourceEntryRecord::new(object)?;
+        match record.variant_name()?.as_str() {
+            "SchemaMacro" => Ok(Self::SchemaMacro(MacroDefinition::from_record(record)?)),
+            _ => Err(record.expected_source_entry_error()),
+        }
+    }
+
+    fn from_data(data: MacroLibrarySourceEntryData) -> Self {
+        match data {
+            MacroLibrarySourceEntryData::SchemaMacro(definition) => {
+                Self::SchemaMacro(MacroDefinition::from_data(definition))
+            }
+        }
+    }
+
+    fn to_data(&self) -> MacroLibrarySourceEntryData {
+        match self {
+            Self::SchemaMacro(definition) => {
+                MacroLibrarySourceEntryData::SchemaMacro(definition.to_data())
+            }
+        }
+    }
+
+    pub fn definition(&self) -> &MacroDefinition {
+        match self {
+            Self::SchemaMacro(definition) => definition,
+        }
+    }
+
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            Self::SchemaMacro(_) => "SchemaMacro",
+        }
+    }
+
+    fn into_schema_macro(self) -> Box<dyn SchemaMacro> {
+        match self {
+            Self::SchemaMacro(definition) => {
+                Box::new(DeclarativeSchemaMacro { definition }) as Box<dyn SchemaMacro>
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MacroDefinition {
     name: Name,
     position: MacroPosition,
@@ -501,7 +599,12 @@ pub struct MacroDefinition {
 
 impl MacroDefinition {
     pub fn from_block(object: &Block) -> Result<Self, SchemaError> {
-        let record = MacroDefinitionRecord::new(object)?;
+        match MacroLibrarySourceEntry::from_block(object)? {
+            MacroLibrarySourceEntry::SchemaMacro(definition) => Ok(definition),
+        }
+    }
+
+    fn from_record(record: MacroLibrarySourceEntryRecord<'_>) -> Result<Self, SchemaError> {
         Ok(Self {
             name: record.name()?,
             position: record.position()?,
@@ -548,19 +651,14 @@ impl MacroDefinition {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct MacroDefinitionRecord<'schema> {
+struct MacroLibrarySourceEntryRecord<'schema> {
     object: &'schema Block,
 }
 
-impl<'schema> MacroDefinitionRecord<'schema> {
+impl<'schema> MacroLibrarySourceEntryRecord<'schema> {
     fn new(object: &'schema Block) -> Result<Self, SchemaError> {
         let record = Self { object };
         if !object.is_parenthesis() || object.holds_root_objects() != 5 {
-            return Err(SchemaError::ExpectedMacroDefinition {
-                found: NotationBlock::new(object).compact_notation(),
-            });
-        }
-        if record.child(0).schema_name()?.as_str() != "SchemaMacro" {
             return Err(SchemaError::ExpectedMacroDefinition {
                 found: NotationBlock::new(object).compact_notation(),
             });
@@ -572,6 +670,10 @@ impl<'schema> MacroDefinitionRecord<'schema> {
         self.object
             .root_object_at(index)
             .expect("macro definition shape checked")
+    }
+
+    fn variant_name(&self) -> Result<Name, SchemaError> {
+        self.child(0).schema_name()
     }
 
     fn name(&self) -> Result<Name, SchemaError> {
@@ -588,6 +690,12 @@ impl<'schema> MacroDefinitionRecord<'schema> {
 
     fn template(&self) -> Result<MacroTemplate, SchemaError> {
         MacroTemplate::from_block(self.child(4))
+    }
+
+    fn expected_source_entry_error(&self) -> SchemaError {
+        SchemaError::ExpectedMacroDefinition {
+            found: NotationBlock::new(self.object).compact_notation(),
+        }
     }
 }
 

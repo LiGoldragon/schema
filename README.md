@@ -36,11 +36,14 @@ declaration forms that repeat their own name are not on the production lowering
 path.
 
 Declarative schema macros have a typed data surface. The built-in macro source
-projects to `MacroLibraryData`, and the checked-in macro-library artifact is
-the runtime load path. It round-trips through NOTA, archives itself directly
-through rkyv, and rebuilds the executable macro library. The remaining
-self-hosting step is to generate that macro-table type from `schemas/core.schema`
-instead of using the hand-written data projection.
+is read as `DeclarativeMacroLibrary { source_entries:
+Vec<MacroLibrarySourceEntry> }`, where `(SchemaMacro ...)` is the
+`MacroLibrarySourceEntry::SchemaMacro` variant carrying the macro definition
+payload. The checked-in macro-library artifact preserves that source-entry
+variant in `MacroLibraryData`, round-trips through NOTA, archives itself
+directly through rkyv, and rebuilds the executable macro library. The remaining
+self-hosting step is to generate that macro-table type from
+`schemas/core.schema` instead of using the hand-written data projection.
 
 Rust code emission is not here. It lives in `schema-rust-next`.
 
