@@ -157,6 +157,31 @@ pub enum SchemaError {
     ExpectedSyntaxEnumVariant {
         found: String,
     },
+    SchemaEditTargetNotFound {
+        type_name: String,
+    },
+    SchemaEditExpectedStruct {
+        type_name: String,
+    },
+    SchemaEditExpectedEnum {
+        type_name: String,
+    },
+    SchemaEditDuplicateField {
+        type_name: String,
+        field_name: String,
+    },
+    SchemaEditDuplicateVariant {
+        type_name: String,
+        variant_name: String,
+    },
+    SchemaEditFieldNotFound {
+        type_name: String,
+        field_name: String,
+    },
+    SchemaEditIdentityMismatch {
+        expected: String,
+        found: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

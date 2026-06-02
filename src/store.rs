@@ -6,7 +6,8 @@ use std::{
 use redb::{Database, ReadableTableMetadata, TableDefinition};
 
 use crate::{
-    Asschema, AsschemaArtifact, SchemaError, SchemaIdentity, engine::SemaDatabaseOperation,
+    Asschema, AsschemaArtifact, SchemaEdit, SchemaEditReceipt, SchemaError, SchemaIdentity,
+    engine::SemaDatabaseOperation,
 };
 
 const ASSEMBLED_SCHEMAS: TableDefinition<&str, &[u8]> = TableDefinition::new("assembled-schemas");
@@ -119,6 +120,22 @@ impl AsschemaStore {
     pub fn get_asschema(&self, identity: &SchemaIdentity) -> Result<Option<Asschema>, SchemaError> {
         self.get_artifact(identity)
             .map(|artifact| artifact.map(AsschemaArtifact::into_asschema))
+    }
+
+    pub fn apply_edit(
+        &self,
+        identity: &SchemaIdentity,
+        edit: SchemaEdit,
+    ) -> Result<SchemaEditReceipt, SchemaError> {
+        let key = AsschemaStoreKey::from_identity(identity);
+        let asschema = self
+            .get_asschema(identity)?
+            .ok_or_else(|| SchemaError::MissingAsschema {
+                key: key.as_str().to_owned(),
+            })?;
+        let (updated, receipt) = edit.apply_to(asschema)?;
+        self.put_asschema(&updated)?;
+        Ok(receipt)
     }
 
     pub fn export_nota_file(

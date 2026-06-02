@@ -7,6 +7,7 @@ mod raw;
 mod resolution;
 mod store;
 mod syntax;
+mod upgrade;
 
 pub use asschema::{
     Asschema, AsschemaArtifact, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
@@ -35,4 +36,8 @@ pub use store::{AsschemaStore, AsschemaStoreKey};
 pub use syntax::{
     SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField, SyntaxReference,
     SyntaxSchema, SyntaxStructDeclaration, SyntaxVariant,
+};
+pub use upgrade::{
+    AddField, AddVariant, AsschemaEdit, ChangeFieldType, DefaultValue, FieldMigration,
+    MigrationSpec, SchemaEdit, SchemaEditReceipt, UpgradeObject, UpgradeReceipt,
 };
