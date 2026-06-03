@@ -1,5 +1,5 @@
 use nota_next::{Document, NotaDecode, NotaEncode};
-use schema_next::{Name, SchemaEngine, SchemaIdentity, SymbolPath};
+use schema_next::{Name, SchemaEngine, SchemaIdentity, SymbolPath, SymbolPathPosition};
 
 struct SymbolPathFixture {
     identity: SchemaIdentity,
@@ -60,6 +60,97 @@ fn asschema_derives_canonical_symbol_paths_from_schema_positions() {
             Name::new("EmptyTopic")
         ])
     );
+}
+
+#[test]
+fn asschema_resolves_symbol_path_position_roles_from_schema_context() {
+    let fixture = SymbolPathFixture::new();
+    let asschema = fixture.asschema();
+
+    let input_record_path = asschema
+        .root_variant_path("Input", "Record")
+        .expect("input record variant path");
+    let position = asschema
+        .symbol_path_position(&input_record_path)
+        .expect("input record position");
+    let SymbolPathPosition::RootVariant {
+        root_name,
+        variant_name,
+    } = position
+    else {
+        panic!("expected root variant position");
+    };
+    assert_eq!(root_name.as_str(), "Input");
+    assert_eq!(variant_name.as_str(), "Record");
+
+    let entry_path = asschema.type_path("Entry").expect("entry type path");
+    let position = asschema
+        .symbol_path_position(&entry_path)
+        .expect("entry type position");
+    let SymbolPathPosition::Type { type_name } = position else {
+        panic!("expected type position");
+    };
+    assert_eq!(type_name.as_str(), "Entry");
+
+    let description_path = asschema
+        .field_path("Entry", "description")
+        .expect("entry description field path");
+    let position = asschema
+        .symbol_path_position(&description_path)
+        .expect("description field position");
+    let SymbolPathPosition::Field {
+        type_name,
+        field_name,
+    } = position
+    else {
+        panic!("expected field position");
+    };
+    assert_eq!(type_name.as_str(), "Entry");
+    assert_eq!(field_name.as_str(), "description");
+
+    let empty_topic_path = asschema
+        .enum_variant_path("ValidationError", "EmptyTopic")
+        .expect("validation error variant path");
+    let position = asschema
+        .symbol_path_position(&empty_topic_path)
+        .expect("empty topic variant position");
+    let SymbolPathPosition::EnumVariant {
+        enum_name,
+        variant_name,
+    } = position
+    else {
+        panic!("expected enum variant position");
+    };
+    assert_eq!(enum_name.as_str(), "ValidationError");
+    assert_eq!(variant_name.as_str(), "EmptyTopic");
+}
+
+#[test]
+fn asschema_rejects_symbol_paths_that_do_not_match_the_schema_context() {
+    let fixture = SymbolPathFixture::new();
+    let asschema = fixture.asschema();
+
+    let foreign_component_path = SymbolPath::new([Name::new("other:lib"), Name::new("Entry")]);
+    assert_eq!(asschema.symbol_path_position(&foreign_component_path), None);
+
+    let unknown_type_path =
+        SymbolPath::new([Name::new("spirit-next:lib"), Name::new("UnknownType")]);
+    assert_eq!(asschema.symbol_path_position(&unknown_type_path), None);
+
+    let unknown_member_path = SymbolPath::new([
+        Name::new("spirit-next:lib"),
+        Name::new("Entry"),
+        Name::new("missing"),
+    ]);
+    assert_eq!(asschema.symbol_path_position(&unknown_member_path), None);
+
+    let overdeep_path = SymbolPath::new([
+        Name::new("spirit-next:lib"),
+        Name::new("Entry"),
+        Name::new("description"),
+        Name::new("extra"),
+    ]);
+    assert_eq!(asschema.symbol_path_position(&overdeep_path), None);
 }
 
 #[test]

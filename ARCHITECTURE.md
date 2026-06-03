@@ -127,6 +127,13 @@ human `Display` form may join the same segments as
 namespace keys, and future indexes should use this typed path surface instead
 of inventing ad hoc path strings.
 
+The stored path stays a segment vector so deeper schema positions can grow
+without changing the binary object. Position meaning is recovered through the
+owning schema: `Asschema::symbol_path_position` validates the component segment
+and classifies the local path as a namespace type, root variant, struct field,
+or enum variant. Consumers that need role semantics ask the assembled schema
+instead of guessing from segment count.
+
 `AsschemaArtifact` is the artifact owner. It wraps the assembled value and
 reads or writes `.asschema` NOTA text plus `.asschema.rkyv` binary bytes. The
 artifact object is the handoff surface for downstream code generation: callers

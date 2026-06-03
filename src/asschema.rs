@@ -85,6 +85,25 @@ impl fmt::Display for Name {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SymbolPath(Vec<Name>);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SymbolPathPosition<'path> {
+    Type {
+        type_name: &'path Name,
+    },
+    RootVariant {
+        root_name: &'path Name,
+        variant_name: &'path Name,
+    },
+    Field {
+        type_name: &'path Name,
+        field_name: &'path Name,
+    },
+    EnumVariant {
+        enum_name: &'path Name,
+        variant_name: &'path Name,
+    },
+}
+
 impl SymbolPath {
     pub fn new(segments: impl IntoIterator<Item = Name>) -> Self {
         Self(segments.into_iter().collect())
@@ -101,6 +120,19 @@ impl SymbolPath {
 
     pub fn segments(&self) -> &[Name] {
         &self.0
+    }
+
+    pub fn component(&self) -> Option<&Name> {
+        self.0.first()
+    }
+
+    pub fn local_segments(&self) -> &[Name] {
+        self.0.get(1..).unwrap_or(&[])
+    }
+
+    pub fn belongs_to(&self, identity: &super::SchemaIdentity) -> bool {
+        self.component()
+            .is_some_and(|component| component == identity.component())
     }
 
     pub fn type_path(identity: &super::SchemaIdentity, type_name: &Name) -> Self {
@@ -295,6 +327,51 @@ impl Asschema {
             .map(|variant| {
                 SymbolPath::enum_variant_path(&self.identity, &declaration.name, &variant.name)
             })
+    }
+
+    pub fn symbol_path_position<'path>(
+        &self,
+        path: &'path SymbolPath,
+    ) -> Option<SymbolPathPosition<'path>> {
+        if !path.belongs_to(&self.identity) {
+            return None;
+        }
+        match path.local_segments() {
+            [type_name] if self.type_named(type_name.as_str()).is_some() => {
+                Some(SymbolPathPosition::Type { type_name })
+            }
+            [root_name, variant_name]
+                if self
+                    .root_named(root_name.as_str())
+                    .is_some_and(|root| root.has_variant(variant_name)) =>
+            {
+                Some(SymbolPathPosition::RootVariant {
+                    root_name,
+                    variant_name,
+                })
+            }
+            [type_name, field_name]
+                if self
+                    .type_named(type_name.as_str())
+                    .is_some_and(|declaration| declaration.has_field_named(field_name)) =>
+            {
+                Some(SymbolPathPosition::Field {
+                    type_name,
+                    field_name,
+                })
+            }
+            [enum_name, variant_name]
+                if self
+                    .type_named(enum_name.as_str())
+                    .is_some_and(|declaration| declaration.has_variant_named(variant_name)) =>
+            {
+                Some(SymbolPathPosition::EnumVariant {
+                    enum_name,
+                    variant_name,
+                })
+            }
+            _ => None,
+        }
     }
 
     pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
@@ -515,6 +592,23 @@ impl TypeDeclaration {
             Self::Enum(declaration) => &declaration.name,
         }
     }
+
+    pub fn has_field_named(&self, field_name: &Name) -> bool {
+        let Self::Struct(declaration) = self else {
+            return false;
+        };
+        declaration
+            .fields
+            .iter()
+            .any(|field| &field.name == field_name)
+    }
+
+    pub fn has_variant_named(&self, variant_name: &Name) -> bool {
+        let Self::Enum(declaration) = self else {
+            return false;
+        };
+        declaration.has_variant(variant_name)
+    }
 }
 
 #[derive(
@@ -709,6 +803,12 @@ pub struct EnumDeclaration {
 impl EnumDeclaration {
     pub fn new(name: Name, variants: Vec<EnumVariant>) -> Self {
         Self { name, variants }
+    }
+
+    pub fn has_variant(&self, variant_name: &Name) -> bool {
+        self.variants
+            .iter()
+            .any(|variant| &variant.name == variant_name)
     }
 }
 
