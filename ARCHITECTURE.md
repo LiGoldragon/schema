@@ -118,6 +118,15 @@ only non-symbol names fall back to bracket-string text. Actual `String`
 type-reference values still use the normal NOTA string surface at value
 positions.
 
+`SymbolPath` is the typed identity projection for schema positions. It is a
+newtype over ordered `Name` segments and can be derived from an `Asschema`
+root variant, namespace type, struct field, or enum variant. Its NOTA form is
+structured data such as `(SymbolPath [spirit-next:lib Input Record])`; its
+human `Display` form may join the same segments as
+`spirit-next:lib/Input/Record`. Trace names, help entries, description
+namespace keys, and future indexes should use this typed path surface instead
+of inventing ad hoc path strings.
+
 `AsschemaArtifact` is the artifact owner. It wraps the assembled value and
 reads or writes `.asschema` NOTA text plus `.asschema.rkyv` binary bytes. The
 artifact object is the handoff surface for downstream code generation: callers

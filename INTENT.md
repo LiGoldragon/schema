@@ -104,6 +104,14 @@ string that qualifies as a NOTA symbol candidate must emit as a bare symbol
 strings remain the fallback for non-symbol text and for actual `String`
 values.*
 
+*Schema symbol identity is a typed path, not a free text convention.
+`SymbolPath` is assembled-schema data over `Name` segments. It derives paths
+from known positions such as root variants, namespace types, struct fields,
+and enum variants, and it round-trips through NOTA and rkyv as a vector of
+names rather than an opaque slash-delimited string. Display edges may render a
+human slash form, but trace/help/indexing surfaces should consume the typed
+path object.*
+
 *Asschema notation must truthfully represent the underlying data shape. A
 homogeneous vector is only used for one element type, never to hold different
 schema positions such as input and output. Semantically empty wrapper records

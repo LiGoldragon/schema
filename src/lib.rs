@@ -13,8 +13,8 @@ mod upgrade;
 pub use asschema::{
     AliasDeclaration, Asschema, AsschemaArtifact, Declaration, EnumDeclaration, EnumVariant,
     FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, SchemaNode, SchemaNodeData,
-    SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, TypeDeclaration,
-    TypeReference, Visibility,
+    SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, SymbolPath,
+    TypeDeclaration, TypeReference, Visibility,
 };
 pub use declarative::{
     MacroDelimiter, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroPattern,

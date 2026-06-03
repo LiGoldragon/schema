@@ -82,6 +82,93 @@ impl fmt::Display for Name {
     }
 }
 
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SymbolPath(Vec<Name>);
+
+impl SymbolPath {
+    pub fn new(segments: impl IntoIterator<Item = Name>) -> Self {
+        Self(segments.into_iter().collect())
+    }
+
+    pub fn from_identity_and_segments(
+        identity: &super::SchemaIdentity,
+        segments: impl IntoIterator<Item = Name>,
+    ) -> Self {
+        let mut path_segments = vec![identity.component().clone()];
+        path_segments.extend(segments);
+        Self::new(path_segments)
+    }
+
+    pub fn segments(&self) -> &[Name] {
+        &self.0
+    }
+
+    pub fn type_path(identity: &super::SchemaIdentity, type_name: &Name) -> Self {
+        Self::from_identity_and_segments(identity, [type_name.clone()])
+    }
+
+    pub fn root_variant_path(
+        identity: &super::SchemaIdentity,
+        root_name: &Name,
+        variant_name: &Name,
+    ) -> Self {
+        Self::from_identity_and_segments(identity, [root_name.clone(), variant_name.clone()])
+    }
+
+    pub fn field_path(
+        identity: &super::SchemaIdentity,
+        type_name: &Name,
+        field_name: &Name,
+    ) -> Self {
+        Self::from_identity_and_segments(identity, [type_name.clone(), field_name.clone()])
+    }
+
+    pub fn enum_variant_path(
+        identity: &super::SchemaIdentity,
+        enum_name: &Name,
+        variant_name: &Name,
+    ) -> Self {
+        Self::from_identity_and_segments(identity, [enum_name.clone(), variant_name.clone()])
+    }
+}
+
+impl NotaDecode for SymbolPath {
+    fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
+        let children =
+            NotaBlock::new(block).expect_children(Delimiter::Parenthesis, "SymbolPath", 2)?;
+        let variant = children[0]
+            .demote_to_string()
+            .ok_or(NotaDecodeError::ExpectedAtom {
+                type_name: "SymbolPath variant",
+            })?;
+        if variant != "SymbolPath" {
+            return Err(NotaDecodeError::UnknownVariant {
+                enum_name: "SymbolPath",
+                variant: variant.to_owned(),
+            });
+        }
+        Ok(Self(Vec::<Name>::from_nota_block(&children[1])?))
+    }
+}
+
+impl NotaEncode for SymbolPath {
+    fn to_nota(&self) -> String {
+        format!("(SymbolPath {})", self.0.to_nota())
+    }
+}
+
+impl fmt::Display for SymbolPath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let joined = self
+            .segments()
+            .iter()
+            .map(Name::as_str)
+            .collect::<Vec<_>>()
+            .join("/");
+        formatter.write_str(&joined)
+    }
+}
+
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
@@ -167,6 +254,47 @@ impl Asschema {
             .iter()
             .find(|declaration| declaration.name().as_str() == name)
             .map(Declaration::value)
+    }
+
+    pub fn type_path(&self, type_name: &str) -> Option<SymbolPath> {
+        self.type_named(type_name)
+            .map(TypeDeclaration::name)
+            .map(|name| SymbolPath::type_path(&self.identity, name))
+    }
+
+    pub fn root_variant_path(&self, root_name: &str, variant_name: &str) -> Option<SymbolPath> {
+        self.root_named(root_name).and_then(|root| {
+            root.variants
+                .iter()
+                .find(|variant| variant.name.as_str() == variant_name)
+                .map(|variant| {
+                    SymbolPath::root_variant_path(&self.identity, &root.name, &variant.name)
+                })
+        })
+    }
+
+    pub fn field_path(&self, type_name: &str, field_name: &str) -> Option<SymbolPath> {
+        let TypeDeclaration::Struct(declaration) = self.type_named(type_name)? else {
+            return None;
+        };
+        declaration
+            .fields
+            .iter()
+            .find(|field| field.name.as_str() == field_name)
+            .map(|field| SymbolPath::field_path(&self.identity, &declaration.name, &field.name))
+    }
+
+    pub fn enum_variant_path(&self, enum_name: &str, variant_name: &str) -> Option<SymbolPath> {
+        let TypeDeclaration::Enum(declaration) = self.type_named(enum_name)? else {
+            return None;
+        };
+        declaration
+            .variants
+            .iter()
+            .find(|variant| variant.name.as_str() == variant_name)
+            .map(|variant| {
+                SymbolPath::enum_variant_path(&self.identity, &declaration.name, &variant.name)
+            })
     }
 
     pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
