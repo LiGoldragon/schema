@@ -11,6 +11,7 @@ use crate::{
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     resolution::ImportResolver,
+    SchemaSource,
 };
 
 #[derive(
@@ -239,6 +240,14 @@ impl SchemaEngine {
     ) -> Result<Asschema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document(&document, identity)
+    }
+
+    pub fn lower_schema_source(
+        &self,
+        source: &SchemaSource,
+        identity: SchemaIdentity,
+    ) -> Result<Asschema, SchemaError> {
+        self.lower_source(&source.to_schema_text(), identity)
     }
 
     pub fn lower_source_with_context(

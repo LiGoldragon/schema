@@ -15,6 +15,33 @@
    matching, named captures, and no-match diagnostics.
 5. `Asschema` is emitted as the ordered macro-free endpoint.
 
+## Authored Schema Source
+
+`SchemaSource` is the typed authored-language value between a raw
+`nota-next::Document` and assembled `Asschema`. It reads a full schema module
+document — optional imports, input root enum, output root enum, and namespace
+— into source-language nouns:
+
+- `SourceImports`
+- `SourceRootEnum`
+- `SourceNamespace`
+- `SourceDeclarationValue`
+- `SourceStructBody`
+- `SourceEnumBody`
+- `SourceReference`
+
+`SchemaSourceArtifact` owns `.schema` text file IO. Its writer emits one
+canonical source projection from the typed source object, and the reader parses
+that projection back through NOTA before rebuilding `SchemaSource`. This is the
+authored-source counterpart to `AsschemaArtifact`: source text is a projection
+of a typed source object, not a string handed directly to every later stage.
+
+`SchemaModuleSource::lower` now decodes into `SchemaSource` first and lowers
+that typed source object through `SchemaEngine`. The current lowering method
+still re-enters the existing macro registry through canonical source text; the
+load-bearing change is that package/module callers now have a named source
+value and a round-trippable source artifact before `Asschema`.
+
 ## Raw Core Schema Reading
 
 `RawSchemaFile` is the bottom layer used to inspect a core schema before

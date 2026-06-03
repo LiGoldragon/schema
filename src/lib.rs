@@ -5,6 +5,7 @@ mod macros;
 mod module;
 mod raw;
 mod resolution;
+mod source;
 mod store;
 mod syntax;
 mod upgrade;
@@ -32,6 +33,11 @@ pub use nota_next::{
 };
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
+pub use source::{
+    SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceField,
+    SourceFieldValue, SourceImport, SourceImports, SourceNamespace, SourceNamespaceEntry,
+    SourceReference, SourceRootEnum, SourceStructBody, SourceVariantSignature,
+};
 pub use store::{AsschemaStore, AsschemaStoreKey};
 pub use syntax::{
     SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField, SyntaxReference,

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Asschema, Name, SchemaEngine, SchemaError, SchemaIdentity};
+use crate::{Asschema, Name, SchemaEngine, SchemaError, SchemaIdentity, SchemaSource};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SchemaPackage {
@@ -100,6 +100,10 @@ impl SchemaModuleSource {
     }
 
     pub fn lower(&self, engine: &SchemaEngine) -> Result<Asschema, SchemaError> {
-        engine.lower_source(&self.source, self.identity.clone())
+        engine.lower_schema_source(&self.to_schema_source()?, self.identity.clone())
+    }
+
+    pub fn to_schema_source(&self) -> Result<SchemaSource, SchemaError> {
+        SchemaSource::from_schema_text(&self.source)
     }
 }

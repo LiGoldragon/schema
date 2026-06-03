@@ -148,6 +148,14 @@ NOTA objects.*
 schema-language behavior must first be legal and parseable by `nota-next`
 before any schema-specific lowering or raw-schema reading is applied.*
 
+*Authored schema source is its own typed value before assembled schema.
+`SchemaSource` reads a `.schema` document into source-language data — imports,
+input root enum, output root enum, and namespace declarations — and writes a
+canonical `.schema` text projection back out. This source codec is separate
+from raw NOTA parsing and separate from `Asschema` serialization: raw NOTA
+preserves delimiter truth, `SchemaSource` preserves authored schema meaning
+and sugar, and `Asschema` is the macro-free assembled program.*
+
 *NOTA delimiters keep structural meaning before schema applies semantic
 expectations. Square brackets are bracket/vector structure at the raw layer,
 but a schema position typed as `String` or a string newtype may read that
