@@ -194,6 +194,12 @@ not a one-field map with an invented field name. The intended long-form
 notation is `(Public Topic { String })`, not `(Public Topic { text String })`,
 and Rust emission treats it as a real tuple newtype.*
 
+*A struct body that lowers to one field is a newtype, not a named one-field
+struct. Field names are derived only when there are multiple fields to access;
+single self-named members such as `Entry { Topic * }`, explicit one-field
+wrappers, and inline PascalCase one-field declarations all lower to
+`TypeDeclaration::Newtype`.*
+
 *The earlier declaration forms that repeat their own name are removed from the
 default parser and macro engine. Explicit macro-library data can still describe
 arbitrary NOTA patterns for experiments, but the authored schema path is strict

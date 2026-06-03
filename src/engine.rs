@@ -3,9 +3,9 @@ use nota_next::{Block, Delimiter, Document, NotaBody};
 use crate::{
     asschema::{
         Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, StructDeclaration, TypeDeclaration, TypeReference,
+        NewtypeDeclaration, TypeDeclaration, TypeReference,
     },
-    declarative::{AssembledFields, AssembledVariants},
+    declarative::{AssembledStructBody, AssembledVariants},
     macros::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
@@ -514,10 +514,7 @@ impl<'schema> KeyValueDeclaration<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
-        let fields = AssembledFields::new(root_objects).lower(registry, context)?;
-        Ok(TypeDeclaration::Struct(StructDeclaration::new(
-            name, fields,
-        )))
+        AssembledStructBody::from_blocks(name, root_objects).lower_type(registry, context)
     }
 
     fn lower_enum(

@@ -6,9 +6,10 @@ use std::{
 use nota_next::{AtomClassification, Block, Delimiter, Document, NotaEncode, NotaSource};
 
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
-    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
-    SchemaMacroHandler, StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
+    macros::SchemaBlockExt, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
+    MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name,
+    NewtypeDeclaration, SchemaError, SchemaMacroHandler, StructDeclaration, TypeDeclaration,
+    TypeReference,
 };
 
 #[derive(
@@ -1475,17 +1476,7 @@ impl<'template> AssembledType<'template> {
     ) -> Result<TypeDeclaration, SchemaError> {
         let name = self.child(children, 1, "Struct")?.schema_name()?;
         let body = self.child(children, 2, "Struct")?;
-        let fields = AssembledFields::from_objects(body.root_objects()).lower(registry, context)?;
-        if fields.len() == 1 {
-            let reference = fields.into_iter().next().expect("length checked").reference;
-            Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
-                name, reference,
-            )))
-        } else {
-            Ok(TypeDeclaration::Struct(StructDeclaration::new(
-                name, fields,
-            )))
-        }
+        AssembledStructBody::new(name, body.root_objects()).lower_type(registry, context)
     }
 
     fn lower_enum(
@@ -1534,6 +1525,46 @@ impl<'template> AssembledType<'template> {
 #[derive(Clone, Debug)]
 pub(crate) struct AssembledFields<'template> {
     objects: Vec<ObjectView<'template>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AssembledStructBody<'template> {
+    name: Name,
+    objects: Vec<ObjectView<'template>>,
+}
+
+impl<'template> AssembledStructBody<'template> {
+    fn new(name: Name, objects: Vec<ObjectView<'template>>) -> Self {
+        Self { name, objects }
+    }
+
+    pub(crate) fn from_blocks(name: Name, objects: &'template [Block]) -> Self {
+        Self {
+            name,
+            objects: objects.iter().map(ObjectView::Block).collect(),
+        }
+    }
+
+    pub(crate) fn lower_type(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        let fields =
+            AssembledFields::from_objects(self.objects.clone()).lower(registry, context)?;
+        if fields.len() == 1 {
+            let reference = fields.into_iter().next().expect("length checked").reference;
+            Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+                self.name.clone(),
+                reference,
+            )))
+        } else {
+            Ok(TypeDeclaration::Struct(StructDeclaration::new(
+                self.name.clone(),
+                fields,
+            )))
+        }
+    }
 }
 
 impl<'template> AssembledFields<'template> {
@@ -1712,10 +1743,7 @@ impl<'template> AssembledField<'template> {
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
         if let Some(children) = object.delimited_children(Delimiter::Brace) {
-            let fields = AssembledFields::from_objects(children).lower(registry, context)?;
-            return Ok(TypeDeclaration::Struct(StructDeclaration::new(
-                name, fields,
-            )));
+            return AssembledStructBody::new(name, children).lower_type(registry, context);
         }
         if let Some(children) = object.delimited_children(Delimiter::SquareBracket) {
             let variants = AssembledVariants::from_objects(children).lower(registry, context)?;

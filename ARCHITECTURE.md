@@ -120,6 +120,13 @@ one-field struct map with an invented field name. Its long form is
 Rust emitter consumes the contained reference directly when emitting a tuple
 newtype.
 
+Struct-body lowering has the same rule before the assembled endpoint is
+written: a body that produces exactly one field becomes `Newtype`, and a body
+that produces two or more fields stays `Struct`. The source may spell that
+single field as a derived member (`Entry { Topic * }`) or an explicit one-field
+wrapper (`Wrapper { value Topic }`); once the body has only one contained
+reference, the field label is not part of the type.
+
 ## Core Macro Schema
 
 `schemas/core.schema` is the schema-level description of the macro substrate.
@@ -172,6 +179,9 @@ one logical declaration object.
 - Namespace braces contain `TypeName Value` pairs. `Topic String` and
   `Topics (Vec Topic)` are newtype declarations; `Entry { topic Topic }` is a
   struct declaration; `Kind [Decision Correction]` is an enum declaration.
+- A brace declaration with one field lowers as a newtype. `Entry { Topic * }`
+  and `Wrapper { value Topic }` both describe one contained `Topic` reference;
+  only a multi-field brace remains a named-field struct.
 - Struct braces contain field-name -> type-reference pairs. `topic Topic` is
   explicit. `Topics *` derives the field name from an already-defined type and
   lowers to `topics: Topics`.

@@ -92,6 +92,60 @@ fn simple_newtype_declarations_lower_to_single_contained_reference() {
 }
 
 #[test]
+fn single_field_brace_declarations_lower_to_newtypes() {
+    let source = "[] [] { Topic String Entry { Topic * } Wrapper { value Topic } }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("single-field brace declarations lower");
+
+    let TypeDeclaration::Newtype(entry) = asschema.type_named("Entry").expect("entry type") else {
+        panic!("Entry should be a transparent newtype");
+    };
+    assert_eq!(entry.reference, TypeReference::Plain(Name::new("Topic")));
+
+    let TypeDeclaration::Newtype(wrapper) = asschema.type_named("Wrapper").expect("wrapper type")
+    else {
+        panic!("Wrapper should be a transparent newtype");
+    };
+    assert_eq!(wrapper.reference, TypeReference::Plain(Name::new("Topic")));
+}
+
+#[test]
+fn single_field_inline_pascal_declarations_lower_to_newtypes() {
+    let source = "[] [] { RecordIdentifier Integer Entry { Receipt { RecordIdentifier * } } }";
+    let asschema = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("inline single-field declaration lowers");
+
+    assert_eq!(
+        asschema
+            .namespace()
+            .iter()
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("RecordIdentifier", Visibility::Public),
+            ("Receipt", Visibility::Private),
+            ("Entry", Visibility::Public),
+        ]
+    );
+
+    let TypeDeclaration::Newtype(receipt) = asschema.type_named("Receipt").expect("receipt type")
+    else {
+        panic!("Receipt should be a transparent newtype");
+    };
+    assert_eq!(
+        receipt.reference,
+        TypeReference::Plain(Name::new("RecordIdentifier"))
+    );
+
+    let TypeDeclaration::Newtype(entry) = asschema.type_named("Entry").expect("entry type") else {
+        panic!("Entry should be a transparent newtype");
+    };
+    assert_eq!(entry.reference, TypeReference::Plain(Name::new("Receipt")));
+}
+
+#[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
     let source = "[] [] { (Entry Entry { topic Topic kind Kind }) }";
     let error = SchemaEngine::default()
