@@ -43,3 +43,84 @@ fn schema_source_lowers_to_same_asschema_as_direct_source() {
         "schema source object should be a semantics-preserving stage before asschema"
     );
 }
+
+#[test]
+fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
+    let source = "{}\n[Lookup Count]\n[Found Counted]\n{\n  Lookup RecordIdentifier\n  Count Query\n  Found Entry\n  Counted Integer\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n  Entry { Topic * }\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let asschema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    let input = asschema.input();
+    assert_eq!(input.variants[0].name.as_str(), "Lookup");
+    assert_eq!(
+        input.variants[0]
+            .payload
+            .as_ref()
+            .and_then(schema_next::TypeReference::plain_name)
+            .map(schema_next::Name::as_str),
+        Some("Lookup")
+    );
+    assert_eq!(input.variants[1].name.as_str(), "Count");
+    assert_eq!(
+        input.variants[1]
+            .payload
+            .as_ref()
+            .and_then(schema_next::TypeReference::plain_name)
+            .map(schema_next::Name::as_str),
+        Some("Count")
+    );
+    assert!(
+        asschema.type_named("Lookup").is_some(),
+        "root header should resolve through the exported namespace object"
+    );
+}
+
+#[test]
+fn root_header_inline_declarations_are_exported_namespace_payloads() {
+    let source = "{}\n[(Lookup { RecordIdentifier * }) (Count { Query * })]\n[]\n{\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let asschema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    assert!(
+        asschema.type_named("Lookup").is_some(),
+        "inline root declaration should enter the exported namespace"
+    );
+    assert!(
+        asschema.type_named("Count").is_some(),
+        "second inline root declaration should enter the exported namespace"
+    );
+    assert_eq!(
+        asschema.input().variants[0]
+            .payload
+            .as_ref()
+            .and_then(schema_next::TypeReference::plain_name)
+            .map(schema_next::Name::as_str),
+        Some("Lookup")
+    );
+    assert_eq!(
+        asschema
+            .namespace()
+            .iter()
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("RecordIdentifier", schema_next::Visibility::Public),
+            ("Query", schema_next::Visibility::Public),
+            ("Topic", schema_next::Visibility::Public),
+            ("Lookup", schema_next::Visibility::Public),
+            ("Count", schema_next::Visibility::Public),
+        ]
+    );
+}

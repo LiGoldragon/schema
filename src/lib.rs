@@ -36,7 +36,8 @@ pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceField,
     SourceFieldValue, SourceImport, SourceImports, SourceNamespace, SourceNamespaceEntry,
-    SourceReference, SourceRootEnum, SourceStructBody, SourceVariantSignature,
+    SourceReference, SourceRootEnum, SourceStructBody, SourceVariantPayload,
+    SourceVariantSignature,
 };
 pub use store::{AsschemaStore, AsschemaStoreKey};
 pub use syntax::{

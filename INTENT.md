@@ -184,6 +184,20 @@ parenthesized record `(Variant PayloadType)`. This keeps each bracket member
 one variant-signature object instead of smuggling key/value rhythm into a
 vector delimiter.*
 
+*Root input/output headers may list exported variant object names directly.
+When a bare root variant name resolves to a declaration in the schema namespace,
+the variant carries that same-named payload type. This lets the header read as
+the component's exported operation vocabulary (`[Lookup Count]`) while the
+namespace defines what each operation object is (`Lookup RecordIdentifier`,
+`Count Query`). Root header entries may also define the payload object inline;
+the inline declaration is inserted into the exported namespace before the root
+enum is assembled.*
+
+*Schema source lowering is allowed to be multi-pass over a block. The source
+reader first preserves the authored objects, then collects candidate type names
+from namespace entries and inline root declarations, then resolves variant
+payload shorthand against that namespace before producing assembled schema.*
+
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
 the first payload field carrying the declared name and the second payload field

@@ -37,10 +37,20 @@ authored-source counterpart to `AsschemaArtifact`: source text is a projection
 of a typed source object, not a string handed directly to every later stage.
 
 `SchemaModuleSource::lower` now decodes into `SchemaSource` first and lowers
-that typed source object through `SchemaEngine`. The current lowering method
-still re-enters the existing macro registry through canonical source text; the
-load-bearing change is that package/module callers now have a named source
-value and a round-trippable source artifact before `Asschema`.
+that typed source object directly through `SchemaEngine`. The lowerer no longer
+has to render canonical source text and parse it again just to reach
+`Asschema`; package/module callers now have a named source value and a
+round-trippable source artifact before `Asschema`.
+
+Root input/output headers are resolved against the typed source namespace before
+assembled schema is emitted. A bare header entry such as `Lookup` remains one
+variant-signature object in the bracket vector; if the namespace declares
+`Lookup RecordIdentifier`, the assembled root variant becomes
+`Lookup(Plain Lookup)`, and `Lookup` is an exported newtype object. A
+parenthesized inline declaration such as `(Lookup { RecordIdentifier * })`
+also creates an exported `Lookup` declaration before the root enum is lowered.
+This resolution happens on `SchemaSource` data, not by rewriting the user's
+source string into the older `(Lookup RecordIdentifier)` pair form.
 
 ## Raw Core Schema Reading
 
@@ -217,6 +227,10 @@ one logical declaration object.
   parenthesized `(Variant PayloadType)` record for a data-carrying variant.
   A variant signature is one object, so the bracket remains a homogeneous
   vector of variant-signature objects.
+- At root input/output positions, a bare PascalCase variant may resolve to a
+  same-named exported namespace declaration. The source header says `Lookup`;
+  the namespace says what `Lookup` is. Inline root declarations are also
+  accepted and are inserted into the exported namespace before assembly.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`

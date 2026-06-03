@@ -1,7 +1,7 @@
 use nota_next::{Block, Delimiter, Document, NotaBody};
 
 use crate::{
-    SchemaSource,
+    ImportResolver, SchemaSource,
     asschema::{
         Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
         NewtypeDeclaration, TypeDeclaration, TypeReference,
@@ -11,7 +11,6 @@ use crate::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
-    resolution::ImportResolver,
 };
 
 #[derive(
@@ -158,6 +157,9 @@ pub enum SchemaError {
     ExpectedSyntaxEnumVariant {
         found: String,
     },
+    DuplicateSourceDeclaration {
+        name: String,
+    },
     SchemaEditTargetNotFound {
         type_name: String,
     },
@@ -247,7 +249,18 @@ impl SchemaEngine {
         source: &SchemaSource,
         identity: SchemaIdentity,
     ) -> Result<Asschema, SchemaError> {
-        self.lower_source(&source.to_schema_text(), identity)
+        self.lower_schema_source_with_resolver(source, identity, &ImportResolver::new())
+    }
+
+    pub fn lower_schema_source_with_resolver(
+        &self,
+        source: &SchemaSource,
+        identity: SchemaIdentity,
+        resolver: &ImportResolver,
+    ) -> Result<Asschema, SchemaError> {
+        let imports = source.imports().to_asschema_imports()?;
+        let resolved_imports = resolver.resolve_all(&imports, self)?;
+        source.to_asschema(identity, imports, resolved_imports)
     }
 
     pub fn lower_source_with_context(
