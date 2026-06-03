@@ -105,7 +105,7 @@ input/output body slots into `EnumDeclaration` values named by the root type.
 Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Asschema` through NOTA and rkyv:
 `Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,
-`TypeDeclaration::{Struct, Enum, Newtype}` and
+`TypeDeclaration::{Alias, Struct, Enum, Newtype}` and
 `TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`.
 The previous checked-in assembled-schema text fixture surface stays removed:
 the live serialized form comes from the typed data object, not from hand-kept
@@ -145,6 +145,11 @@ objects: `(Public Name Value)` for exported top-level types and
 `(Private Name Value)` for module-local types. The Rust storage keeps a
 dedicated `Declaration` struct today, but the canonical data shape is the same:
 visibility, declared name, and type value.
+
+A bare reference value in asschema is an alias. `Topic String`,
+`Lookup RecordIdentifier`, and `Rejected SignalRejection` preserve exported
+schema names without adding nominal Rust wrappers around identical payload
+types.
 
 A struct value in asschema is a field-name -> type-reference map. The Rust
 `StructFieldMap` stores the map in source order because generated Rust field
@@ -210,11 +215,11 @@ map. Schema sugar may shorten values, but it must not turn a brace entry into
 one logical declaration object.
 
 - Root input/output positions are known by the schema reader and are written
-  as bare bracket bodies: `[]`, `[(Record Entry)]`, or
-  `[(Record Entry) Observe]`. The root does not carry labels; position supplies
+  as bare bracket bodies: `[]`, `[Record Observe]`, or explicit signatures
+  such as `[(Record Entry) Observe]`. The root does not carry labels; position supplies
   `Input` and `Output`.
 - Namespace braces contain `TypeName Value` pairs. `Topic String` and
-  `Topics (Vec Topic)` are newtype declarations; `Entry { topic Topic }` is a
+  `Topics (Vec Topic)` are alias declarations; `Entry { topic Topic }` is a
   struct declaration; `Kind [Decision Correction]` is an enum declaration.
 - A brace declaration with one field lowers as a newtype. `Entry { Topic * }`
   and `Wrapper { value Topic }` both describe one contained `Topic` reference;
@@ -263,7 +268,7 @@ The namespace declaration node makes the strict brace model executable:
 ```nota
 Entry { Topics * }     ; symbol key + brace value -> struct declaration case
 Kind [Decision]        ; symbol key + bracket value -> enum declaration case
-Topic String           ; symbol key + reference value -> newtype declaration case
+Topic String           ; symbol key + reference value -> alias declaration case
 ```
 
 `KeyValueDeclarationMacro::matches` delegates through the nota-next pattern
@@ -343,7 +348,7 @@ module schema and checking that the imported type is declared there.
   `Entry { topic Topic Topics * }`. `TypeName *` derives the field name from
   an existing type; explicit `field TypeReference` remains available when the
   field name differs. A namespace key followed by an atom or parenthesized
-  reference defines a newtype: `Topic String`, `Topics (Vec Topic)`.
+  reference defines an alias: `Topic String`, `Topics (Vec Topic)`.
 - Square brackets are NOTA vector/bracket structure. At enum-body positions
   they contain homogeneous variant-signature objects: bare symbols for unit
   variants and parenthesized `(Variant PayloadType)` records for data variants.
@@ -413,7 +418,7 @@ strict key/value authored surface without invoking macro lowering:
    delimiter objects.
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
 3. Brace values become struct field maps; square-bracket values become enum
-   bodies; atom or parenthesized reference values become aliases/newtypes.
+   bodies; atom or parenthesized reference values become aliases.
 4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
 5. The root map key is the declaration name. There is no second declaration

@@ -372,6 +372,7 @@ impl Declaration {
     PartialEq,
 )]
 pub enum TypeDeclaration {
+    Alias(AliasDeclaration),
     Struct(StructDeclaration),
     Enum(EnumDeclaration),
     Newtype(NewtypeDeclaration),
@@ -380,10 +381,33 @@ pub enum TypeDeclaration {
 impl TypeDeclaration {
     pub fn name(&self) -> &Name {
         match self {
+            Self::Alias(declaration) => &declaration.name,
             Self::Struct(declaration) => &declaration.name,
             Self::Newtype(declaration) => &declaration.name,
             Self::Enum(declaration) => &declaration.name,
         }
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct AliasDeclaration {
+    pub name: Name,
+    pub reference: TypeReference,
+}
+
+impl AliasDeclaration {
+    pub fn new(name: Name, reference: TypeReference) -> Self {
+        Self { name, reference }
     }
 }
 

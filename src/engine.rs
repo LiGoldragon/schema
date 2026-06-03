@@ -3,8 +3,8 @@ use nota_next::{Block, Delimiter, Document, NotaBody};
 use crate::{
     ImportResolver, SchemaSource,
     asschema::{
-        Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, TypeDeclaration, TypeReference,
+        AliasDeclaration, Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration,
+        Name, TypeDeclaration, TypeReference,
     },
     declarative::{AssembledStructBody, AssembledVariants},
     macros::{
@@ -569,7 +569,7 @@ impl<'schema> KeyValueDeclaration<'schema> {
             });
         }
         let reference = TypeReference::from_block_with_registry(definition, registry, context)?;
-        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+        Ok(TypeDeclaration::Alias(AliasDeclaration::new(
             name, reference,
         )))
     }

@@ -70,20 +70,19 @@ fn strict_key_value_declarations_lower_to_structs_and_enums() {
 }
 
 #[test]
-fn simple_newtype_declarations_lower_to_single_contained_reference() {
+fn bare_reference_declarations_lower_to_aliases() {
     let source = "[] [] { Topic String Topics (Vec Topic) }";
     let asschema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("newtype forms lower");
+        .expect("alias forms lower");
 
-    let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
-        panic!("Topic should be a newtype");
+    let TypeDeclaration::Alias(topic) = asschema.type_named("Topic").expect("topic type") else {
+        panic!("Topic should be an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
 
-    let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
-    else {
-        panic!("Topics should be a newtype");
+    let TypeDeclaration::Alias(topics) = asschema.type_named("Topics").expect("topics type") else {
+        panic!("Topics should be an alias");
     };
     assert_eq!(
         topics.reference,
@@ -197,12 +196,12 @@ fn colon_qualified_names_lower_as_schema_names() {
         asschema.namespace()[1].name().namespace_segments(),
         vec!["schema", "spirit", "Entry"]
     );
-    let TypeDeclaration::Newtype(topic) = asschema.namespace()[0].value() else {
-        panic!("topic should be a newtype");
+    let TypeDeclaration::Alias(topic) = asschema.namespace()[0].value() else {
+        panic!("topic should be an alias");
     };
     assert_eq!(topic.name.local_part(), "Topic");
-    let TypeDeclaration::Newtype(entry) = asschema.namespace()[1].value() else {
-        panic!("single-field entry should be a newtype");
+    let TypeDeclaration::Alias(entry) = asschema.namespace()[1].value() else {
+        panic!("entry should be an alias");
     };
     assert_eq!(
         entry.reference,
@@ -354,11 +353,11 @@ fn core_schema_describes_default_builtin_macro_positions() {
         ]
     );
 
-    let TypeDeclaration::Newtype(macro_pattern) = asschema
+    let TypeDeclaration::Alias(macro_pattern) = asschema
         .type_named("MacroPattern")
-        .expect("macro pattern newtype")
+        .expect("macro pattern alias")
     else {
-        panic!("MacroPattern should be a newtype");
+        panic!("MacroPattern should be an alias");
     };
     assert_eq!(
         macro_pattern
@@ -744,8 +743,8 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
     assert_eq!(some_enum.variants[1].payload, None);
     assert_eq!(some_enum.variants[2].payload, Some(TypeReference::String));
 
-    let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
-        panic!("Topic should be a newtype");
+    let TypeDeclaration::Alias(topic) = asschema.type_named("Topic").expect("topic type") else {
+        panic!("Topic should be an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
 }

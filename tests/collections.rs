@@ -26,20 +26,21 @@ fn struct_fields<'asschema>(
 ) -> &'asschema [schema_next::FieldDeclaration] {
     match asschema.type_named(name).expect("type present") {
         TypeDeclaration::Struct(declaration) => &declaration.fields,
-        TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
+        TypeDeclaration::Alias(_) | TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a struct")
         }
     }
 }
 
-fn newtype_reference<'asschema>(
+fn single_reference<'asschema>(
     asschema: &'asschema schema_next::Asschema,
     name: &str,
 ) -> &'asschema TypeReference {
     match asschema.type_named(name).expect("type present") {
+        TypeDeclaration::Alias(declaration) => &declaration.reference,
         TypeDeclaration::Newtype(declaration) => &declaration.reference,
         TypeDeclaration::Struct(_) | TypeDeclaration::Enum(_) => {
-            panic!("{name} should be a newtype")
+            panic!("{name} should be a single-reference declaration")
         }
     }
 }
@@ -48,7 +49,7 @@ fn newtype_reference<'asschema>(
 fn vec_field_lowers_to_vector_reference() {
     let asschema = lower(&roots("Service String Cluster (Vec Service)"));
     assert_eq!(
-        newtype_reference(&asschema, "Cluster"),
+        single_reference(&asschema, "Cluster"),
         &TypeReference::Vector(Box::new(TypeReference::new("Service")))
     );
 }
@@ -118,7 +119,7 @@ fn key_value_field_lowers_to_map_reference() {
         "NodeName String NodeProposal String Cluster (Map (NodeName NodeProposal))",
     ));
     assert_eq!(
-        newtype_reference(&asschema, "Cluster"),
+        single_reference(&asschema, "Cluster"),
         &TypeReference::Map(
             Box::new(TypeReference::new("NodeName")),
             Box::new(TypeReference::new("NodeProposal")),
@@ -130,7 +131,7 @@ fn key_value_field_lowers_to_map_reference() {
 fn option_field_lowers_to_optional_reference() {
     let asschema = lower(&roots("Cache String Cluster (Optional Cache)"));
     assert_eq!(
-        newtype_reference(&asschema, "Cluster"),
+        single_reference(&asschema, "Cluster"),
         &TypeReference::Optional(Box::new(TypeReference::new("Cache")))
     );
 }
@@ -191,7 +192,7 @@ fn nested_collections_lower_recursively() {
         "Leaf String Key String Nest (Map (Key (Vec (Optional Leaf))))",
     ));
     assert_eq!(
-        newtype_reference(&asschema, "Nest"),
+        single_reference(&asschema, "Nest"),
         &TypeReference::Map(
             Box::new(TypeReference::new("Key")),
             Box::new(TypeReference::Vector(Box::new(TypeReference::Optional(

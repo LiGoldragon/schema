@@ -168,10 +168,10 @@ tag-plus-payload struct.*
 `fieldName TypeReference` pairs. A PascalCase key followed by `*` is the
 derived-member shorthand: `Topics *` lowers to field `topics` with type
 `Topics`. Root input/output positions are known by the schema reader and are
-written as bare bracket bodies such as `[(Record Entry)]` or `[]`, never
+written as bare bracket bodies such as `[Record Observe]` or `[]`, never
 as labeled root wrappers. Square-bracket namespace values define
 enum bodies; brace namespace values define struct field maps; atom or
-parenthesized reference values define newtypes (`Topic String`,
+parenthesized reference values define aliases (`Topic String`,
 `Topics (Vec Topic)`). Parentheses remain the composite/type-reference and
 macro-call argument form (`(Vec Entry)`, `(Optional Kind)`,
 `(Map (Key Value))`). The default parser accepts only this strict authored
@@ -201,7 +201,7 @@ payload shorthand against that namespace before producing assembled schema.*
 *Assembled schema namespace entries are visibility-tagged data objects. The
 canonical NOTA shape is `(Public Name Value)` or `(Private Name Value)`, with
 the first payload field carrying the declared name and the second payload field
-carrying the struct/enum/newtype value. Top-level authored declarations lower
+carrying the alias/struct/enum/newtype value. Top-level authored declarations lower
 to public declarations. Inline PascalCase declarations lower to private,
 module-local declarations, derive their field name from the type name, and may
 be referenced later in the same module.*
@@ -211,10 +211,17 @@ type reference. The implementation may preserve source order internally for
 Rust field order and rkyv layout, but the semantic object is a brace map:
 field key -> type-reference value.*
 
+*An alias declaration's assembled value is an exported name for an existing
+type reference. Bare namespace bindings such as `Rejected SignalRejection`,
+`Topic String`, and `Topics (Vec Topic)` lower to `TypeDeclaration::Alias`,
+not to tuple newtypes. This preserves the symbol path and documentation/help
+identity without forcing Rust consumers to wrap and unwrap a semantically
+identical payload type.*
+
 *A newtype declaration's assembled value is a single contained type reference,
-not a one-field map with an invented field name. The intended long-form
-notation is `(Public Topic { String })`, not `(Public Topic { text String })`,
-and Rust emission treats it as a real tuple newtype.*
+not a one-field map with an invented field name. Authored brace bodies that
+lower to exactly one field become `TypeDeclaration::Newtype`, and Rust
+emission treats them as real tuple newtypes.*
 
 *A struct body that lowers to one field is a newtype, not a named one-field
 struct. Field names are derived only when there are multiple fields to access;
@@ -233,7 +240,7 @@ position, input object kind, delimiter constraints, object-count constraints,
 key qualification rules, and value-shape rules. For namespace declarations,
 the key/value pair itself is the semantic macro-node object: symbol+brace
 matches a struct declaration, symbol+bracket matches an enum declaration, and
-symbol+reference matches a newtype declaration. Unsupported shapes should fail
+symbol+reference matches an alias declaration. Unsupported shapes should fail
 as unsupported macro-node structure with the expected cases listed, not as
 opaque parser magic.*
 

@@ -1,6 +1,6 @@
 use std::fs;
 
-use schema_next::{SchemaEngine, SchemaIdentity, SchemaSourceArtifact};
+use schema_next::{SchemaEngine, SchemaIdentity, SchemaSourceArtifact, TypeDeclaration};
 
 #[test]
 fn schema_source_artifact_round_trips_module_source_text() {
@@ -78,6 +78,13 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
     assert!(
         asschema.type_named("Lookup").is_some(),
         "root header should resolve through the exported namespace object"
+    );
+    let Some(TypeDeclaration::Alias(lookup)) = asschema.type_named("Lookup") else {
+        panic!("bare namespace binding should lower to an alias");
+    };
+    assert_eq!(
+        lookup.reference.plain_name().map(schema_next::Name::as_str),
+        Some("RecordIdentifier")
     );
 }
 

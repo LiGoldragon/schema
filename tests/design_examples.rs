@@ -75,8 +75,8 @@ fn design_example_namespace_brace_contains_key_value_declarations() {
         .collect();
     assert_eq!(names, vec!["Topic", "Kind"]);
 
-    let TypeDeclaration::Newtype(topic) = asschema.namespace()[0].value() else {
-        panic!("Topic should lower as a newtype (single-field struct)");
+    let TypeDeclaration::Alias(topic) = asschema.namespace()[0].value() else {
+        panic!("Topic should lower as an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
     let TypeDeclaration::Enum(kind) = asschema.namespace()[1].value() else {
@@ -490,13 +490,12 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
         )
         .expect("schema lowers through user macros");
 
-    let TypeDeclaration::Newtype(topic) = asschema.type_named("Topic").expect("topic type") else {
-        panic!("StringNewtype macro creates a newtype");
+    let TypeDeclaration::Alias(topic) = asschema.type_named("Topic").expect("topic type") else {
+        panic!("bare Topic binding should create an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
-    let TypeDeclaration::Newtype(topics) = asschema.type_named("Topics").expect("topics type")
-    else {
-        panic!("single-field Topics should be a newtype");
+    let TypeDeclaration::Alias(topics) = asschema.type_named("Topics").expect("topics type") else {
+        panic!("bare Topics binding should create an alias");
     };
     assert_eq!(
         topics.reference,

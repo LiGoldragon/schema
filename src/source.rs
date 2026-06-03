@@ -6,9 +6,10 @@ use std::{
 use nota_next::{Block, Delimiter, Document, NotaBody, NotaEncode, NotaString};
 
 use crate::{
-    Asschema, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
-    NewtypeDeclaration, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, ResolvedImport,
-    SchemaEngine, SchemaError, SchemaIdentity, StructDeclaration, TypeDeclaration, TypeReference,
+    AliasDeclaration, Asschema, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
+    ImportDeclaration, Name, NewtypeDeclaration, RawDatatypeMap, RawNotaDatatype, RawNotaSequence,
+    ResolvedImport, SchemaEngine, SchemaError, SchemaIdentity, StructDeclaration, TypeDeclaration,
+    TypeReference,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -414,11 +415,9 @@ impl SourceDeclarationValue {
         resolver: &SourceTypeResolver,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self {
-            Self::Reference(reference) => {
-                Ok(SourceDeclarationGroup::primary(TypeDeclaration::Newtype(
-                    NewtypeDeclaration::new(name, reference.to_type_reference()),
-                )))
-            }
+            Self::Reference(reference) => Ok(SourceDeclarationGroup::primary(
+                TypeDeclaration::Alias(AliasDeclaration::new(name, reference.to_type_reference())),
+            )),
             Self::Text(_) => Err(SchemaError::ExpectedSyntaxDeclaration {
                 found: "text declaration".to_owned(),
             }),

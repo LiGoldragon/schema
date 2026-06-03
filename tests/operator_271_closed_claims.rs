@@ -273,9 +273,10 @@ fn asschema_is_typed_data_with_named_field_accessors() {
         .first()
         .expect("core schema has at least one namespace declaration");
     match any_declaration.value() {
-        TypeDeclaration::Struct(_) | TypeDeclaration::Enum(_) | TypeDeclaration::Newtype(_) => {
-            /* typed variant; expected */
-        }
+        TypeDeclaration::Alias(_)
+        | TypeDeclaration::Struct(_)
+        | TypeDeclaration::Enum(_)
+        | TypeDeclaration::Newtype(_) => { /* typed variant; expected */ }
     }
 }
 
