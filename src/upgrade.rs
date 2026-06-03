@@ -188,7 +188,10 @@ impl SchemaEdit {
         })
     }
 
-    pub fn apply_to(self, asschema: Asschema) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
+    pub fn apply_to(
+        self,
+        asschema: Asschema,
+    ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
         AsschemaEdit::new(asschema, self).apply()
     }
 }
@@ -201,15 +204,11 @@ impl AsschemaEdit {
     pub fn apply(self) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
         let Self { asschema, edit } = self;
         match edit {
-            SchemaEdit::AddField(operation) => {
-                Self::apply_add_field(asschema, operation)
-            }
+            SchemaEdit::AddField(operation) => Self::apply_add_field(asschema, operation),
             SchemaEdit::ChangeFieldType(operation) => {
                 Self::apply_change_field_type(asschema, operation)
             }
-            SchemaEdit::AddVariant(operation) => {
-                Self::apply_add_variant(asschema, operation)
-            }
+            SchemaEdit::AddVariant(operation) => Self::apply_add_variant(asschema, operation),
         }
     }
 
@@ -219,8 +218,9 @@ impl AsschemaEdit {
     ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
         let field_type = edit.field_type.clone();
         let migration = FieldMigration::SetDefault(edit.default_value);
-        let (asschema, previous_type) = AsschemaEditor::new(asschema)
-            .update_struct(edit.target_type.clone(), |declaration| {
+        let (asschema, previous_type) = AsschemaEditor::new(asschema).update_struct(
+            edit.target_type.clone(),
+            |declaration| {
                 if declaration
                     .fields
                     .iter()
@@ -236,8 +236,12 @@ impl AsschemaEdit {
                     name: edit.field_name.clone(),
                     reference: field_type.clone(),
                 });
-                Ok((StructDeclaration::new(declaration.name.clone(), fields), None))
-            })?;
+                Ok((
+                    StructDeclaration::new(declaration.name.clone(), fields),
+                    None,
+                ))
+            },
+        )?;
         let receipt = asschema.edit_receipt(Some(MigrationSpec {
             target_type: edit.target_type,
             field_name: edit.field_name,
@@ -253,8 +257,9 @@ impl AsschemaEdit {
         edit: ChangeFieldType,
     ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
         let next_type = edit.new_type.clone();
-        let (asschema, previous_type) = AsschemaEditor::new(asschema)
-            .update_struct(edit.target_type.clone(), |declaration| {
+        let (asschema, previous_type) = AsschemaEditor::new(asschema).update_struct(
+            edit.target_type.clone(),
+            |declaration| {
                 let mut fields = declaration.fields.entries().to_vec();
                 let Some(field) = fields
                     .iter_mut()
@@ -271,7 +276,8 @@ impl AsschemaEdit {
                     StructDeclaration::new(declaration.name.clone(), fields),
                     Some(previous_type),
                 ))
-            })?;
+            },
+        )?;
         let receipt = asschema.edit_receipt(Some(MigrationSpec {
             target_type: edit.target_type,
             field_name: edit.field_name,
@@ -286,8 +292,8 @@ impl AsschemaEdit {
         asschema: Asschema,
         edit: AddVariant,
     ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
-        let asschema = AsschemaEditor::new(asschema)
-            .update_enum(edit.target_type.clone(), |declaration| {
+        let asschema =
+            AsschemaEditor::new(asschema).update_enum(edit.target_type.clone(), |declaration| {
                 if declaration
                     .variants
                     .iter()
@@ -334,7 +340,9 @@ impl AsschemaEditor {
     fn update_struct(
         mut self,
         target_type: Name,
-        update: impl FnOnce(&StructDeclaration) -> Result<(StructDeclaration, Option<TypeReference>), SchemaError>,
+        update: impl FnOnce(
+            &StructDeclaration,
+        ) -> Result<(StructDeclaration, Option<TypeReference>), SchemaError>,
     ) -> Result<(Asschema, Option<TypeReference>), SchemaError> {
         let Some(index) = self
             .namespace
@@ -384,9 +392,7 @@ impl AsschemaEditor {
         let declaration = update(declaration)?;
         self.namespace[index] = match visibility {
             crate::Visibility::Public => Declaration::public(TypeDeclaration::Enum(declaration)),
-            crate::Visibility::Private => {
-                Declaration::private(TypeDeclaration::Enum(declaration))
-            }
+            crate::Visibility::Private => Declaration::private(TypeDeclaration::Enum(declaration)),
         };
         Ok(self.into_asschema())
     }
@@ -471,10 +477,7 @@ impl UpgradeObject {
     /// Identity mismatch is a typed failure — if `previous.identity()` is
     /// not equal to `self.previous_identity`, the upgrade is rejected
     /// rather than applied against a schema it was not authored against.
-    pub fn apply(
-        &self,
-        previous: &Asschema,
-    ) -> Result<(Asschema, UpgradeReceipt), SchemaError> {
+    pub fn apply(&self, previous: &Asschema) -> Result<(Asschema, UpgradeReceipt), SchemaError> {
         if previous.identity() != &self.previous_identity {
             return Err(SchemaError::SchemaEditIdentityMismatch {
                 expected: format!(
@@ -551,6 +554,13 @@ impl Asschema {
         let input = self.input().clone();
         let output = self.output().clone();
         let namespace = self.namespace().to_vec();
-        Self::new(identity, imports, resolved_imports, input, output, namespace)
+        Self::new(
+            identity,
+            imports,
+            resolved_imports,
+            input,
+            output,
+            namespace,
+        )
     }
 }

@@ -103,21 +103,19 @@ impl SchemaSource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SchemaSourceArtifact {
-    source: SchemaSource,
-}
+pub struct SchemaSourceArtifact(SchemaSource);
 
 impl SchemaSourceArtifact {
     pub fn new(source: SchemaSource) -> Self {
-        Self { source }
+        Self(source)
     }
 
     pub fn source(&self) -> &SchemaSource {
-        &self.source
+        &self.0
     }
 
     pub fn into_source(self) -> SchemaSource {
-        self.source
+        self.0
     }
 
     pub fn from_schema_text(source: &str) -> Result<Self, SchemaError> {
@@ -125,7 +123,7 @@ impl SchemaSourceArtifact {
     }
 
     pub fn to_schema_text(&self) -> String {
-        self.source.to_schema_text()
+        self.0.to_schema_text()
     }
 
     pub fn read_schema_file(path: impl AsRef<Path>) -> Result<Self, SchemaError> {
@@ -143,24 +141,20 @@ impl SchemaSourceArtifact {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct SchemaSourceArtifactPath {
-    path: PathBuf,
-}
+struct SchemaSourceArtifactPath(PathBuf);
 
 impl SchemaSourceArtifactPath {
     fn new(path: &Path) -> Self {
-        Self {
-            path: path.to_path_buf(),
-        }
+        Self(path.to_path_buf())
     }
 
     fn path(&self) -> &Path {
-        &self.path
+        &self.0
     }
 
     fn io_error(&self, error: std::io::Error) -> SchemaError {
         SchemaError::Io {
-            path: self.path.display().to_string(),
+            path: self.0.display().to_string(),
             reason: error.to_string(),
         }
     }
@@ -560,21 +554,19 @@ impl SourceVariantSignature {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SourceVariantName<'source> {
-    value: &'source str,
-}
+struct SourceVariantName<'source>(&'source str);
 
 impl<'source> SourceVariantName<'source> {
     fn new(value: &'source str) -> Self {
-        Self { value }
+        Self(value)
     }
 
     fn is_valid(&self) -> bool {
-        self.value
+        self.0
             .chars()
             .next()
             .is_some_and(|character| character.is_ascii_uppercase())
-            && !self.value.contains('@')
+            && !self.0.contains('@')
     }
 }
 
@@ -666,9 +658,7 @@ impl SourceReference {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SourceAtom<'source> {
-    value: &'source str,
-}
+struct SourceAtom<'source>(&'source str);
 
 impl<'source> SourceAtom<'source> {
     fn from_block(block: &'source Block) -> Result<Self, SchemaError> {
@@ -677,26 +667,24 @@ impl<'source> SourceAtom<'source> {
                 found: SourceBlockNotation::new(block).description(),
             });
         };
-        Ok(Self { value: atom.text() })
+        Ok(Self(atom.text()))
     }
 
     fn into_name(self) -> Name {
-        Name::new(self.value)
+        Name::new(self.0)
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SourceBlockNotation<'source> {
-    block: &'source Block,
-}
+struct SourceBlockNotation<'source>(&'source Block);
 
 impl<'source> SourceBlockNotation<'source> {
     fn new(block: &'source Block) -> Self {
-        Self { block }
+        Self(block)
     }
 
     fn description(&self) -> String {
-        match self.block {
+        match self.0 {
             Block::Delimited { delimiter, .. } => {
                 format!("{} block", delimiter.description())
             }
@@ -707,17 +695,15 @@ impl<'source> SourceBlockNotation<'source> {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SourceRawNotation<'source> {
-    raw: &'source RawNotaDatatype,
-}
+struct SourceRawNotation<'source>(&'source RawNotaDatatype);
 
 impl<'source> SourceRawNotation<'source> {
     fn new(raw: &'source RawNotaDatatype) -> Self {
-        Self { raw }
+        Self(raw)
     }
 
     fn description(&self) -> String {
-        match self.raw {
+        match self.0 {
             RawNotaDatatype::Atom(text) => format!("atom {text}"),
             RawNotaDatatype::Text(_) => "text".to_owned(),
             RawNotaDatatype::Record(_) => "parenthesis record".to_owned(),
@@ -730,19 +716,14 @@ impl<'source> SourceRawNotation<'source> {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SourceSequenceNotation<'source> {
-    sequence: &'source RawNotaSequence,
-}
+struct SourceSequenceNotation<'source>(&'source RawNotaSequence);
 
 impl<'source> SourceSequenceNotation<'source> {
     fn new(sequence: &'source RawNotaSequence) -> Self {
-        Self { sequence }
+        Self(sequence)
     }
 
     fn description(&self) -> String {
-        format!(
-            "parenthesis record with {} objects",
-            self.sequence.items().len()
-        )
+        format!("parenthesis record with {} objects", self.0.items().len())
     }
 }

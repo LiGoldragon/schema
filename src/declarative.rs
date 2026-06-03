@@ -6,10 +6,9 @@ use std::{
 use nota_next::{AtomClassification, Block, Delimiter, Document, NotaEncode, NotaSource};
 
 use crate::{
-    macros::SchemaBlockExt, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
-    MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name,
-    NewtypeDeclaration, SchemaError, SchemaMacroHandler, StructDeclaration, TypeDeclaration,
-    TypeReference,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
+    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
+    SchemaMacroHandler, StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(

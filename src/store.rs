@@ -128,11 +128,11 @@ impl AsschemaStore {
         edit: SchemaEdit,
     ) -> Result<SchemaEditReceipt, SchemaError> {
         let key = AsschemaStoreKey::from_identity(identity);
-        let asschema = self
-            .get_asschema(identity)?
-            .ok_or_else(|| SchemaError::MissingAsschema {
-                key: key.as_str().to_owned(),
-            })?;
+        let asschema =
+            self.get_asschema(identity)?
+                .ok_or_else(|| SchemaError::MissingAsschema {
+                    key: key.as_str().to_owned(),
+                })?;
         let (updated, receipt) = edit.apply_to(asschema)?;
         self.put_asschema(&updated)?;
         Ok(receipt)

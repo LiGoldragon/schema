@@ -53,11 +53,11 @@ fn add_field_lands_new_field_on_target_struct() {
         DefaultValue::Integer(0),
     );
 
-    let (next, receipt) = AsschemaEdit::new(previous, edit).apply().expect("edit applies");
+    let (next, receipt) = AsschemaEdit::new(previous, edit)
+        .apply()
+        .expect("edit applies");
 
-    let entry = next
-        .type_named("Entry")
-        .expect("Entry remains declared");
+    let entry = next.type_named("Entry").expect("Entry remains declared");
     let TypeDeclaration::Struct(structure) = entry else {
         panic!("Entry is a struct");
     };
@@ -86,7 +86,9 @@ fn change_field_type_swaps_topic_to_vector_with_wrap_singleton() {
         FieldMigration::WrapSingleton,
     );
 
-    let (next, receipt) = AsschemaEdit::new(previous, edit).apply().expect("edit applies");
+    let (next, receipt) = AsschemaEdit::new(previous, edit)
+        .apply()
+        .expect("edit applies");
 
     let entry = next.type_named("Entry").expect("Entry remains declared");
     let TypeDeclaration::Struct(structure) = entry else {
@@ -104,7 +106,9 @@ fn change_field_type_swaps_topic_to_vector_with_wrap_singleton() {
         },
         other => panic!("expected Vector<Topic>, found {other:?}"),
     }
-    let migration = receipt.migration_spec.expect("change_field_type carries migration");
+    let migration = receipt
+        .migration_spec
+        .expect("change_field_type carries migration");
     assert!(matches!(migration.migration, FieldMigration::WrapSingleton));
 }
 
@@ -113,7 +117,9 @@ fn add_variant_extends_target_enum() {
     let previous = lower_previous();
     let edit = SchemaEdit::add_variant("Kind", "Reflection", None);
 
-    let (next, receipt) = AsschemaEdit::new(previous, edit).apply().expect("edit applies");
+    let (next, receipt) = AsschemaEdit::new(previous, edit)
+        .apply()
+        .expect("edit applies");
 
     let kind = next.type_named("Kind").expect("Kind remains declared");
     let TypeDeclaration::Enum(enumeration) = kind else {

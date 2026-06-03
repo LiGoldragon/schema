@@ -1,6 +1,7 @@
 use nota_next::{Block, Delimiter, Document, NotaBody};
 
 use crate::{
+    SchemaSource,
     asschema::{
         Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
         NewtypeDeclaration, TypeDeclaration, TypeReference,
@@ -11,7 +12,6 @@ use crate::{
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     resolution::ImportResolver,
-    SchemaSource,
 };
 
 #[derive(
