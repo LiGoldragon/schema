@@ -102,6 +102,48 @@ fn resolver_resolves_import_of_dependency_root_enum() {
 }
 
 #[test]
+fn resolver_preserves_caller_dependencies_through_local_plane_imports() {
+    let runtime_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/nested-runtime");
+    let runtime_package = schema_next::SchemaPackage::new(runtime_root, "nested-runtime", "0.1.0");
+    let resolver = ImportResolver::new().with_dependency(
+        "nested-signal",
+        fixture_schema_dir("nested-signal"),
+        "0.1.0",
+    );
+    let engine = SchemaEngine::default();
+
+    let schemas = runtime_package
+        .lower_modules_with_resolver(&engine, &resolver)
+        .expect("local plane imports keep the dependency resolver");
+
+    let nexus = schemas
+        .iter()
+        .find(|schema| schema.identity().component().as_str() == "nested-runtime:nexus")
+        .expect("nexus schema");
+    assert_eq!(
+        nexus
+            .resolved_imports()
+            .iter()
+            .map(|import| import.source().rust_path())
+            .collect::<Vec<_>>(),
+        vec![
+            "nested_runtime::schema::sema::ReadInput",
+            "nested_runtime::schema::sema::ReadOutput"
+        ]
+    );
+
+    let sema = schemas
+        .iter()
+        .find(|schema| schema.identity().component().as_str() == "nested-runtime:sema")
+        .expect("sema schema");
+    assert_eq!(
+        sema.resolved_imports()[0].source().rust_path(),
+        "nested_signal::schema::lib::Observation"
+    );
+}
+
+#[test]
 fn resolver_rejects_import_of_a_type_the_dependency_does_not_declare() {
     let resolver = ImportResolver::new().with_dependency(
         "marker-core",

@@ -330,6 +330,12 @@ namespace type or an input/output root enum. Root imports matter because daemon
 Nexus and SEMA schemas import the public signal contract roots without
 re-declaring wire types.
 
+Resolving an imported module preserves the caller's resolver. When
+`nexus.schema` imports the local `sema.schema`, and `sema.schema` itself
+imports contract-root types, the SEMA validation runs with the same package
+and dependency map that Nexus received. The resolver is not reset at nested
+module boundaries.
+
 ## Constraints
 
 - `MacroPosition` is passed into both `matches` and `lower`.

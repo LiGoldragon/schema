@@ -203,7 +203,7 @@ impl ImportResolver {
         let source = ImportSource::try_from(source_name)?;
         let package = self.package_for(source.crate_name())?;
         let module_source = package.load_module(source.module().clone())?;
-        let module_schema = module_source.lower(engine)?;
+        let module_schema = module_source.lower_with_resolver(engine, self)?;
         if module_schema
             .declared_type_named(source.type_name().local_part())
             .is_none()
