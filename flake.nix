@@ -26,6 +26,8 @@
         schemaFilter = path: type:
           type == "regular" && (
             pkgs.lib.hasSuffix ".schema" path
+            || pkgs.lib.hasSuffix ".asschema" path
+            || pkgs.lib.hasSuffix ".macro-library" path
           );
         sourceFilter = path: type:
           type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);
@@ -49,11 +51,12 @@
           design-examples = pkgs.runCommand "schema-next-design-examples" { } ''
             grep -R "design_example_schema_document_has_three_roots_or_four_with_imports" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_namespace_brace_contains_key_value_declarations" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_macro_captures_use_dollar_and_dollar_star_sigils" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_type_reference_macro_captures_use_dollar_sigils" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_default_engine_has_two_macro_layers" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_default_engine_uses_strict_structural_macros" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_schema_lowering_records_source_structure_header" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_macro_node_definitions_separate_structural_from_tagged_invocation" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_macro_node_definition_lists_structural_cases" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_schema_node_macro_call_is_tagged_data" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_user_declared_macros_extend_structural_and_named_slots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
@@ -100,7 +103,7 @@
             touch $out
           '';
           no-obsolete-asschema-syntax = pkgs.runCommand "schema-next-no-obsolete-asschema-syntax" { } ''
-            if find ${src} -name '*.asschema' -print -quit | grep .; then
+            if find ${src} -name '*.asschema' ! -path '*/schemas/core.asschema' -print -quit | grep .; then
               echo "obsolete .asschema syntax fixtures must not remain in schema-next" >&2
               exit 1
             fi
@@ -137,7 +140,7 @@
             # `pub struct MacroLibraryData`; both were retired in the
             # collapse, so the assertions are inverted (must NOT contain)
             # and the present canonical nouns are asserted positively.
-            grep -R "MacroLibrary::builtin" ${src}/src/declarative.rs >/dev/null
+            grep -R "pub fn builtin_source" ${src}/src/declarative.rs >/dev/null
             grep -R "pub struct MacroLibrary {" ${src}/src/declarative.rs >/dev/null
             grep -R "pub struct MacroLibraryArtifact {" ${src}/src/declarative.rs >/dev/null
             grep -R "pub enum MacroLibrarySourceEntry {" ${src}/src/declarative.rs >/dev/null
@@ -192,7 +195,12 @@
             grep -R "pub struct SchemaPackage" ${src}/src/module.rs >/dev/null
             grep -R "lib.schema" ${src}/src/module.rs >/dev/null
             grep -R "package_loader_reads_schema_lib_entrypoint" ${src}/tests/lowering.rs >/dev/null
+            grep -R "package_loader_reads_all_schema_modules_in_crate" ${src}/tests/lowering.rs >/dev/null
+            grep -R "resolver_resolves_import_of_dependency_root_enum" ${src}/tests/resolution.rs >/dev/null
             test -f ${src}/tests/fixtures/spirit-crate/schema/lib.schema
+            test -f ${src}/tests/fixtures/plane-crate/schema/signal.schema
+            test -f ${src}/tests/fixtures/plane-crate/schema/nexus.schema
+            test -f ${src}/tests/fixtures/plane-crate/schema/sema.schema
             grep -R "colon_qualified_names_lower_as_schema_names" ${src}/tests/lowering.rs >/dev/null
             touch $out
           '';
@@ -204,7 +212,7 @@
             grep -R "raw_core_schema_fixture_is_legal_nota_before_schema_reading" ${src}/tests/raw_core_schema.rs >/dev/null
             grep -R "raw_core_schema_file_root_name_comes_from_filename" ${src}/tests/raw_core_schema.rs >/dev/null
             grep -R "raw_core_schema_reads_datatype_key_value_map" ${src}/tests/raw_core_schema.rs >/dev/null
-            grep -R "raw_core_schema_preserves_native_key_value_and_pipe_forms" ${src}/tests/raw_core_schema.rs >/dev/null
+            grep -R "raw_core_schema_preserves_native_key_value_and_enum_forms" ${src}/tests/raw_core_schema.rs >/dev/null
             grep -R "RawDatatypeMap" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
             grep -F "{ key Name value RawDatatype }" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
             touch $out

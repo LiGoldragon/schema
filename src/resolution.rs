@@ -7,9 +7,9 @@ use crate::{ImportDeclaration, Name, SchemaEngine, SchemaError, SchemaPackage};
 /// The schema author writes an import target as `crate:module:Type`
 /// in the Imports brace — the same single-colon namespace shape the
 /// rest of the schema stack uses (`signal:public`). `ImportSource`
-/// splits that target into the dependency crate, the module inside
-/// it, and the imported type, so the resolver can find the
-/// dependency's schema file and confirm the type is declared there.
+/// splits that target into the crate, the module inside it, and the imported
+/// type, so the resolver can find the target schema file and confirm the type
+/// is declared there.
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
@@ -82,11 +82,11 @@ impl TryFrom<&Name> for ImportSource {
     }
 }
 
-/// An import declaration resolved against a dependency crate's schema.
+/// An import declaration resolved against a package module schema.
 ///
-/// Resolution confirms the dependency's module schema declares the
-/// imported type, then carries the local alias plus the parsed source
-/// so the Rust emitter can write a `use` aliasing the dependency's
+/// Resolution confirms the module schema declares the imported name as either
+/// an input/output root enum or a namespace type, then carries the local alias
+/// plus the parsed source so the Rust emitter can write a `use` aliasing the
 /// emitted type to the local name — instead of re-declaring the type.
 #[derive(
     rkyv::Archive,
@@ -132,16 +132,16 @@ impl ResolvedImport {
     }
 }
 
-/// Maps a dependency crate name to the schema directory Cargo exposed
-/// for it.
+/// Maps crate names to schema packages that can satisfy imports.
 ///
 /// The consumer's build script reads each dependency's
 /// `DEP_<CRATE>_SCHEMA_DIR` environment variable (set by Cargo for any
-/// `links`-declaring direct dependency) and registers the crate name
-/// against that directory here. During lowering the engine asks the
-/// resolver to turn each `ImportDeclaration` into a `ResolvedImport`,
-/// loading the dependency's schema file to confirm the imported type
-/// is actually declared there.
+/// `links`-declaring direct dependency) and registers the crate name against
+/// that directory here. Package lowering also registers the current crate so
+/// sibling schema files can import each other. During lowering the engine asks
+/// the resolver to turn each `ImportDeclaration` into a `ResolvedImport`,
+/// loading the target schema file to confirm the imported root or namespace
+/// type is actually declared there.
 #[derive(Clone, Debug, Default)]
 pub struct ImportResolver {
     packages: Vec<SchemaPackage>,
@@ -152,13 +152,21 @@ impl ImportResolver {
         Self::default()
     }
 
+    /// Register a package that can satisfy imports. Package self-registration
+    /// lets `schema/nexus.schema` import `schema/signal.schema` inside the same
+    /// daemon crate without pretending each plane is a separate crate.
+    pub fn with_package(mut self, package: SchemaPackage) -> Self {
+        self.packages.push(package);
+        self
+    }
+
     /// Register a dependency crate's schema directory. `schema_dir`
     /// is the directory Cargo exposed through `DEP_<CRATE>_SCHEMA_DIR`
     /// — the dependency's `schema/` folder. The package is rooted at
     /// the directory's parent so `SchemaPackage`'s `schema/` join
     /// lands back on `schema_dir`.
     pub fn with_dependency(
-        mut self,
+        self,
         crate_name: impl Into<String>,
         schema_dir: impl Into<PathBuf>,
         version: impl Into<String>,
@@ -168,9 +176,7 @@ impl ImportResolver {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| schema_dir.clone());
-        self.packages
-            .push(SchemaPackage::new(root, crate_name, version));
-        self
+        self.with_package(SchemaPackage::new(root, crate_name, version))
     }
 
     fn package_for(&self, crate_name: &Name) -> Result<&SchemaPackage, SchemaError> {
@@ -199,7 +205,7 @@ impl ImportResolver {
         let module_source = package.load_module(source.module().clone())?;
         let module_schema = module_source.lower(engine)?;
         if module_schema
-            .type_named(source.type_name().local_part())
+            .declared_type_named(source.type_name().local_part())
             .is_none()
         {
             return Err(SchemaError::ImportedTypeNotFound {

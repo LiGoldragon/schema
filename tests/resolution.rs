@@ -75,6 +75,33 @@ fn resolver_resolves_import_against_dependency_schema_directory() {
 }
 
 #[test]
+fn resolver_resolves_import_of_dependency_root_enum() {
+    let resolver = ImportResolver::new().with_dependency(
+        "plane-crate",
+        fixture_schema_dir("plane-crate"),
+        "0.1.0",
+    );
+    let engine = SchemaEngine::default();
+    let consumer_source = "{ SignalInput plane-crate:signal:Input } [(Observe SignalInput)] [] {}";
+
+    let asschema = engine
+        .lower_source_with_resolver(
+            consumer_source,
+            SchemaIdentity::new("root-import-consumer", "0.1.0"),
+            &mut MacroContext::default(),
+            &resolver,
+        )
+        .expect("consumer schema resolves dependency root imports");
+
+    assert_eq!(asschema.resolved_imports().len(), 1);
+    assert_eq!(
+        asschema.resolved_imports()[0].use_item(),
+        "pub use plane_crate::schema::signal::Input as SignalInput;"
+    );
+    assert!(asschema.type_named("SignalInput").is_none());
+}
+
+#[test]
 fn resolver_rejects_import_of_a_type_the_dependency_does_not_declare() {
     let resolver = ImportResolver::new().with_dependency(
         "marker-core",

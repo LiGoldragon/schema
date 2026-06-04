@@ -305,17 +305,30 @@ instead of constructing the bootstrap registry in Rust.
 
 ## Schema Package Entry
 
-`SchemaPackage` is the first crate-local module loader. It expects a crate root
-with a `schema/` directory and loads `schema/lib.schema` as the entrypoint.
-Additional module schemas are addressed by name through
-`schema/<module>.schema`; colon-qualified module names map to nested paths.
-The loaded module receives an identity such as `spirit-next:lib`.
+`SchemaPackage` is the crate-local module loader. It expects a crate root with
+a `schema/` directory. `load_lib` still loads `schema/lib.schema` as the
+compatibility entrypoint, while `load_modules` scans every `.schema` file under
+`schema/` and derives module identities from relative paths. For example,
+`schema/nexus.schema` becomes `crate-name:nexus`, and
+`schema/internal/effect.schema` becomes `crate-name:internal:effect`.
+Colon-qualified module names keep the inverse mapping through
+`schema/<module>.schema`.
+
+Package lowering self-registers the current package with `ImportResolver`, so
+separate plane files inside one daemon crate can import each other by the same
+single-colon path used for dependency imports. The intended triad daemon shape
+is ordinary crate-local files such as `schema/nexus.schema` and
+`schema/sema.schema`, not per-plane crates. `schema/lib.schema` remains only an
+entrypoint compatibility path for older one-file pilots.
 
 This loader is also the floor for cross-crate import resolution. A consumer
 build script registers dependency schema directories on `ImportResolver`
 (normally from Cargo `DEP_<CRATE>_SCHEMA_DIR` values). `SchemaEngine` then
 turns each import declaration into a resolved import by loading the dependency
-module schema and checking that the imported type is declared there.
+module schema and checking that the imported name is declared there as either a
+namespace type or an input/output root enum. Root imports matter because daemon
+Nexus and SEMA schemas import the public signal contract roots without
+re-declaring wire types.
 
 ## Constraints
 

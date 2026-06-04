@@ -12,8 +12,8 @@ mod upgrade;
 
 pub use asschema::{
     AliasDeclaration, Asschema, AsschemaArtifact, Declaration, EnumDeclaration, EnumVariant,
-    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, SchemaNode, SchemaNodeData,
-    SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, SymbolPath,
+    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, SchemaDeclaredType, SchemaNode,
+    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, SymbolPath,
     SymbolPathPosition, TypeDeclaration, TypeReference, Visibility,
 };
 pub use declarative::{

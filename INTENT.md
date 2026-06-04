@@ -89,8 +89,17 @@ needs that domain noun.*
 *Cross-crate schema imports are resolved through Cargo-exposed dependency
 schema directories, not duplicated locally. A schema import source uses the
 single-colon path `crate:module:Type`; `ImportResolver` loads the dependency's
-schema module, confirms the type is declared there, and records a resolved
-import so Rust emission can reference the dependency type by alias.*
+schema module, confirms the name is declared there as either a namespace type
+or an input/output root enum, and records a resolved import so Rust emission
+can reference the dependency type by alias.*
+
+*A daemon crate may carry multiple plane schema files in its own `schema/`
+directory. `schema/nexus.schema` and `schema/sema.schema` are crate-local
+daemon plane files, not separate crates or repos. `SchemaPackage` loads and
+lowers all `.schema` files in that directory and registers the package with
+the resolver so those plane files can import each other and the contract roots
+through ordinary schema import paths. `schema/lib.schema` remains an older
+single-entry compatibility shape, not the only package model.*
 
 *Assembled schema is defined before authored-schema sugar. `Asschema` is the
 typed macro-free endpoint produced by lowering real `.schema` files, and it is

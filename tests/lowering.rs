@@ -227,6 +227,64 @@ fn package_loader_reads_schema_lib_entrypoint() {
 }
 
 #[test]
+fn package_loader_reads_all_schema_modules_in_crate() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("plane-crate");
+    let package = SchemaPackage::new(root, "plane-crate", "0.1.0");
+    let sources = package.load_modules().expect("load all schema modules");
+
+    assert_eq!(
+        sources
+            .iter()
+            .map(|source| source.identity().component().as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "plane-crate:nexus",
+            "plane-crate:sema",
+            "plane-crate:signal"
+        ]
+    );
+
+    let schemas = package
+        .lower_modules(&SchemaEngine::default())
+        .expect("lower all schema modules with intra-crate imports");
+    let nexus = schemas
+        .iter()
+        .find(|schema| schema.identity().component().as_str() == "plane-crate:nexus")
+        .expect("nexus schema");
+    assert_eq!(nexus.resolved_imports().len(), 2);
+    assert_eq!(
+        nexus
+            .resolved_imports()
+            .iter()
+            .map(|import| import.source().rust_path())
+            .collect::<Vec<_>>(),
+        vec![
+            "plane_crate::schema::signal::Input",
+            "plane_crate::schema::signal::Output",
+        ]
+    );
+    assert_eq!(
+        nexus.input().variants[0]
+            .payload
+            .as_ref()
+            .expect("nexus input payload")
+            .plain_name()
+            .expect("plain nexus input payload")
+            .as_str(),
+        "SignalInput"
+    );
+
+    let sema = schemas
+        .iter()
+        .find(|schema| schema.identity().component().as_str() == "plane-crate:sema")
+        .expect("sema schema");
+    assert!(sema.type_named("Entry").is_some());
+}
+
+#[test]
 fn root_schema_describes_the_schema_root_type() {
     let source = include_str!("../schemas/root.schema");
     let asschema = SchemaEngine::default()

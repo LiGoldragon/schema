@@ -104,6 +104,12 @@ pub enum SymbolPathPosition<'path> {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SchemaDeclaredType<'schema> {
+    Root(&'schema EnumDeclaration),
+    Namespace(&'schema TypeDeclaration),
+}
+
 impl SymbolPath {
     pub fn new(segments: impl IntoIterator<Item = Name>) -> Self {
         Self(segments.into_iter().collect())
@@ -286,6 +292,12 @@ impl Asschema {
             .iter()
             .find(|declaration| declaration.name().as_str() == name)
             .map(Declaration::value)
+    }
+
+    pub fn declared_type_named(&self, name: &str) -> Option<SchemaDeclaredType<'_>> {
+        self.type_named(name)
+            .map(SchemaDeclaredType::Namespace)
+            .or_else(|| self.root_named(name).map(SchemaDeclaredType::Root))
     }
 
     pub fn type_path(&self, type_name: &str) -> Option<SymbolPath> {
