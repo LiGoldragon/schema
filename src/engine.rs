@@ -210,6 +210,41 @@ impl From<nota_next::NotaDecodeError> for SchemaError {
     }
 }
 
+impl From<nota_next::MacroError> for SchemaError {
+    fn from(value: nota_next::MacroError) -> Self {
+        match value {
+            nota_next::MacroError::NoMatch {
+                position,
+                expected,
+                found,
+                ..
+            } => Self::UnsupportedMacroNodeStructure {
+                position,
+                expected,
+                found,
+            },
+            nota_next::MacroError::Conflict(conflict) => Self::UnsupportedMacroNodeStructure {
+                position: "structural macro registry".to_owned(),
+                expected: vec![format!(
+                    "non-conflicting macro cases, found conflict between {} and {}",
+                    conflict.first(),
+                    conflict.second()
+                )],
+                found: "conflicting structural macro definitions".to_owned(),
+            },
+        }
+    }
+}
+
+impl From<nota_next::StructuralMacroError<SchemaError>> for SchemaError {
+    fn from(value: nota_next::StructuralMacroError<SchemaError>) -> Self {
+        match value {
+            nota_next::StructuralMacroError::Dispatch(error) => Self::from(error),
+            nota_next::StructuralMacroError::MatchedNode(error) => error,
+        }
+    }
+}
+
 impl std::fmt::Display for SchemaError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{self:?}")

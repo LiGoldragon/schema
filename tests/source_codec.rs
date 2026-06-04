@@ -1,6 +1,8 @@
 use std::fs;
 
-use schema_next::{SchemaEngine, SchemaIdentity, SchemaSourceArtifact, TypeDeclaration};
+use schema_next::{
+    SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, TypeDeclaration,
+};
 
 #[test]
 fn schema_source_artifact_round_trips_module_source_text() {
@@ -129,5 +131,97 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
             ("Lookup", schema_next::Visibility::Public),
             ("Count", schema_next::Visibility::Public),
         ]
+    );
+}
+
+#[test]
+fn source_enum_variants_are_typed_structural_macro_nodes() {
+    let source = "{}\n[Reserved (Record Entry) (Inline { Topic * })]\n[]\n{\n  Entry { Topic * }\n  Topic String\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+
+    assert_eq!(
+        artifact.to_schema_text(),
+        source,
+        "structural enum variant nodes encode back to the same schema source surface"
+    );
+
+    let input_variants = artifact.source().input().body().variants();
+    assert_eq!(input_variants[0].name().as_str(), "Reserved");
+    assert_eq!(input_variants[0].payload(), None);
+    assert_eq!(input_variants[1].name().as_str(), "Record");
+    assert_eq!(
+        input_variants[1].payload(),
+        Some(&schema_next::SourceReference::Plain(
+            schema_next::Name::new("Entry")
+        ))
+    );
+    assert_eq!(input_variants[2].name().as_str(), "Inline");
+    assert_eq!(
+        input_variants[2].payload(),
+        None,
+        "inline declaration payload is not a reference at the source layer"
+    );
+
+    let asschema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+    let variants = asschema
+        .input()
+        .variants
+        .iter()
+        .map(|variant| {
+            (
+                variant.name.as_str(),
+                variant
+                    .payload
+                    .as_ref()
+                    .and_then(schema_next::TypeReference::plain_name)
+                    .map(schema_next::Name::as_str),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        variants,
+        vec![
+            ("Reserved", None),
+            ("Record", Some("Entry")),
+            ("Inline", Some("Inline")),
+        ],
+        "lowering happens after structural variant selection"
+    );
+    assert!(
+        asschema.type_named("Inline").is_some(),
+        "inline structural payload is exported as the variant's same-named type"
+    );
+}
+
+#[test]
+fn source_enum_variant_reports_structural_macro_expected_shapes() {
+    let source = "{}\n[(Record Entry Extra)]\n[]\n{}";
+    let error = SchemaSourceArtifact::from_schema_text(source)
+        .expect_err("three-object variant signature is not a supported structural case");
+
+    let SchemaError::UnsupportedMacroNodeStructure {
+        position,
+        expected,
+        found,
+    } = error
+    else {
+        panic!("expected structural macro-node error, got {error:?}");
+    };
+
+    assert_eq!(position, "EnumVariants");
+    assert_eq!(found, "parenthesis");
+    assert!(
+        expected.iter().any(|case| case.contains("unit variant")),
+        "diagnostic names the unit structural case"
+    );
+    assert!(
+        expected.iter().any(|case| case.contains("data variant")),
+        "diagnostic names the data structural case"
     );
 }

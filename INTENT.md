@@ -283,6 +283,14 @@ macro-node data. Schema still owns schema positions such as
 shapes are `nota-next` patterns with named captures. Schema-next remains the
 semantic consumer that lowers those matches into assembled-schema fragments.*
 
+*Authored schema enum-variant sugar is a typed structural NOTA node. A source
+enum body contains variant-signature objects; schema-next lists their
+structural cases in order through nota-next, lets nota-next select the case,
+then decodes the matched captures into reference payloads, inline declaration
+payloads, or unit/header variants. The same `SourceVariantSignature` writes
+back to the structural schema surface, so this sugar remains specialized NOTA
+rather than a separate lowering language.*
+
 *Declarative macro expansion keeps matched NOTA structure as data through the
 schema lowering path. Atom captures remain `Block` values, rest captures
 remain ordered `Block` vectors, delimited captures expose the matched

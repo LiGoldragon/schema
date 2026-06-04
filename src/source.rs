@@ -3,13 +3,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nota_next::{Block, Delimiter, Document, NotaBody, NotaEncode, NotaString};
+use nota_next::{
+    Block, CaptureName, Delimiter, Document, MacroMatch, NotaBody, NotaEncode, NotaString,
+    StructuralMacroNode,
+};
 
 use crate::{
     AliasDeclaration, Asschema, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RawDatatypeMap, RawNotaDatatype, RawNotaSequence,
-    ResolvedImport, SchemaEngine, SchemaError, SchemaIdentity, StructDeclaration, TypeDeclaration,
-    TypeReference,
+    ImportDeclaration, MacroNodeDefinition as SchemaMacroNodeDefinition, MacroPosition, Name,
+    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, SchemaEngine,
+    SchemaError, SchemaIdentity, StructDeclaration, TypeDeclaration, TypeReference,
+    macros::BlockDebug,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -322,12 +326,16 @@ impl SourceNamespace {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source namespace")?;
-        let map = RawDatatypeMap::from_blocks(body.root_objects())?;
+        if body.root_objects().len() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: body.root_objects().len(),
+            });
+        }
         let mut entries = Vec::new();
-        for entry in map.entries() {
+        for pair in body.root_objects().chunks_exact(2) {
             entries.push(SourceNamespaceEntry {
-                name: entry.name().clone(),
-                value: SourceDeclarationValue::from_raw(entry.datatype())?,
+                name: SourceAtom::from_block(&pair[0])?.into_name(),
+                value: SourceDeclarationValue::from_block(&pair[1])?,
             });
         }
         Ok(Self { entries })
@@ -382,21 +390,28 @@ pub enum SourceDeclarationValue {
 }
 
 impl SourceDeclarationValue {
-    fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        match raw {
-            RawNotaDatatype::Atom(_) | RawNotaDatatype::Record(_) => {
-                Ok(Self::Reference(SourceReference::from_raw(raw)?))
-            }
-            RawNotaDatatype::Text(text) => Ok(Self::Text(text.clone())),
-            RawNotaDatatype::KeyValue(map) => Ok(Self::Struct(SourceStructBody::from_map(map)?)),
-            RawNotaDatatype::Vector(sequence) => {
-                Ok(Self::Enum(SourceEnumBody::from_sequence(sequence)?))
-            }
-            RawNotaDatatype::PipeParenthesis(_) | RawNotaDatatype::PipeBrace(_) => {
-                Err(SchemaError::ExpectedSyntaxDeclaration {
-                    found: SourceRawNotation::new(raw).description(),
-                })
-            }
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        match block {
+            Block::Atom(_)
+            | Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            } => Ok(Self::Reference(SourceReference::from_block(block)?)),
+            Block::PipeText(text) => Ok(Self::Text(text.text.clone())),
+            Block::Delimited {
+                delimiter: Delimiter::Brace,
+                ..
+            } => Ok(Self::Struct(SourceStructBody::from_block(block)?)),
+            Block::Delimited {
+                delimiter: Delimiter::SquareBracket,
+                ..
+            } => Ok(Self::Enum(SourceEnumBody::from_block(block)?)),
+            Block::Delimited {
+                delimiter: Delimiter::PipeParenthesis | Delimiter::PipeBrace,
+                ..
+            } => Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: block.reemit_fallback(),
+            }),
         }
     }
 
@@ -437,13 +452,16 @@ impl SourceStructBody {
         &self.fields
     }
 
-    fn from_map(map: &RawDatatypeMap) -> Result<Self, SchemaError> {
-        let mut fields = Vec::new();
-        for entry in map.entries() {
-            fields.push(SourceField {
-                name: entry.name().clone(),
-                value: SourceFieldValue::from_raw(entry.datatype())?,
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Brace, "source struct body")?;
+        if body.root_objects().len() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: body.root_objects().len(),
             });
+        }
+        let mut fields = Vec::new();
+        for pair in body.root_objects().chunks_exact(2) {
+            fields.push(SourceField::from_pair(&pair[0], &pair[1])?);
         }
         Ok(Self { fields })
     }
@@ -531,6 +549,13 @@ impl SourceField {
         format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
     }
 
+    fn from_pair(name: &Block, value: &Block) -> Result<Self, SchemaError> {
+        Ok(Self {
+            name: SourceAtom::from_block(name)?.into_name(),
+            value: SourceFieldValue::from_block(value)?,
+        })
+    }
+
     fn to_lowered_field(
         &self,
         resolver: &SourceTypeResolver,
@@ -591,13 +616,13 @@ pub enum SourceFieldValue {
 }
 
 impl SourceFieldValue {
-    fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        if raw.as_atom() == Some("*") {
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        if block.demote_to_string() == Some("*") {
             return Ok(Self::Derived);
         }
-        match SourceReference::from_raw(raw) {
+        match SourceReference::from_block(block) {
             Ok(reference) => Ok(Self::Reference(reference)),
-            Err(_) => SourceDeclarationValue::from_raw(raw).map(Self::Declaration),
+            Err(_) => SourceDeclarationValue::from_block(block).map(Self::Declaration),
         }
     }
 
@@ -622,14 +647,13 @@ impl SourceEnumBody {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::SquareBracket, "source enum body")?;
-        let sequence = RawNotaSequence::from_blocks(body.root_objects())?;
-        Self::from_sequence(&sequence)
+        Self::from_blocks(body.root_objects())
     }
 
-    fn from_sequence(sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
+    fn from_blocks(blocks: &[Block]) -> Result<Self, SchemaError> {
         let mut variants = Vec::new();
-        for item in sequence.items() {
-            variants.push(SourceVariantSignature::from_raw(item)?);
+        for block in blocks {
+            variants.push(SourceVariantSignature::from_block(block)?);
         }
         Ok(Self { variants })
     }
@@ -708,45 +732,8 @@ impl SourceVariantSignature {
         }
     }
 
-    fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        if let Some(name) = raw.as_atom() {
-            if SourceVariantName::new(name).is_valid() {
-                return Ok(Self {
-                    name: Name::new(name),
-                    payload: None,
-                });
-            }
-            return Err(SchemaError::ExpectedSyntaxEnumVariant {
-                found: SourceRawNotation::new(raw).description(),
-            });
-        }
-
-        let Some(sequence) = raw.as_record() else {
-            return Err(SchemaError::ExpectedSyntaxEnumVariant {
-                found: SourceRawNotation::new(raw).description(),
-            });
-        };
-        if sequence.items().len() != 2 {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form: "data-carrying enum variant",
-                expected: "tag plus one payload object",
-                found: sequence.items().len(),
-            });
-        }
-        let Some(name) = sequence.items()[0].as_atom() else {
-            return Err(SchemaError::ExpectedSymbol {
-                found: SourceRawNotation::new(&sequence.items()[0]).description(),
-            });
-        };
-        if !SourceVariantName::new(name).is_valid() {
-            return Err(SchemaError::ExpectedSyntaxEnumVariant {
-                found: SourceRawNotation::new(&sequence.items()[0]).description(),
-            });
-        }
-        Ok(Self {
-            name: Name::new(name),
-            payload: Some(SourceVariantPayload::from_raw(&sequence.items()[1])?),
-        })
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        Self::from_structural_block(block).map_err(SchemaError::from)
     }
 
     fn to_schema_text(&self) -> String {
@@ -810,6 +797,81 @@ impl SourceVariantSignature {
     }
 }
 
+impl StructuralMacroNode for SourceVariantSignature {
+    type Error = SchemaError;
+
+    fn structural_position() -> nota_next::PositionPredicate {
+        MacroPosition::EnumVariants.position_predicate()
+    }
+
+    fn structural_variants() -> Vec<nota_next::MacroNodeDefinition> {
+        SchemaMacroNodeDefinition::enum_variants().cases().to_vec()
+    }
+
+    fn from_structural_match(matched: MacroMatch<'_>) -> Result<Self, Self::Error> {
+        match matched.macro_name() {
+            "unit variant" => {
+                let variant_name = SourceVariantMatch::new(&matched).name("variant_name")?;
+                Ok(Self {
+                    name: variant_name,
+                    payload: None,
+                })
+            }
+            "data variant" => {
+                let variant_match = SourceVariantMatch::new(&matched);
+                Ok(Self {
+                    name: variant_match.name("variant_name")?,
+                    payload: Some(SourceVariantPayload::from_block(
+                        variant_match.block("payload")?,
+                    )?),
+                })
+            }
+            other => Err(SchemaError::MacroDidNotMatch {
+                macro_name: other.to_owned(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        self.to_schema_text()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SourceVariantMatch<'match_value, 'block> {
+    matched: &'match_value MacroMatch<'block>,
+}
+
+impl<'match_value, 'block> SourceVariantMatch<'match_value, 'block> {
+    fn new(matched: &'match_value MacroMatch<'block>) -> Self {
+        Self { matched }
+    }
+
+    fn name(&self, capture_name: &'static str) -> Result<Name, SchemaError> {
+        let block = self.block(capture_name)?;
+        let Some(name) = block.demote_to_string() else {
+            return Err(SchemaError::ExpectedSymbol {
+                found: block.reemit_fallback(),
+            });
+        };
+        if !SourceVariantName::new(name).is_valid() {
+            return Err(SchemaError::ExpectedSyntaxEnumVariant {
+                found: block.reemit_fallback(),
+            });
+        }
+        Ok(Name::new(name))
+    }
+
+    fn block(&self, capture_name: &'static str) -> Result<&'block Block, SchemaError> {
+        let name = CaptureName::new(capture_name);
+        self.matched
+            .block_capture(&name)
+            .ok_or_else(|| SchemaError::MissingMacroBinding {
+                name: capture_name.to_owned(),
+            })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SourceVariantPayload {
     Reference(SourceReference),
@@ -817,10 +879,10 @@ pub enum SourceVariantPayload {
 }
 
 impl SourceVariantPayload {
-    fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        match SourceReference::from_raw(raw) {
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        match SourceReference::from_block(block) {
             Ok(reference) => Ok(Self::Reference(reference)),
-            Err(_) => SourceDeclarationValue::from_raw(raw).map(Self::Declaration),
+            Err(_) => SourceDeclarationValue::from_block(block).map(Self::Declaration),
         }
     }
 
