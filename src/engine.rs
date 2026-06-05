@@ -394,12 +394,15 @@ impl SchemaEngine {
             MacroPosition::RootOutput,
             context,
         )?;
-        let namespace = self.lower_namespace(
-            document
-                .root_object_at(namespace_index)
-                .expect("checked root count"),
-            context,
-        )?;
+        let namespace_block = document
+            .root_object_at(namespace_index)
+            .expect("checked root count");
+        let namespace = self.lower_namespace(namespace_block, context)?;
+        let streams = if NamespaceStreamProbe::new(namespace_block).contains_stream()? {
+            SchemaSource::from_document(document)?.stream_declarations()?
+        } else {
+            Vec::new()
+        };
 
         Ok(Schema::new(
             identity,
@@ -408,7 +411,7 @@ impl SchemaEngine {
             input,
             output,
             namespace,
-            Vec::new(),
+            streams,
         ))
     }
 
@@ -816,6 +819,12 @@ impl<'schema> NamespaceBlock<'schema> {
         context: &mut MacroContext,
         declarations: &mut Vec<Declaration>,
     ) -> Result<(), SchemaError> {
+        if object
+            .pair()
+            .is_some_and(|pair| StreamDefinitionProbe::new(pair.definition).matches())
+        {
+            return Ok(());
+        }
         let inline_start = context.inline_declaration_count();
         match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
             MacroOutput::Type(declaration) => {
@@ -830,6 +839,60 @@ impl<'schema> NamespaceBlock<'schema> {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StreamDefinitionProbe<'schema> {
+    definition: &'schema Block,
+}
+
+impl<'schema> StreamDefinitionProbe<'schema> {
+    fn new(definition: &'schema Block) -> Self {
+        Self { definition }
+    }
+
+    fn matches(&self) -> bool {
+        let Block::Delimited {
+            delimiter: Delimiter::Parenthesis,
+            root_objects,
+            ..
+        } = self.definition
+        else {
+            return false;
+        };
+        root_objects
+            .first()
+            .and_then(Block::demote_to_string)
+            .is_some_and(|head| head == "Stream")
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NamespaceStreamProbe<'schema> {
+    namespace_block: &'schema Block,
+}
+
+impl<'schema> NamespaceStreamProbe<'schema> {
+    fn new(namespace_block: &'schema Block) -> Self {
+        Self { namespace_block }
+    }
+
+    fn contains_stream(&self) -> Result<bool, SchemaError> {
+        let body = NotaBody::from_delimited(
+            self.namespace_block,
+            Delimiter::Brace,
+            "namespace stream probe",
+        )?;
+        if body.root_objects().len() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: body.root_objects().len(),
+            });
+        }
+        Ok(body
+            .root_objects()
+            .chunks_exact(2)
+            .any(|pair| StreamDefinitionProbe::new(&pair[1]).matches()))
     }
 }
 

@@ -89,6 +89,10 @@ impl SchemaSource {
         &self.namespace
     }
 
+    pub fn stream_declarations(&self) -> Result<Vec<StreamDeclaration>, SchemaError> {
+        self.namespace.stream_declarations()
+    }
+
     pub fn to_schema_text(&self) -> String {
         [
             self.imports.to_schema_text(),
