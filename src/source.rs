@@ -626,7 +626,7 @@ impl SourceField {
             SourceFieldValue::Reference(reference) => Ok(SourceLoweredField::new(
                 Vec::new(),
                 FieldDeclaration {
-                    name: self.name.clone(),
+                    name: Name::new(self.name.field_name()),
                     reference: reference.to_type_reference(),
                 },
             )),

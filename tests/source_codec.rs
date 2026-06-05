@@ -47,6 +47,33 @@ fn schema_source_lowers_to_same_schema_as_direct_source() {
 }
 
 #[test]
+fn schema_source_reference_fields_lower_to_canonical_field_names() {
+    let source = "{}\n[]\n[]\n{\n  Topic String\n  RecordIdentifier Integer\n  Entry { recordIdentifier RecordIdentifier byTopic (Map (Topic RecordIdentifier)) }\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+    let Some(TypeDeclaration::Struct(entry)) = schema.type_named("Entry") else {
+        panic!("Entry should lower to a struct");
+    };
+
+    let field_names = entry
+        .fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        field_names,
+        vec!["record_identifier", "by_topic"],
+        "schema-source lowering must preserve canonical derived field names"
+    );
+}
+
+#[test]
 fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
     let source = "{}\n[Lookup Count]\n[Found Counted]\n{\n  Lookup RecordIdentifier\n  Count Query\n  Found Entry\n  Counted Integer\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n  Entry { Topic * }\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
