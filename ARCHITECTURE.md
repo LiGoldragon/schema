@@ -18,10 +18,13 @@
 
 ## Authored Schema Source
 
-`SchemaSource` is the typed authored-language value between a raw
-`nota-next::Document` and assembled `Asschema`. It reads a full schema module
-document — optional imports, input root enum, output root enum, and namespace
-— into source-language nouns:
+`SchemaSource` is the current typed authored-language value produced after raw
+`nota-next::Document` parsing. The target schema pipeline is that authored
+`.schema` deserializes into Rust datatypes that fully define the schema; that
+schema-in-Rust value is rkyv-serializable; and Rust interface code is lowered
+from that typed value. `SchemaSource` reads a full schema module document —
+optional imports, input root enum, output root enum, and namespace — into
+source-language nouns:
 
 - `SourceImports`
 - `SourceRootEnum`
@@ -35,7 +38,7 @@ document — optional imports, input root enum, output root enum, and namespace
 `SchemaSourceArtifact` owns `.schema` text file IO. Its writer emits one
 canonical source projection from the typed source object, and the reader parses
 that projection back through NOTA before rebuilding `SchemaSource`. This is the
-authored-source counterpart to `AsschemaArtifact`: source text is a projection
+authored-source side of the schema-in-Rust pipeline: source text is a projection
 of a typed source object, not a string handed directly to every later stage.
 
 `SchemaModuleSource::lower` now decodes into `SchemaSource` first and lowers
@@ -99,8 +102,9 @@ will consume.
 `Asschema` is the current compatibility data endpoint produced by lowering a
 real `.schema` file. It is not the target intermediate language. The target
 schema path keeps authored schema as specialized NOTA: schema source nodes
-decode and encode through typed structural macro node codecs, and downstream
-consumers operate on those typed source/schema nouns directly.
+decode and encode through typed structural macro node codecs, the
+schema-in-Rust value is rkyv-serializable, and downstream consumers operate on
+those typed source/schema nouns directly.
 
 While the migration is incomplete, `Asschema` remains a live artifact:
 `Asschema::to_nota` writes the assembled schema as legal NOTA,

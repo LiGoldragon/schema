@@ -102,13 +102,15 @@ through ordinary schema import paths. `schema/lib.schema` remains an older
 single-entry compatibility shape, not the only package model.*
 
 *Asschema is no longer the desired intermediate language. The schema stack's
-target is for authored `.schema` to remain specialized NOTA: schema source
-nodes decode and encode through typed structural macro node codecs, and
-downstream consumers operate on those typed source/schema nouns directly. The
-current `Asschema` type, `.asschema` text, `.asschema.rkyv` binary, and
-`AsschemaArtifact` surfaces are compatibility endpoints that remain only until
-schema source node types and Rust emission finish moving onto the structural
-macro-node codec path.*
+target pipeline is: authored `.schema` remains specialized NOTA; it
+deserializes into Rust datatypes that fully define the schema; that
+schema-in-Rust value is rkyv-serializable; and Rust interface code is lowered
+from that typed value. Schema source nodes decode and encode through typed
+structural macro node codecs, and downstream consumers operate on those typed
+source/schema nouns directly. The current `Asschema` type, `.asschema` text,
+`.asschema.rkyv` binary, and `AsschemaArtifact` surfaces are compatibility
+endpoints that remain only until schema source node types and Rust emission
+finish moving onto this schema-in-Rust path.*
 
 *Asschema names are schema symbols, not ordinary string text. A single name
 string that qualifies as a NOTA symbol candidate must emit as a bare symbol
