@@ -101,11 +101,14 @@ the resolver so those plane files can import each other and the contract roots
 through ordinary schema import paths. `schema/lib.schema` remains an older
 single-entry compatibility shape, not the only package model.*
 
-*Assembled schema is defined before authored-schema sugar. `Asschema` is the
-typed macro-free endpoint produced by lowering real `.schema` files, and it is
-itself live data: it must read/write legal NOTA through the shared NOTA codec
-and read/write binary rkyv bytes. Rust emission consumes that assembled data
-object, not hidden parser state or hand-kept assembled-schema text fixtures.*
+*Asschema is no longer the desired intermediate language. The schema stack's
+target is for authored `.schema` to remain specialized NOTA: schema source
+nodes decode and encode through typed structural macro node codecs, and
+downstream consumers operate on those typed source/schema nouns directly. The
+current `Asschema` type, `.asschema` text, `.asschema.rkyv` binary, and
+`AsschemaArtifact` surfaces are compatibility endpoints that remain only until
+schema source node types and Rust emission finish moving onto the structural
+macro-node codec path.*
 
 *Asschema names are schema symbols, not ordinary string text. A single name
 string that qualifies as a NOTA symbol candidate must emit as a bare symbol
@@ -271,11 +274,10 @@ separate source/data enum pair.*
 *The long-term macro-node mechanism belongs at the NOTA layer so other
 consumers can reuse it. Schema-next may host the bootstrap structural cases
 while the stack converges, but the target split is: nota-next owns structural
-macro-node dispatch and typed matches/captures; schema-next registers the
-schema vocabulary and lowers matches into assembled-schema fragments. Built-in
-schema macros load through a serialized macro-library data artifact, with the
-hand-authored macro source kept as a freshness-checked bootstrap source rather
-than as the runtime path.*
+macro-node codec machinery; schema-next owns the schema vocabulary and typed
+source nodes that use it. Built-in schema macros load through a serialized
+macro-library data artifact, with the hand-authored macro source kept as a
+freshness-checked bootstrap source rather than as the runtime path.*
 
 *Schema-next's structural macro-node cases are expressed through nota-next
 macro-node data. Schema still owns schema positions such as

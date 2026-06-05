@@ -267,6 +267,13 @@ impl From<nota_next::StructuralVariantError> for SchemaError {
 impl From<nota_next::StructuralMacroError<SchemaError>> for SchemaError {
     fn from(value: nota_next::StructuralMacroError<SchemaError>) -> Self {
         match value {
+            nota_next::StructuralMacroError::Parse { error } => Self::Nota(error),
+            nota_next::StructuralMacroError::ExpectedSingleRoot { found } => {
+                Self::ExpectedRootObjectCount {
+                    expected: "one structural macro node root object",
+                    found,
+                }
+            }
             nota_next::StructuralMacroError::Dispatch(error) => Self::from(error),
             nota_next::StructuralMacroError::MatchedNode(error) => error,
         }

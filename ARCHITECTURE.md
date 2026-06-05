@@ -1,6 +1,6 @@
 # Architecture
 
-`schema-next` turns NOTA structure into assembled schema.
+`schema-next` turns NOTA structure into typed schema source data.
 
 ## Pipeline
 
@@ -13,7 +13,8 @@
    structural expectations are `nota-next` macro-node definitions: schema-next
    supplies schema positions and handlers, while nota-next supplies pattern
    matching, named captures, and no-match diagnostics.
-5. `Asschema` is emitted as the ordered macro-free endpoint.
+5. The current compatibility path emits `Asschema` as the ordered macro-free
+   endpoint.
 
 ## Authored Schema Source
 
@@ -93,13 +94,19 @@ parenthesis is a tagged node. Those are schema expectations applied by later
 readers. The raw layer only preserves the data object that the schema reader
 will consume.
 
-## Assembled Schema Endpoint
+## Compatibility Asschema Endpoint
 
-`Asschema` is the typed, macro-free data endpoint produced by lowering a real
-`.schema` file. It is also a live artifact: `Asschema::to_nota` writes the
-assembled schema as legal NOTA, `Asschema::from_nota_source` reads that NOTA
-back as the same typed value, and `Asschema::to_binary_bytes` /
-`Asschema::from_binary_bytes` archive and restore the same value through rkyv.
+`Asschema` is the current compatibility data endpoint produced by lowering a
+real `.schema` file. It is not the target intermediate language. The target
+schema path keeps authored schema as specialized NOTA: schema source nodes
+decode and encode through typed structural macro node codecs, and downstream
+consumers operate on those typed source/schema nouns directly.
+
+While the migration is incomplete, `Asschema` remains a live artifact:
+`Asschema::to_nota` writes the assembled schema as legal NOTA,
+`Asschema::from_nota_source` reads that NOTA back as the same typed value, and
+`Asschema::to_binary_bytes` / `Asschema::from_binary_bytes` archive and restore
+the same value through rkyv.
 
 The canonical `.asschema` text is a known-root document, not an outer record:
 the document contains the six `Asschema` root fields in order. The reader uses
@@ -313,10 +320,9 @@ the built-in root imports, root namespace, root enum, and struct-field map
 readers strip matched delimiters before semantic lowering. Authored
 `SchemaSource` enum bodies already route through a typed `StructuralMacroNode`
 consumer over `StructuralVariant` values derived from the shared
-`EnumVariants` case list. The next convergence work is to route the remaining
-successful `MacroMatch` captures directly into schema handlers, then load the
-schema macro vocabulary from serialized Asschema data instead of constructing
-the bootstrap registry in Rust.
+`EnumVariants` case list. The next convergence work is to make the remaining
+schema source nodes structural macro node types, then move consumers off the
+Asschema compatibility endpoint.
 
 ## Schema Package Entry
 

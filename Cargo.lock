@@ -129,8 +129,8 @@ dependencies = [
 
 [[package]]
 name = "nota-next"
-version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#a9a34f6dd3788922a57e6ada3f160f186fe82b9e"
+version = "0.2.1"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f06680555e62a00e7fec12f027e62a892e9cc8e9"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -138,8 +138,8 @@ dependencies = [
 
 [[package]]
 name = "nota-next-derive"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#a9a34f6dd3788922a57e6ada3f160f186fe82b9e"
+version = "0.1.1"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f06680555e62a00e7fec12f027e62a892e9cc8e9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -261,7 +261,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "schema-next"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "nota-next",
  "redb",
