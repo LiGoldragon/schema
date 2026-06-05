@@ -178,6 +178,15 @@ from raw NOTA parsing and separate from `Asschema` serialization: raw NOTA
 preserves delimiter truth, `SchemaSource` preserves authored schema meaning
 and sugar, and `Asschema` is the macro-free assembled program.*
 
+*`SchemaSource` is the schema-in-Rust archive boundary. It is
+rkyv-serializable as typed schema data: imports, root enums, namespace
+declarations, source references, struct fields, enum bodies, and variant
+payloads. Parser spans, raw block notation helpers, structural match wrappers,
+resolvers, and lowering helpers stay transient. A `.schema` source text and a
+schema-source rkyv archive are projections of the same source datatype, while
+Asschema remains only the compatibility lowering projection until Rust emission
+fully consumes source nouns.*
+
 *NOTA delimiters keep structural meaning before schema applies semantic
 expectations. Square brackets are bracket/vector structure at the raw layer,
 but a schema position typed as `String` or a string newtype may read that

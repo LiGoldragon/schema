@@ -135,6 +135,20 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
 }
 
 #[test]
+fn schema_source_artifact_round_trips_through_binary_archive() {
+    let source = "{}\n[(Lookup { RecordIdentifier * }) (Count { Query * })]\n[]\n{\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let bytes = artifact
+        .to_binary_bytes()
+        .expect("schema source artifact archives");
+    let recovered =
+        SchemaSourceArtifact::from_binary_bytes(&bytes).expect("schema source artifact restores");
+
+    assert_eq!(artifact, recovered);
+    assert_eq!(recovered.to_schema_text(), source);
+}
+
+#[test]
 fn source_enum_variants_are_typed_structural_macro_nodes() {
     let source = "{}\n[Reserved (Record Entry) (Inline { Topic * })]\n[]\n{\n  Entry { Topic * }\n  Topic String\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");

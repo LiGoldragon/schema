@@ -4,8 +4,8 @@ use std::{
 };
 
 use nota_next::{
-    Block, CaptureName, Delimiter, Document, MacroMatch, NotaBody, NotaEncode, NotaString,
-    StructuralMacroNode, StructuralVariant,
+    Block, CaptureName, Delimiter, Document, MacroCandidate, MacroMatch, NotaBody, NotaEncode,
+    NotaString, StructuralMacroError, StructuralMacroNode, StructuralVariant, StructuralVariantSet,
 };
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     macros::BlockDebug,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SchemaSource {
     imports: SourceImports,
     input: SourceRootEnum,
@@ -99,6 +99,16 @@ impl SchemaSource {
         .join("\n")
     }
 
+    pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
+        rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|_| SchemaError::ArchiveDecode)
+    }
+
+    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|bytes| bytes.to_vec())
+            .map_err(|_| SchemaError::ArchiveEncode)
+    }
+
     pub fn lower(
         &self,
         engine: &SchemaEngine,
@@ -130,7 +140,7 @@ impl SchemaSource {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SchemaSourceArtifact(SchemaSource);
 
 impl SchemaSourceArtifact {
@@ -152,6 +162,14 @@ impl SchemaSourceArtifact {
 
     pub fn to_schema_text(&self) -> String {
         self.0.to_schema_text()
+    }
+
+    pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
+        SchemaSource::from_binary_bytes(bytes).map(Self::new)
+    }
+
+    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
+        self.0.to_binary_bytes()
     }
 
     pub fn read_schema_file(path: impl AsRef<Path>) -> Result<Self, SchemaError> {
@@ -188,7 +206,7 @@ impl SchemaSourceArtifactPath {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceImports {
     entries: Vec<SourceImport>,
 }
@@ -242,7 +260,7 @@ impl SourceImports {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceImport {
     local_name: Name,
     source: SourceReference,
@@ -273,7 +291,7 @@ impl SourceImport {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceRootEnum {
     name: Name,
     body: SourceEnumBody,
@@ -314,7 +332,7 @@ impl SourceRootEnum {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceNamespace {
     entries: Vec<SourceNamespaceEntry>,
 }
@@ -354,7 +372,7 @@ impl SourceNamespace {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceNamespaceEntry {
     name: Name,
     value: SourceDeclarationValue,
@@ -381,12 +399,23 @@ impl SourceNamespaceEntry {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum SourceDeclarationValue {
     Reference(SourceReference),
     Text(String),
-    Struct(SourceStructBody),
-    Enum(SourceEnumBody),
+    Struct(#[rkyv(omit_bounds)] SourceStructBody),
+    Enum(#[rkyv(omit_bounds)] SourceEnumBody),
 }
 
 impl SourceDeclarationValue {
@@ -442,8 +471,20 @@ impl SourceDeclarationValue {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct SourceStructBody {
+    #[rkyv(omit_bounds)]
     fields: Vec<SourceField>,
 }
 
@@ -530,7 +571,7 @@ impl SourceDelimitedText {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceField {
     name: Name,
     value: SourceFieldValue,
@@ -608,11 +649,22 @@ impl SourceField {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum SourceFieldValue {
     Derived,
     Reference(SourceReference),
-    Declaration(SourceDeclarationValue),
+    Declaration(#[rkyv(omit_bounds)] SourceDeclarationValue),
 }
 
 impl SourceFieldValue {
@@ -635,8 +687,20 @@ impl SourceFieldValue {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct SourceEnumBody {
+    #[rkyv(omit_bounds)]
     variants: Vec<SourceVariantSignature>,
 }
 
@@ -714,9 +778,21 @@ impl SourceEnumBody {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct SourceVariantSignature {
     name: Name,
+    #[rkyv(omit_bounds)]
     payload: Option<SourceVariantPayload>,
 }
 
@@ -813,28 +889,39 @@ impl StructuralMacroNode for SourceVariantSignature {
             .collect()
     }
 
-    fn from_structural_match(matched: MacroMatch<'_>) -> Result<Self, Self::Error> {
-        match matched.macro_name() {
-            "unit variant" => {
-                let variant_name = SourceVariantMatch::new(&matched).name("variant_name")?;
-                Ok(Self {
-                    name: variant_name,
-                    payload: None,
-                })
+    fn from_structural_candidate(
+        candidate: MacroCandidate<'_>,
+    ) -> Result<Self, StructuralMacroError<Self::Error>> {
+        let variants =
+            StructuralVariantSet::new(Self::structural_position(), Self::structural_variants())
+                .map_err(StructuralMacroError::Dispatch)?;
+        let matched = variants
+            .dispatch(&candidate)
+            .map_err(StructuralMacroError::Dispatch)?;
+        (|| -> Result<Self, Self::Error> {
+            match matched.macro_name() {
+                "unit variant" => {
+                    let variant_name = SourceVariantMatch::new(&matched).name("variant_name")?;
+                    Ok(Self {
+                        name: variant_name,
+                        payload: None,
+                    })
+                }
+                "data variant" => {
+                    let variant_match = SourceVariantMatch::new(&matched);
+                    Ok(Self {
+                        name: variant_match.name("variant_name")?,
+                        payload: Some(SourceVariantPayload::from_block(
+                            variant_match.block("payload")?,
+                        )?),
+                    })
+                }
+                other => Err(SchemaError::MacroDidNotMatch {
+                    macro_name: other.to_owned(),
+                }),
             }
-            "data variant" => {
-                let variant_match = SourceVariantMatch::new(&matched);
-                Ok(Self {
-                    name: variant_match.name("variant_name")?,
-                    payload: Some(SourceVariantPayload::from_block(
-                        variant_match.block("payload")?,
-                    )?),
-                })
-            }
-            other => Err(SchemaError::MacroDidNotMatch {
-                macro_name: other.to_owned(),
-            }),
-        }
+        })()
+        .map_err(StructuralMacroError::MatchedNode)
     }
 
     fn to_structural_nota(&self) -> String {
@@ -877,10 +964,21 @@ impl<'match_value, 'block> SourceVariantMatch<'match_value, 'block> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum SourceVariantPayload {
     Reference(SourceReference),
-    Declaration(SourceDeclarationValue),
+    Declaration(#[rkyv(omit_bounds)] SourceDeclarationValue),
 }
 
 impl SourceVariantPayload {
@@ -916,12 +1014,26 @@ impl<'source> SourceVariantName<'source> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub enum SourceReference {
     Plain(Name),
-    Vector(Box<SourceReference>),
-    Optional(Box<SourceReference>),
-    Map(Box<SourceReference>, Box<SourceReference>),
+    Vector(#[rkyv(omit_bounds)] Box<SourceReference>),
+    Optional(#[rkyv(omit_bounds)] Box<SourceReference>),
+    Map(
+        #[rkyv(omit_bounds)] Box<SourceReference>,
+        #[rkyv(omit_bounds)] Box<SourceReference>,
+    ),
 }
 
 impl SourceReference {

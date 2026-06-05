@@ -40,6 +40,12 @@ canonical source projection from the typed source object, and the reader parses
 that projection back through NOTA before rebuilding `SchemaSource`. This is the
 authored-source side of the schema-in-Rust pipeline: source text is a projection
 of a typed source object, not a string handed directly to every later stage.
+`SchemaSource` and `SchemaSourceArtifact` also own the rkyv archive boundary
+for that source value. The binary archive stores the typed schema-in-Rust nouns
+only: imports, root enums, namespace declarations, source references,
+struct-field bodies, enum bodies, and variant payloads. Parser spans, raw block
+helpers, structural match wrappers, and resolver/lowering helpers are not part
+of that archive.
 
 `SchemaModuleSource::lower` now decodes into `SchemaSource` first and lowers
 that typed source object directly through `SchemaEngine`. The lowerer no longer
@@ -110,7 +116,10 @@ While the migration is incomplete, `Asschema` remains a live artifact:
 `Asschema::to_nota` writes the assembled schema as legal NOTA,
 `Asschema::from_nota_source` reads that NOTA back as the same typed value, and
 `Asschema::to_binary_bytes` / `Asschema::from_binary_bytes` archive and restore
-the same value through rkyv.
+the same value through rkyv. New source-facing code should prefer
+`SchemaSource` / `SchemaSourceArtifact` at the authored-schema boundary and
+lower from that value; Asschema is retained as the current compatibility
+projection consumed by older emitters and storage tests.
 
 The canonical `.asschema` text is a known-root document, not an outer record:
 the document contains the six `Asschema` root fields in order. The reader uses
