@@ -55,13 +55,14 @@ source string into the older `(Lookup RecordIdentifier)` pair form.
 
 Enum variant entries in authored source are typed structural NOTA nodes.
 `SourceVariantSignature` implements `nota-next::StructuralMacroNode` and uses
-the same ordered `EnumVariants` structural cases that the schema macro
-registry advertises: a bare PascalCase atom is a unit/header variant, and a
-parenthesized two-object block is a data-carrying variant. After the structural
-case is selected, Schema decodes the captures into either a reference payload
-or an inline declaration payload, and `SchemaSourceArtifact` writes the same
-structural form back out. That keeps schema sugar inside NOTA instead of
-making it a separate one-way lowering language.
+the same ordered `EnumVariants` structural cases as codec-facing
+`nota-next::StructuralVariant` values: a bare PascalCase atom is a unit/header
+variant, and a parenthesized two-object block is a data-carrying variant. After
+the expected enum type selects the structural case, Schema decodes the captures
+into either a reference payload or an inline declaration payload, and
+`SchemaSourceArtifact` writes the same structural form back out. That keeps
+schema sugar inside NOTA instead of making it a separate one-way lowering
+language.
 
 ## Raw Core Schema Reading
 
@@ -311,10 +312,11 @@ cases. Delimited captures from nota-next expose inner `NotaBody` streams, and
 the built-in root imports, root namespace, root enum, and struct-field map
 readers strip matched delimiters before semantic lowering. Authored
 `SchemaSource` enum bodies already route through a typed `StructuralMacroNode`
-consumer over the shared `EnumVariants` case list. The next convergence work
-is to route the remaining successful `MacroMatch` captures directly into
-schema handlers, then load the schema macro vocabulary from serialized
-Asschema data instead of constructing the bootstrap registry in Rust.
+consumer over `StructuralVariant` values derived from the shared
+`EnumVariants` case list. The next convergence work is to route the remaining
+successful `MacroMatch` captures directly into schema handlers, then load the
+schema macro vocabulary from serialized Asschema data instead of constructing
+the bootstrap registry in Rust.
 
 ## Schema Package Entry
 

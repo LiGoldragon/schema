@@ -5,7 +5,7 @@ use std::{
 
 use nota_next::{
     Block, CaptureName, Delimiter, Document, MacroMatch, NotaBody, NotaEncode, NotaString,
-    StructuralMacroNode,
+    StructuralMacroNode, StructuralVariant,
 };
 
 use crate::{
@@ -804,8 +804,13 @@ impl StructuralMacroNode for SourceVariantSignature {
         MacroPosition::EnumVariants.position_predicate()
     }
 
-    fn structural_variants() -> Vec<nota_next::MacroNodeDefinition> {
-        SchemaMacroNodeDefinition::enum_variants().cases().to_vec()
+    fn structural_variants() -> Vec<StructuralVariant> {
+        SchemaMacroNodeDefinition::enum_variants()
+            .cases()
+            .to_vec()
+            .into_iter()
+            .map(StructuralVariant::from_macro_node)
+            .collect()
     }
 
     fn from_structural_match(matched: MacroMatch<'_>) -> Result<Self, Self::Error> {

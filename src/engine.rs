@@ -236,6 +236,34 @@ impl From<nota_next::MacroError> for SchemaError {
     }
 }
 
+impl From<nota_next::StructuralVariantError> for SchemaError {
+    fn from(value: nota_next::StructuralVariantError) -> Self {
+        match value {
+            nota_next::StructuralVariantError::NoMatch {
+                position,
+                expected,
+                found,
+                ..
+            } => Self::UnsupportedMacroNodeStructure {
+                position,
+                expected,
+                found,
+            },
+            nota_next::StructuralVariantError::Conflict(conflict) => {
+                Self::UnsupportedMacroNodeStructure {
+                    position: "structural macro node enum".to_owned(),
+                    expected: vec![format!(
+                        "non-conflicting structural variants, found conflict between {} and {}",
+                        conflict.first(),
+                        conflict.second()
+                    )],
+                    found: "conflicting structural macro node variants".to_owned(),
+                }
+            }
+        }
+    }
+}
+
 impl From<nota_next::StructuralMacroError<SchemaError>> for SchemaError {
     fn from(value: nota_next::StructuralMacroError<SchemaError>) -> Self {
         match value {

@@ -280,16 +280,20 @@ than as the runtime path.*
 *Schema-next's structural macro-node cases are expressed through nota-next
 macro-node data. Schema still owns schema positions such as
 `NamespaceDeclaration`, `StructFields`, and `EnumVariants`, but the accepted
-shapes are `nota-next` patterns with named captures. Schema-next remains the
-semantic consumer that lowers those matches into assembled-schema fragments.*
+shapes are `nota-next` patterns with named captures. For typed source objects,
+schema consumes those cases as `StructuralVariant` data on the expected enum
+codec; the older registry remains a transitional section-lowering engine, not
+the conceptual home of typed macro nodes. Schema-next remains the semantic
+consumer that lowers those matches into assembled-schema fragments.*
 
 *Authored schema enum-variant sugar is a typed structural NOTA node. A source
 enum body contains variant-signature objects; schema-next lists their
-structural cases in order through nota-next, lets nota-next select the case,
-then decodes the matched captures into reference payloads, inline declaration
-payloads, or unit/header variants. The same `SourceVariantSignature` writes
-back to the structural schema surface, so this sugar remains specialized NOTA
-rather than a separate lowering language.*
+structural cases in order through nota-next `StructuralVariant` values, asks
+the `SourceVariantSignature` enum codec to select the case, then decodes the
+matched captures into reference payloads, inline declaration payloads, or
+unit/header variants. The same `SourceVariantSignature` writes back to the
+structural schema surface, so this sugar remains specialized NOTA rather than a
+separate lowering language.*
 
 *Declarative macro expansion keeps matched NOTA structure as data through the
 schema lowering path. Atom captures remain `Block` values, rest captures
