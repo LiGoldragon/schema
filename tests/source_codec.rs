@@ -74,6 +74,34 @@ fn schema_source_reference_fields_lower_to_canonical_field_names() {
 }
 
 #[test]
+fn namespace_enum_bare_variants_do_not_resolve_to_same_named_payloads() {
+    let source =
+        "{}\n[]\n[]\n{\n  Correction { Topic * }\n  Topic String\n  Kind [Decision Correction]\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+    let Some(TypeDeclaration::Enum(kind)) = schema.type_named("Kind") else {
+        panic!("Kind should lower to an enum");
+    };
+
+    let variants = kind
+        .variants
+        .iter()
+        .map(|variant| (variant.name.as_str(), variant.payload.as_ref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        variants,
+        vec![("Decision", None), ("Correction", None)],
+        "bare namespace enum variants stay unit variants even when same-named schema types exist"
+    );
+}
+
+#[test]
 fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
     let source = "{}\n[Lookup Count]\n[Found Counted]\n{\n  Lookup RecordIdentifier\n  Count Query\n  Found Entry\n  Counted Integer\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n  Entry { Topic * }\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");

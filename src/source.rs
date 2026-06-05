@@ -741,7 +741,9 @@ impl SourceEnumBody {
         }
         Ok(SourceDeclarationGroup::new(
             private,
-            TypeDeclaration::Enum(self.to_schema_enum(name, resolver)?),
+            TypeDeclaration::Enum(
+                self.to_schema_enum(name, &SourceVariantPayloadResolution::explicit_only())?,
+            ),
         ))
     }
 
@@ -1133,6 +1135,25 @@ impl SourceReference {
 
 trait SourceVariantResolver {
     fn resolves_variant_payload(&self, name: &Name) -> bool;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SourceVariantPayloadResolution {
+    resolves_bare_names: bool,
+}
+
+impl SourceVariantPayloadResolution {
+    fn explicit_only() -> Self {
+        Self {
+            resolves_bare_names: false,
+        }
+    }
+}
+
+impl SourceVariantResolver for SourceVariantPayloadResolution {
+    fn resolves_variant_payload(&self, _name: &Name) -> bool {
+        self.resolves_bare_names
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
