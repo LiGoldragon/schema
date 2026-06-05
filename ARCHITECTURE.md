@@ -13,8 +13,8 @@
    structural expectations are `nota-next` macro-node definitions: schema-next
    supplies schema positions and handlers, while nota-next supplies pattern
    matching, named captures, and no-match diagnostics.
-5. The current compatibility path emits `Asschema` as the ordered macro-free
-   endpoint.
+5. `SchemaSource` lowers into `Schema`, the ordered semantic schema value used
+   by Rust emission and schema upgrade logic.
 
 ## Authored Schema Source
 
@@ -47,14 +47,13 @@ struct-field bodies, enum bodies, and variant payloads. Parser spans, raw block
 helpers, structural match wrappers, and resolver/lowering helpers are not part
 of that archive.
 
-`SchemaModuleSource::lower` now decodes into `SchemaSource` first and lowers
-that typed source object directly through `SchemaEngine`. The lowerer no longer
-has to render canonical source text and parse it again just to reach
-`Asschema`; package/module callers now have a named source value and a
-round-trippable source artifact before `Asschema`.
+`SchemaModuleSource::lower` decodes into `SchemaSource` first and lowers that
+typed source object directly through `SchemaEngine`. Package/module callers
+therefore have a named source value and a round-trippable source artifact
+before semantic `Schema`.
 
 Root input/output headers are resolved against the typed source namespace before
-assembled schema is emitted. A bare header entry such as `Lookup` remains one
+semantic schema is emitted. A bare header entry such as `Lookup` remains one
 variant-signature object in the bracket vector; if the namespace declares
 `Lookup RecordIdentifier`, the assembled root variant becomes
 `Lookup(Plain Lookup)`, and `Lookup` is an exported newtype object. A
@@ -103,47 +102,32 @@ parenthesis is a tagged node. Those are schema expectations applied by later
 readers. The raw layer only preserves the data object that the schema reader
 will consume.
 
-## Compatibility Asschema Endpoint
+## Semantic Schema
 
-`Asschema` is the current compatibility data endpoint produced by lowering a
-real `.schema` file. It is not the target intermediate language. The target
-schema path keeps authored schema as specialized NOTA: schema source nodes
-decode and encode through typed structural macro node codecs, the
-schema-in-Rust value is rkyv-serializable, and downstream consumers operate on
-those typed source/schema nouns directly.
+`Schema` is the semantic schema-in-Rust value produced by lowering a real
+`.schema` source value. It is not a serialized text artifact and it is not an
+Asschema compatibility projection. Authored `.schema` text remains the NOTA
+projection owned by `SchemaSourceArtifact`; the semantic `Schema` value is the
+typed data object consumed by Rust emission, schema upgrade logic, symbol-path
+queries, and semantic assertions.
 
-While the migration is incomplete, `Asschema` remains a live artifact:
-`Asschema::to_nota` writes the assembled schema as legal NOTA,
-`Asschema::from_nota_source` reads that NOTA back as the same typed value, and
-`Asschema::to_binary_bytes` / `Asschema::from_binary_bytes` archive and restore
-the same value through rkyv. New source-facing code should prefer
-`SchemaSource` / `SchemaSourceArtifact` at the authored-schema boundary and
-lower from that value; Asschema is retained as the current compatibility
-projection consumed by older emitters and storage tests.
-
-The canonical `.asschema` text is a known-root document, not an outer record:
-the document contains the six `Asschema` root fields in order. The reader uses
-the root struct type it was asked to decode, so the fourth and fifth document
-objects are the input and output enum bodies directly. They are not serialized
-as `(Input ...)` or `(Output ...)` records; those names come from the expected
-root fields.
-
-This uses the `nota-next` body codec. `Asschema::from_nota_source` delegates
-to `NotaSource::parse_body`, and `Asschema::to_nota` delegates to the
-`#[nota(known_root)]`-derived body encoder. The root body mechanism belongs to
-NOTA; schema-next only implements the named-field projection that turns the
-input/output body slots into `EnumDeclaration` values named by the root type.
+`Schema` archives through rkyv with `Schema::to_binary_bytes` and
+`Schema::from_binary_bytes`. There is intentionally no `Schema::to_nota`, no
+semantic `.asschema` / `.asschema.rkyv` artifact owner, and no schema store in this
+crate. The removed Asschema text/binary artifact and redb-backed store were
+compatibility endpoints; the current pipeline keeps the text/binary source
+artifact at `SchemaSourceArtifact` and keeps database work in production SEMA
+engines, not in schema-next.
 
 Tests prove the endpoint by asserting the Rust data directly and by
-round-tripping the produced `Asschema` through NOTA and rkyv:
+round-tripping the produced `Schema` through rkyv:
 `Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,
 `TypeDeclaration::{Alias, Struct, Enum, Newtype}` and
 `TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`.
-The previous checked-in assembled-schema text fixture surface stays removed:
-the live serialized form comes from the typed data object, not from hand-kept
-golden `.asschema` text.
+The semantic-schema text fixture surface stays removed: there is no checked
+`.asschema` file and no hand-kept golden semantic-schema text.
 
-Asschema names emit through their own `Name` codec, not through the ordinary
+Schema names emit through their own `Name` codec, not through the ordinary
 `String` codec. A symbol-safe name is written bare (`Entry`,
 `schema:spirit:Entry`) so declarations and references read as schema symbols;
 only non-symbol names fall back to bracket-string text. Actual `String`
@@ -151,8 +135,8 @@ type-reference values still use the normal NOTA string surface at value
 positions.
 
 `SymbolPath` is the typed identity projection for schema positions. It is a
-newtype over ordered `Name` segments and can be derived from an `Asschema`
-root variant, namespace type, struct field, or enum variant. Its NOTA form is
+newtype over ordered `Name` segments and can be derived from a `Schema` root
+variant, namespace type, struct field, or enum variant. Its NOTA form is
 structured data such as `(SymbolPath [spirit-next:lib Input Record])`; its
 human `Display` form may join the same segments as
 `spirit-next:lib/Input/Record`. Trace names, help entries, description
@@ -161,32 +145,10 @@ of inventing ad hoc path strings.
 
 The stored path stays a segment vector so deeper schema positions can grow
 without changing the binary object. Position meaning is recovered through the
-owning schema: `Asschema::symbol_path_position` validates the component segment
+owning schema: `Schema::symbol_path_position` validates the component segment
 and classifies the local path as a namespace type, root variant, struct field,
-or enum variant. Consumers that need role semantics ask the assembled schema
+or enum variant. Consumers that need role semantics ask the semantic schema
 instead of guessing from segment count.
-
-`AsschemaArtifact` is the artifact owner. It wraps the assembled value and
-reads or writes `.asschema` NOTA text plus `.asschema.rkyv` binary bytes. The
-artifact object is the handoff surface for downstream code generation: callers
-may still inspect `artifact.asschema()`, but build paths can now materialize
-and consume the serialized artifact explicitly instead of using a private
-lowerer-to-emitter value.
-
-`schemas/core.asschema` is checked in as the assembled artifact for
-`schemas/core.schema`. Tests lower `core.schema` through the live engine and
-compare the result to the checked-in artifact, then round-trip the artifact
-through NOTA and rkyv. This makes the schema substrate visible in review as
-three data stages: authored `.schema`, assembled `.asschema`, and downstream
-emitted Rust.
-
-`AsschemaStore` is the SEMA persistence surface for assembled schema. It owns a
-redb database, stores rkyv-archived `Asschema` values in the
-`assembled-schemas` table keyed by schema identity, reads them back through the
-same `Asschema::from_binary_bytes` path, and exports `.asschema` NOTA through
-`AsschemaArtifact`. The store does not parse authored schema and does not
-render text itself; it persists binary typed values and delegates projection to
-the artifact object.
 
 Namespace declarations are assembled as ordinary data-carrying visibility
 objects: `(Public Name Value)` for exported top-level types and
@@ -194,17 +156,17 @@ objects: `(Public Name Value)` for exported top-level types and
 dedicated `Declaration` struct today, but the canonical data shape is the same:
 visibility, declared name, and type value.
 
-A bare reference value in asschema is an alias. `Topic String`,
+A bare reference value in schema is an alias. `Topic String`,
 `Lookup RecordIdentifier`, and `Rejected SignalRejection` preserve exported
 schema names without adding nominal Rust wrappers around identical payload
 types.
 
-A struct value in asschema is a field-name -> type-reference map. The Rust
+A struct value in schema is a field-name -> type-reference map. The Rust
 `StructFieldMap` stores the map in source order because generated Rust field
 order and rkyv layout are load-bearing, but the semantic object is the brace
 map shape that authored `{ field Type TypeName * }` struct bodies lower into.
 
-A newtype value in asschema is a single contained type reference, not a
+A newtype value in schema is a single contained type reference, not a
 one-field struct map with an invented field name. Its long form is
 `(Public Topic { String })`, not `(Public Topic { text String })`, and the
 Rust emitter consumes the contained reference directly when emitting a tuple
@@ -237,7 +199,7 @@ the source notation `(SchemaMacro Name Position Pattern Template)` is modeled
 as a tagged source-entry variant carrying a definition payload, not as a bare
 string sentinel or as a second artifact-only enum.
 
-The near target is to lower the core macro schema to asschema data, emit its
+The near target is to lower the core macro schema to schema data, emit its
 Rust type, and replace the hand-written `MacroLibrary` noun with the
 schema-emitted macro table type directly. The macro table is already real
 serializable data and is already the runtime load path; the remaining loop is
@@ -295,7 +257,7 @@ Inline PascalCase declarations are strict pairs inside struct maps:
 module-local `Receipt` type and the containing struct field derives the
 field name `receipt`. Top-level declarations are public; inline PascalCase
 declarations are private and appear before the containing public type in
-`Asschema.namespace`.
+`Schema.namespace`.
 
 The default authored-schema path accepts brace key/value pairs, square-bracket
 enum bodies, parenthesized references, and bare root bracket bodies. Earlier
@@ -308,7 +270,7 @@ the default parser.
 Its structural cases are `nota-next::MacroNodeDefinition` values: each case is
 a serializable pattern over atoms, delimiters, literals, rest captures, and
 named captures. Schema-next contributes the schema `MacroPosition` and the
-handler that turns a match into an `Asschema` fragment; nota-next owns the
+handler that turns a match into an `Schema` fragment; nota-next owns the
 shape matcher.
 
 The namespace declaration node makes the strict brace model executable:
@@ -335,7 +297,7 @@ readers strip matched delimiters before semantic lowering. Authored
 consumer over `StructuralVariant` values derived from the shared
 `EnumVariants` case list. The next convergence work is to make the remaining
 schema source nodes structural macro node types, then move consumers off the
-Asschema compatibility endpoint.
+Schema compatibility endpoint.
 
 ## Schema Package Entry
 
@@ -379,24 +341,22 @@ module boundaries.
   type-body lowering. Concrete macro fields on `SchemaEngine` or root macros
   are not the design.
 - `MacroContext` records positions and applied macro names as diagnostics.
-  Tests prove lowering by asserting on typed `Asschema` data, not by treating
+  Tests prove lowering by asserting on typed `Schema` data, not by treating
   trace strings as the load-bearing witness.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
-- `Asschema` stores the known `Input` and `Output` enum declarations as
+- `Schema` stores the known `Input` and `Output` enum declarations as
   direct fields, then stores visibility-tagged namespace declarations in
   `Vec` order. The two roots are heterogeneous product positions, not a
   homogeneous vector of root wrappers.
-- `AsschemaStore` persists assembled schemas as rkyv bytes in a redb-backed
-  `.sema` database and re-exports NOTA through `AsschemaArtifact`; the store
-  never owns a parallel text format.
-- Active code does not keep hand-written assembled-schema text fixtures.
-  `Asschema` can serialize itself to NOTA and rkyv after lowering, and tests
-  read those serialized forms back through the same typed object.
-- Checked-in core artifacts are allowed because they are first-class pipeline
-  outputs, not hand-maintained witness text. `schemas/core.asschema` and
-  `schemas/builtin-macros.macro-library` are freshness-checked against their
-  source inputs and consumed through typed artifact objects.
+- Active code does not keep hand-written semantic-schema text fixtures and
+  does not expose a semantic-schema store. `Schema` can serialize itself to
+  rkyv after lowering; source text and source rkyv archives are owned by
+  `SchemaSourceArtifact`.
+- Checked-in artifacts are limited to authored schema source and macro-library
+  artifacts. `schemas/core.schema` and `schemas/builtin-macros.macro-library`
+  are freshness-checked against their source inputs and consumed through typed
+  artifact objects.
 - The root schema is positional. Current MVP shape:
   - field 1: input root enum body, for example `[(Record Entry) Reindex]`
   - field 2: output root enum body, for example `[(Recorded Receipt) (Rejected Rejection)]`
@@ -439,7 +399,7 @@ module boundaries.
   new verb or event, the schema gets the data type first; Rust implements
   behavior on the generated object.
 - Imports and exports are schema objects too. Their paths use the workspace's
-  single-colon namespace (`crate:module:Type`) so assembled schema can mirror
+  single-colon namespace (`crate:module:Type`) so semantic schema can mirror
   the Rust module tree without inheriting Rust's `::` syntax.
 - Cross-crate imports resolve through `ImportResolver`, not ad hoc text
   substitution. A local import alias names a dependency type by
@@ -469,7 +429,7 @@ module boundaries.
   variant payloads, and import sources all lower their type through
   `TypeReference::from_block`.
 - Inline PascalCase declaration pairs insert a private declaration before the
-  containing public declaration in `Asschema.namespace`. `Entry { Receipt
+  containing public declaration in `Schema.namespace`. `Entry { Receipt
   { recordIdentifier RecordIdentifier } later Receipt }` declares private
   `Receipt` first and then public `Entry`, so later fields can reuse the
   inline type by name.

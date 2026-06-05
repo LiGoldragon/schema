@@ -1,4 +1,4 @@
-use schema_next::{MacroLibrary, MacroLibraryArtifact, SchemaEngine, SchemaIdentity};
+use schema_next::{MacroLibrary, MacroLibraryArtifact, SchemaSourceArtifact};
 
 fn main() {
     let macro_library = MacroLibrary::from_source(include_str!("../schemas/builtin-macros.schema"))
@@ -10,12 +10,8 @@ fn main() {
     );
 
     let core_source = include_str!("../schemas/core.schema");
-    let core_asschema = SchemaEngine::default()
-        .lower_source(
-            core_source,
-            SchemaIdentity::new("schema-next:core", "0.1.0"),
-        )
-        .expect("core schema lowers");
-    println!("=== core.asschema ===");
-    println!("{}", core_asschema.to_nota());
+    let core_artifact =
+        SchemaSourceArtifact::from_schema_text(core_source).expect("core schema source decodes");
+    println!("=== core.schema ===");
+    println!("{}", core_artifact.to_schema_text());
 }

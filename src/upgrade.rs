@@ -1,5 +1,5 @@
 use crate::{
-    Asschema, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, Name, SchemaError,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, Name, Schema, SchemaError,
     SchemaIdentity, StructDeclaration, TypeDeclaration, TypeReference,
 };
 
@@ -142,8 +142,8 @@ pub struct SchemaEditReceipt {
     pub migration_spec: Option<MigrationSpec>,
 }
 
-pub struct AsschemaEdit {
-    asschema: Asschema,
+pub struct SchemaEditApplication {
+    schema: Schema,
     edit: SchemaEdit,
 }
 
@@ -188,39 +188,35 @@ impl SchemaEdit {
         })
     }
 
-    pub fn apply_to(
-        self,
-        asschema: Asschema,
-    ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
-        AsschemaEdit::new(asschema, self).apply()
+    pub fn apply_to(self, schema: Schema) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+        SchemaEditApplication::new(schema, self).apply()
     }
 }
 
-impl AsschemaEdit {
-    pub fn new(asschema: Asschema, edit: SchemaEdit) -> Self {
-        Self { asschema, edit }
+impl SchemaEditApplication {
+    pub fn new(schema: Schema, edit: SchemaEdit) -> Self {
+        Self { schema, edit }
     }
 
-    pub fn apply(self) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
-        let Self { asschema, edit } = self;
+    pub fn apply(self) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+        let Self { schema, edit } = self;
         match edit {
-            SchemaEdit::AddField(operation) => Self::apply_add_field(asschema, operation),
+            SchemaEdit::AddField(operation) => Self::apply_add_field(schema, operation),
             SchemaEdit::ChangeFieldType(operation) => {
-                Self::apply_change_field_type(asschema, operation)
+                Self::apply_change_field_type(schema, operation)
             }
-            SchemaEdit::AddVariant(operation) => Self::apply_add_variant(asschema, operation),
+            SchemaEdit::AddVariant(operation) => Self::apply_add_variant(schema, operation),
         }
     }
 
     fn apply_add_field(
-        asschema: Asschema,
+        schema: Schema,
         edit: AddField,
-    ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
+    ) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
         let field_type = edit.field_type.clone();
         let migration = FieldMigration::SetDefault(edit.default_value);
-        let (asschema, previous_type) = AsschemaEditor::new(asschema).update_struct(
-            edit.target_type.clone(),
-            |declaration| {
+        let (schema, previous_type) =
+            SchemaEditor::new(schema).update_struct(edit.target_type.clone(), |declaration| {
                 if declaration
                     .fields
                     .iter()
@@ -240,26 +236,24 @@ impl AsschemaEdit {
                     StructDeclaration::new(declaration.name.clone(), fields),
                     None,
                 ))
-            },
-        )?;
-        let receipt = asschema.edit_receipt(Some(MigrationSpec {
+            })?;
+        let receipt = schema.edit_receipt(Some(MigrationSpec {
             target_type: edit.target_type,
             field_name: edit.field_name,
             previous_type,
             next_type: field_type,
             migration,
         }));
-        Ok((asschema, receipt))
+        Ok((schema, receipt))
     }
 
     fn apply_change_field_type(
-        asschema: Asschema,
+        schema: Schema,
         edit: ChangeFieldType,
-    ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
+    ) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
         let next_type = edit.new_type.clone();
-        let (asschema, previous_type) = AsschemaEditor::new(asschema).update_struct(
-            edit.target_type.clone(),
-            |declaration| {
+        let (schema, previous_type) =
+            SchemaEditor::new(schema).update_struct(edit.target_type.clone(), |declaration| {
                 let mut fields = declaration.fields.entries().to_vec();
                 let Some(field) = fields
                     .iter_mut()
@@ -276,24 +270,23 @@ impl AsschemaEdit {
                     StructDeclaration::new(declaration.name.clone(), fields),
                     Some(previous_type),
                 ))
-            },
-        )?;
-        let receipt = asschema.edit_receipt(Some(MigrationSpec {
+            })?;
+        let receipt = schema.edit_receipt(Some(MigrationSpec {
             target_type: edit.target_type,
             field_name: edit.field_name,
             previous_type,
             next_type,
             migration: edit.migration,
         }));
-        Ok((asschema, receipt))
+        Ok((schema, receipt))
     }
 
     fn apply_add_variant(
-        asschema: Asschema,
+        schema: Schema,
         edit: AddVariant,
-    ) -> Result<(Asschema, SchemaEditReceipt), SchemaError> {
-        let asschema =
-            AsschemaEditor::new(asschema).update_enum(edit.target_type.clone(), |declaration| {
+    ) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+        let schema =
+            SchemaEditor::new(schema).update_enum(edit.target_type.clone(), |declaration| {
                 if declaration
                     .variants
                     .iter()
@@ -311,12 +304,12 @@ impl AsschemaEdit {
                 });
                 Ok(EnumDeclaration::new(declaration.name.clone(), variants))
             })?;
-        let receipt = asschema.edit_receipt(None);
-        Ok((asschema, receipt))
+        let receipt = schema.edit_receipt(None);
+        Ok((schema, receipt))
     }
 }
 
-struct AsschemaEditor {
+struct SchemaEditor {
     identity: SchemaIdentity,
     imports: Vec<crate::ImportDeclaration>,
     resolved_imports: Vec<crate::ResolvedImport>,
@@ -325,15 +318,15 @@ struct AsschemaEditor {
     namespace: Vec<Declaration>,
 }
 
-impl AsschemaEditor {
-    fn new(asschema: Asschema) -> Self {
+impl SchemaEditor {
+    fn new(schema: Schema) -> Self {
         Self {
-            identity: asschema.identity().clone(),
-            imports: asschema.imports().to_vec(),
-            resolved_imports: asschema.resolved_imports().to_vec(),
-            input: asschema.input().clone(),
-            output: asschema.output().clone(),
-            namespace: asschema.namespace().to_vec(),
+            identity: schema.identity().clone(),
+            imports: schema.imports().to_vec(),
+            resolved_imports: schema.resolved_imports().to_vec(),
+            input: schema.input().clone(),
+            output: schema.output().clone(),
+            namespace: schema.namespace().to_vec(),
         }
     }
 
@@ -343,7 +336,7 @@ impl AsschemaEditor {
         update: impl FnOnce(
             &StructDeclaration,
         ) -> Result<(StructDeclaration, Option<TypeReference>), SchemaError>,
-    ) -> Result<(Asschema, Option<TypeReference>), SchemaError> {
+    ) -> Result<(Schema, Option<TypeReference>), SchemaError> {
         let Some(index) = self
             .namespace
             .iter()
@@ -366,14 +359,14 @@ impl AsschemaEditor {
                 Declaration::private(TypeDeclaration::Struct(declaration))
             }
         };
-        Ok((self.into_asschema(), previous_type))
+        Ok((self.into_schema(), previous_type))
     }
 
     fn update_enum(
         mut self,
         target_type: Name,
         update: impl FnOnce(&EnumDeclaration) -> Result<EnumDeclaration, SchemaError>,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         let Some(index) = self
             .namespace
             .iter()
@@ -394,11 +387,11 @@ impl AsschemaEditor {
             crate::Visibility::Public => Declaration::public(TypeDeclaration::Enum(declaration)),
             crate::Visibility::Private => Declaration::private(TypeDeclaration::Enum(declaration)),
         };
-        Ok(self.into_asschema())
+        Ok(self.into_schema())
     }
 
-    fn into_asschema(self) -> Asschema {
-        Asschema::new(
+    fn into_schema(self) -> Schema {
+        Schema::new(
             self.identity,
             self.imports,
             self.resolved_imports,
@@ -409,7 +402,7 @@ impl AsschemaEditor {
     }
 }
 
-impl Asschema {
+impl Schema {
     fn edit_receipt(&self, migration_spec: Option<MigrationSpec>) -> SchemaEditReceipt {
         SchemaEditReceipt {
             schema_identity: self.identity().clone(),
@@ -426,7 +419,7 @@ impl Asschema {
 ///
 /// Per designer 447 §"Block 1": this is the typed object an
 /// `UpgradeSchema(UpgradeObject)` signal payload carries. Applying it to
-/// the stored asschema returns the new asschema + the receipts every
+/// the stored schema returns the new schema + the receipts every
 /// operation produced, in the order applied.
 #[derive(
     rkyv::Archive,
@@ -471,13 +464,13 @@ impl UpgradeObject {
     }
 
     /// Apply every edit in order against `previous`, returning the new
-    /// asschema stamped with `next_identity` and the receipts every edit
+    /// schema stamped with `next_identity` and the receipts every edit
     /// produced.
     ///
     /// Identity mismatch is a typed failure — if `previous.identity()` is
     /// not equal to `self.previous_identity`, the upgrade is rejected
     /// rather than applied against a schema it was not authored against.
-    pub fn apply(&self, previous: &Asschema) -> Result<(Asschema, UpgradeReceipt), SchemaError> {
+    pub fn apply(&self, previous: &Schema) -> Result<(Schema, UpgradeReceipt), SchemaError> {
         if previous.identity() != &self.previous_identity {
             return Err(SchemaError::SchemaEditIdentityMismatch {
                 expected: format!(
@@ -492,20 +485,20 @@ impl UpgradeObject {
                 ),
             });
         }
-        let mut asschema = previous.clone();
+        let mut schema = previous.clone();
         let mut edit_receipts = Vec::with_capacity(self.edits.len());
         for edit in &self.edits {
-            let (next, receipt) = AsschemaEdit::new(asschema, edit.clone()).apply()?;
-            asschema = next;
+            let (next, receipt) = SchemaEditApplication::new(schema, edit.clone()).apply()?;
+            schema = next;
             edit_receipts.push(receipt);
         }
-        let asschema = asschema.with_identity(self.next_identity.clone());
+        let schema = schema.with_identity(self.next_identity.clone());
         let upgrade_receipt = UpgradeReceipt {
             previous_identity: self.previous_identity.clone(),
             next_identity: self.next_identity.clone(),
             edit_receipts,
         };
-        Ok((asschema, upgrade_receipt))
+        Ok((schema, upgrade_receipt))
     }
 }
 
@@ -543,10 +536,10 @@ impl UpgradeReceipt {
     }
 }
 
-impl Asschema {
-    /// Replace this asschema's identity with a new version stamp without
+impl Schema {
+    /// Replace this schema's identity with a new version stamp without
     /// changing its declarations. `UpgradeObject::apply` calls this once
-    /// at the end of applying every edit, so the stored asschema records
+    /// at the end of applying every edit, so the stored schema records
     /// the new version.
     pub fn with_identity(self, identity: SchemaIdentity) -> Self {
         let imports = self.imports().to_vec();

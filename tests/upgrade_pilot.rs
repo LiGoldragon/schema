@@ -6,8 +6,8 @@
 //!
 //! Per designer 447 §"Block 1" + §"Block 2": the test demonstrates the
 //! NOTA-to-object correspondence — a NOTA-encoded `UpgradeObject` is
-//! decoded into the typed object, applied against a stored `Asschema`,
-//! and the resulting next-version asschema matches the expected shape.
+//! decoded into the typed object, applied against a stored `Schema`,
+//! and the resulting next-version schema matches the expected shape.
 //!
 //! Coverage:
 //!  - AddField produces the expected next-version field.
@@ -16,8 +16,8 @@
 //!  - `UpgradeObject::apply` chains edits and rejects identity mismatch.
 
 use schema_next::{
-    AsschemaEdit, DefaultValue, FieldMigration, Name, SchemaEdit, SchemaEngine, SchemaError,
-    SchemaIdentity, TypeDeclaration, TypeReference, UpgradeObject,
+    DefaultValue, FieldMigration, Name, SchemaEdit, SchemaEditApplication, SchemaEngine,
+    SchemaError, SchemaIdentity, TypeDeclaration, TypeReference, UpgradeObject,
 };
 
 fn entry_schema_source() -> &'static str {
@@ -34,7 +34,7 @@ fn entry_schema_source() -> &'static str {
      }\n"
 }
 
-fn lower_previous() -> schema_next::Asschema {
+fn lower_previous() -> schema_next::Schema {
     SchemaEngine::default()
         .lower_source(
             entry_schema_source(),
@@ -53,7 +53,7 @@ fn add_field_lands_new_field_on_target_struct() {
         DefaultValue::Integer(0),
     );
 
-    let (next, receipt) = AsschemaEdit::new(previous, edit)
+    let (next, receipt) = SchemaEditApplication::new(previous, edit)
         .apply()
         .expect("edit applies");
 
@@ -86,7 +86,7 @@ fn change_field_type_swaps_topic_to_vector_with_wrap_singleton() {
         FieldMigration::WrapSingleton,
     );
 
-    let (next, receipt) = AsschemaEdit::new(previous, edit)
+    let (next, receipt) = SchemaEditApplication::new(previous, edit)
         .apply()
         .expect("edit applies");
 
@@ -117,7 +117,7 @@ fn add_variant_extends_target_enum() {
     let previous = lower_previous();
     let edit = SchemaEdit::add_variant("Kind", "Reflection", None);
 
-    let (next, receipt) = AsschemaEdit::new(previous, edit)
+    let (next, receipt) = SchemaEditApplication::new(previous, edit)
         .apply()
         .expect("edit applies");
 

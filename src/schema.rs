@@ -1,12 +1,8 @@
-use std::{
-    fmt, fs,
-    path::{Path, PathBuf},
-};
+use std::fmt;
 
 use nota_next::{
-    AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaBodyEncode, NotaDecode,
-    NotaDecodeError, NotaEncode, NotaNamedDocumentFieldDecode, NotaNamedDocumentFieldEncode,
-    NotaSource, NotaString,
+    AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaDecode, NotaDecodeError,
+    NotaEncode, NotaString,
 };
 
 use crate::{
@@ -207,30 +203,17 @@ impl fmt::Display for SymbolPath {
     }
 }
 
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-#[nota(known_root)]
-pub struct Asschema {
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct Schema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
-    #[nota(name = "Input")]
     input: EnumDeclaration,
-    #[nota(name = "Output")]
     output: EnumDeclaration,
     namespace: Vec<Declaration>,
 }
 
-impl Asschema {
+impl Schema {
     pub(crate) fn new(
         identity: super::SchemaIdentity,
         imports: Vec<ImportDeclaration>,
@@ -386,16 +369,6 @@ impl Asschema {
         }
     }
 
-    pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
-        NotaSource::new(source)
-            .parse_body()
-            .map_err(SchemaError::from)
-    }
-
-    pub fn to_nota(&self) -> String {
-        self.to_nota_body().to_nota()
-    }
-
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
         rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|_| SchemaError::ArchiveDecode)
     }
@@ -404,91 +377,6 @@ impl Asschema {
         rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AsschemaArtifact {
-    asschema: Asschema,
-}
-
-impl AsschemaArtifact {
-    pub fn new(asschema: Asschema) -> Self {
-        Self { asschema }
-    }
-
-    pub fn asschema(&self) -> &Asschema {
-        &self.asschema
-    }
-
-    pub fn into_asschema(self) -> Asschema {
-        self.asschema
-    }
-
-    pub fn from_nota_source(source: &str) -> Result<Self, SchemaError> {
-        Asschema::from_nota_source(source).map(Self::new)
-    }
-
-    pub fn to_nota_source(&self) -> String {
-        self.asschema.to_nota()
-    }
-
-    pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
-        Asschema::from_binary_bytes(bytes).map(Self::new)
-    }
-
-    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, SchemaError> {
-        self.asschema.to_binary_bytes()
-    }
-
-    pub fn read_nota_file(path: impl AsRef<Path>) -> Result<Self, SchemaError> {
-        let artifact_path = AsschemaArtifactPath::new(path.as_ref());
-        let source = fs::read_to_string(artifact_path.path())
-            .map_err(|error| artifact_path.io_error(error))?;
-        Self::from_nota_source(&source)
-    }
-
-    pub fn write_nota_file(&self, path: impl AsRef<Path>) -> Result<(), SchemaError> {
-        let artifact_path = AsschemaArtifactPath::new(path.as_ref());
-        fs::write(artifact_path.path(), self.to_nota_source())
-            .map_err(|error| artifact_path.io_error(error))
-    }
-
-    pub fn read_binary_file(path: impl AsRef<Path>) -> Result<Self, SchemaError> {
-        let artifact_path = AsschemaArtifactPath::new(path.as_ref());
-        let bytes =
-            fs::read(artifact_path.path()).map_err(|error| artifact_path.io_error(error))?;
-        Self::from_binary_bytes(&bytes)
-    }
-
-    pub fn write_binary_file(&self, path: impl AsRef<Path>) -> Result<(), SchemaError> {
-        let artifact_path = AsschemaArtifactPath::new(path.as_ref());
-        let bytes = self.to_binary_bytes()?;
-        fs::write(artifact_path.path(), bytes).map_err(|error| artifact_path.io_error(error))
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct AsschemaArtifactPath {
-    path: PathBuf,
-}
-
-impl AsschemaArtifactPath {
-    fn new(path: &Path) -> Self {
-        Self {
-            path: path.to_path_buf(),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn io_error(&self, error: std::io::Error) -> SchemaError {
-        SchemaError::Io {
-            path: self.path.display().to_string(),
-            reason: error.to_string(),
-        }
     }
 }
 
@@ -692,7 +580,7 @@ impl StructDeclaration {
     }
 }
 
-/// Ordered key/value representation of a struct definition in asschema.
+/// Ordered key/value representation of a struct definition in schema.
 ///
 /// A struct declaration's long-form data is a brace-map shape:
 /// each field name is the key and each `TypeReference` is the value.
@@ -821,24 +709,6 @@ impl EnumDeclaration {
         self.variants
             .iter()
             .any(|variant| &variant.name == variant_name)
-    }
-}
-
-impl NotaNamedDocumentFieldDecode for EnumDeclaration {
-    fn from_nota_named_document_field(
-        name: &'static str,
-        block: &Block,
-    ) -> Result<Self, NotaDecodeError> {
-        Ok(Self::new(
-            Name::new(name),
-            Vec::<EnumVariant>::from_nota_block(block)?,
-        ))
-    }
-}
-
-impl NotaNamedDocumentFieldEncode for EnumDeclaration {
-    fn to_nota_named_document_field_body(&self) -> String {
-        self.variants.to_nota()
     }
 }
 

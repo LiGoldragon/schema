@@ -5,7 +5,7 @@ edition      = "2024"
 rust-version = "1.85"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/schema-next"
-description  = "Position-aware schema macro engine and assembled schema model."
+description  = "Position-aware schema macro engine and semantic schema model."
 publish      = false
 
 [lib]
@@ -14,7 +14,6 @@ path = "src/lib.rs"
 
 [dependencies]
 nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
-redb = "2.6.3"
 rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 
 [lints.rust]

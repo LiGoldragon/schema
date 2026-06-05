@@ -10,23 +10,21 @@
 //! - Claim 1 — macro-library source/artifact datatype split CLOSED
 //!   (schema-next `99078b20`).
 //! - Claim 4 — strict schema syntax and honest enum bodies CLOSED.
-//! - Claim 5 — Asschema as typed data with NOTA, rkyv, and SEMA projection
-//!   CLOSED.
+//! - Claim 5 — SchemaSource as typed source data plus Schema as typed
+//!   semantic data CLOSED.
 //!
 //! Companion witnesses live in:
-//! - `tests/asschema_definition.rs` — round-trip, store, artifact tests
-//!   (claim 5 substrate).
+//! - `tests/source_codec.rs` — source text and source rkyv round-trip
+//!   witnesses (claim 5 substrate).
 //! - `tests/macro_exploration.rs::retired_duplicate_macro_datatype_names_do_not_return`
 //!   — negative-witness guard for claim 1.
 //! - The flake's `library-mirrors-collapsed` check — Nix-side regression
 //!   guard for claim 1.
 
-use std::path::Path;
-
 use nota_next::{Block, Delimiter, Document};
 use schema_next::{
-    Asschema, AsschemaArtifact, AsschemaStore, MacroLibrary, MacroLibraryArtifact, SchemaEngine,
-    SchemaIdentity, SchemaMacro, TypeDeclaration,
+    MacroLibrary, MacroLibraryArtifact, Schema, SchemaEngine, SchemaIdentity, SchemaMacro,
+    SchemaSourceArtifact, TypeDeclaration,
 };
 
 /// Claim 1 — `MacroLibrary` is one type, not split between source and
@@ -246,29 +244,29 @@ fn spirit_min_input_enum_body_has_parenthesized_data_variants() {
     }
 }
 
-/// Claim 5 — `Asschema` is typed Rust data. The type carries the schema
+/// Claim 5 — `Schema` is typed Rust data. The type carries the schema
 /// identity plus the typed projections of imports, resolved imports, input,
 /// output, and namespace declarations. This is the noun the rest of the
 /// projection chain consumes.
 #[test]
-fn asschema_is_typed_data_with_named_field_accessors() {
+fn schema_is_typed_data_with_named_field_accessors() {
     let source = include_str!("../schemas/core.schema");
-    let asschema: Asschema = SchemaEngine::default()
+    let schema: Schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema-next:core", "0.1.0"))
-        .expect("core schema lowers to typed Asschema data");
+        .expect("core schema lowers to typed Schema data");
 
-    assert_eq!(asschema.identity().component().as_str(), "schema-next:core");
-    assert_eq!(asschema.identity().version(), "0.1.0");
+    assert_eq!(schema.identity().component().as_str(), "schema-next:core");
+    assert_eq!(schema.identity().version(), "0.1.0");
 
-    // Typed accessors — Asschema is a noun with methods, not a string blob.
-    let _: &[schema_next::ImportDeclaration] = asschema.imports();
-    let _: &schema_next::EnumDeclaration = asschema.input();
-    let _: &schema_next::EnumDeclaration = asschema.output();
-    let _: &[schema_next::Declaration] = asschema.namespace();
+    // Typed accessors — Schema is a noun with methods, not a string blob.
+    let _: &[schema_next::ImportDeclaration] = schema.imports();
+    let _: &schema_next::EnumDeclaration = schema.input();
+    let _: &schema_next::EnumDeclaration = schema.output();
+    let _: &[schema_next::Declaration] = schema.namespace();
 
     // The namespace carries typed `Declaration` values; pick one and
     // confirm it lowers into one of the typed variants of `TypeDeclaration`.
-    let any_declaration = asschema
+    let any_declaration = schema
         .namespace()
         .first()
         .expect("core schema has at least one namespace declaration");
@@ -280,122 +278,37 @@ fn asschema_is_typed_data_with_named_field_accessors() {
     }
 }
 
-/// Claim 5 — `Asschema` projects to NOTA text and rkyv bytes; both
-/// projections round-trip. This is the same shape `tests/asschema_definition.rs`
-/// covers more broadly. This witness uses the smaller `core.schema` so the
-/// chain is fast and the assertion is precise.
+/// Claim 5 — authored schema source text projects into a typed
+/// `SchemaSourceArtifact`, and both source text and rkyv source bytes
+/// round-trip. The semantic `Schema` value keeps only the binary archive
+/// projection; the retired `.asschema` NOTA artifact path is absent.
 #[test]
-fn asschema_round_trips_through_nota_and_rkyv() {
+fn schema_source_and_semantic_schema_round_trip_without_asschema_artifacts() {
     let source = include_str!("../schemas/core.schema");
-    let asschema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("schema-next:core", "0.1.0"))
-        .expect("core schema lowers");
+    let source_artifact =
+        SchemaSourceArtifact::from_schema_text(source).expect("core source decodes");
 
-    // NOTA projection round-trips.
-    let nota = asschema.to_nota();
-    let from_nota = Asschema::from_nota_source(&nota).expect("emitted NOTA decodes back");
-    assert_eq!(from_nota, asschema);
+    let source_text = source_artifact.to_schema_text();
+    let recovered_source =
+        SchemaSourceArtifact::from_schema_text(&source_text).expect("source text re-decodes");
+    assert_eq!(recovered_source, source_artifact);
 
-    // rkyv projection round-trips.
-    let bytes = asschema
+    let source_bytes = source_artifact
         .to_binary_bytes()
-        .expect("asschema serialises to rkyv bytes");
-    let from_bytes =
-        Asschema::from_binary_bytes(&bytes).expect("rkyv bytes decode back to Asschema");
-    assert_eq!(from_bytes, asschema);
+        .expect("source artifact serialises through rkyv");
+    let recovered_from_source_bytes =
+        SchemaSourceArtifact::from_binary_bytes(&source_bytes).expect("source archive decodes");
+    assert_eq!(recovered_from_source_bytes, source_artifact);
 
-    // The artifact projection holds the same data behind a separate noun.
-    let artifact = AsschemaArtifact::new(asschema.clone());
-    let artifact_bytes = artifact
-        .to_binary_bytes()
-        .expect("artifact serialises through rkyv");
-    let recovered = AsschemaArtifact::from_binary_bytes(&artifact_bytes)
-        .expect("artifact decodes from rkyv bytes");
-    assert_eq!(recovered.asschema(), &asschema);
-}
-
-/// Claim 5 — `AsschemaStore` is the SEMA persistence noun: it writes
-/// archived rkyv bytes into redb, keyed by `SchemaIdentity`, and exports
-/// the stored schema back to NOTA. The store is a real durable substrate,
-/// not a side-effect-free wrapper.
-#[test]
-fn asschema_store_persists_through_redb_and_reexports_nota() {
-    let source = include_str!("../schemas/core.schema");
-    let asschema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("schema-next:core", "0.1.0"))
-        .expect("core schema lowers");
-
-    let store_directory = std::env::temp_dir().join(format!(
-        "schema-next-operator-271-store-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&store_directory);
-    std::fs::create_dir_all(&store_directory).expect("create store directory");
-
-    let store_path = store_directory.join("schemas.sema");
-    let store = AsschemaStore::open(&store_path).expect("AsschemaStore opens at the chosen path");
-
-    assert!(store.is_empty().expect("fresh store is readable"));
-    store
-        .put_asschema(&asschema)
-        .expect("put_asschema writes through the SEMA-storage path");
-    assert_eq!(store.len().expect("store length is queryable"), 1);
-
-    let recovered = store
-        .get_asschema(asschema.identity())
-        .expect("store reads back without error")
-        .expect("the stored schema is present");
-    assert_eq!(recovered, asschema);
-
-    // export_nota_file projects the stored archived value back to NOTA text.
-    let export_path = store_directory.join("exported.asschema");
-    store
-        .export_nota_file(asschema.identity(), &export_path)
-        .expect("store exports back to NOTA text");
-    let exported = std::fs::read_to_string(&export_path).expect("read exported NOTA file");
-    let from_export =
-        Asschema::from_nota_source(&exported).expect("exported NOTA decodes as Asschema");
-    assert_eq!(from_export, asschema);
-
-    drop(store);
-
-    // The on-disk file is a real redb database — the path exists after the
-    // store is dropped. This is the SEMA-persistence witness.
-    assert!(
-        store_path.exists(),
-        "the SEMA database file persists after the store is dropped"
-    );
-
-    let _ = std::fs::remove_dir_all(&store_directory);
-}
-
-/// Claim 5 — The checked-in `core.asschema` artifact is FRESH against the
-/// authored `core.schema`. This is the artifact-discipline claim per
-/// `skills/designer.md` §"Audit precision": the durable `.asschema` file
-/// is the emitter's first-class input, not just a round-trip capability.
-#[test]
-fn checked_in_core_asschema_artifact_matches_lowered_schema() {
-    let lowered = SchemaEngine::default()
-        .lower_source(
-            include_str!("../schemas/core.schema"),
+    let schema = SchemaEngine::default()
+        .lower_schema_source(
+            source_artifact.source(),
             SchemaIdentity::new("schema-next:core", "0.1.0"),
         )
         .expect("core schema lowers");
-    let checked_in_text = include_str!("../schemas/core.asschema");
-    let checked_in = AsschemaArtifact::from_nota_source(checked_in_text)
-        .expect("checked-in core.asschema decodes");
-
-    assert_eq!(
-        checked_in.asschema(),
-        &lowered,
-        "schemas/core.asschema must be refreshed when schema or lowering changes"
-    );
-
-    // The checked-in artifact is also a real file (not just an
-    // include_str path). This confirms the artifact discipline.
-    let schemas_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("schemas");
-    assert!(
-        schemas_dir.join("core.asschema").exists(),
-        "schemas/core.asschema is a real checked-in file"
-    );
+    let bytes = schema
+        .to_binary_bytes()
+        .expect("schema serialises to rkyv bytes");
+    let from_bytes = Schema::from_binary_bytes(&bytes).expect("rkyv bytes decode back to Schema");
+    assert_eq!(from_bytes, schema);
 }

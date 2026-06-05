@@ -9,9 +9,9 @@ use nota_next::{
 };
 
 use crate::{
-    AliasDeclaration, Asschema, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
+    AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
     ImportDeclaration, MacroNodeDefinition as SchemaMacroNodeDefinition, MacroPosition, Name,
-    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, SchemaEngine,
+    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, Schema, SchemaEngine,
     SchemaError, SchemaIdentity, StructDeclaration, TypeDeclaration, TypeReference,
     macros::BlockDebug,
 };
@@ -113,23 +113,23 @@ impl SchemaSource {
         &self,
         engine: &SchemaEngine,
         identity: SchemaIdentity,
-    ) -> Result<crate::Asschema, SchemaError> {
+    ) -> Result<crate::Schema, SchemaError> {
         engine.lower_schema_source(self, identity)
     }
 
-    pub(crate) fn to_asschema(
+    pub(crate) fn to_schema(
         &self,
         identity: SchemaIdentity,
         imports: Vec<ImportDeclaration>,
         resolved_imports: Vec<ResolvedImport>,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         let resolver = SourceTypeResolver::from_source(self);
         let mut namespace = SourceLoweredNamespace::from_source(&self.namespace, &resolver)?;
         namespace.push_public_declarations(self.input.public_inline_declarations(&resolver)?)?;
         namespace.push_public_declarations(self.output.public_inline_declarations(&resolver)?)?;
-        let input = self.input.to_asschema_enum(&namespace)?;
-        let output = self.output.to_asschema_enum(&namespace)?;
-        Ok(Asschema::new(
+        let input = self.input.to_schema_enum(&namespace)?;
+        let output = self.output.to_schema_enum(&namespace)?;
+        Ok(Schema::new(
             identity,
             imports,
             resolved_imports,
@@ -222,10 +222,10 @@ impl SourceImports {
         &self.entries
     }
 
-    pub(crate) fn to_asschema_imports(&self) -> Result<Vec<ImportDeclaration>, SchemaError> {
+    pub(crate) fn to_schema_imports(&self) -> Result<Vec<ImportDeclaration>, SchemaError> {
         self.entries
             .iter()
-            .map(SourceImport::to_asschema_import)
+            .map(SourceImport::to_schema_import)
             .collect()
     }
 
@@ -283,7 +283,7 @@ impl SourceImport {
         )
     }
 
-    fn to_asschema_import(&self) -> Result<ImportDeclaration, SchemaError> {
+    fn to_schema_import(&self) -> Result<ImportDeclaration, SchemaError> {
         Ok(ImportDeclaration {
             local_name: self.local_name.clone(),
             source: self.source.to_type_reference(),
@@ -324,11 +324,11 @@ impl SourceRootEnum {
         Ok(declarations)
     }
 
-    fn to_asschema_enum(
+    fn to_schema_enum(
         &self,
         namespace: &SourceLoweredNamespace,
     ) -> Result<EnumDeclaration, SchemaError> {
-        self.body.to_asschema_enum(self.name.clone(), namespace)
+        self.body.to_schema_enum(self.name.clone(), namespace)
     }
 }
 
@@ -741,7 +741,7 @@ impl SourceEnumBody {
         }
         Ok(SourceDeclarationGroup::new(
             private,
-            TypeDeclaration::Enum(self.to_asschema_enum(name, resolver)?),
+            TypeDeclaration::Enum(self.to_schema_enum(name, resolver)?),
         ))
     }
 
@@ -764,7 +764,7 @@ impl SourceEnumBody {
             .collect()
     }
 
-    fn to_asschema_enum(
+    fn to_schema_enum(
         &self,
         name: Name,
         resolver: &impl SourceVariantResolver,

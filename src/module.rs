@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    Asschema, ImportResolver, Name, SchemaEngine, SchemaError, SchemaIdentity, SchemaSource,
+    ImportResolver, Name, Schema, SchemaEngine, SchemaError, SchemaIdentity, SchemaSource,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,11 +66,11 @@ impl SchemaPackage {
             .collect()
     }
 
-    pub fn lower_lib(&self, engine: &SchemaEngine) -> Result<Asschema, SchemaError> {
+    pub fn lower_lib(&self, engine: &SchemaEngine) -> Result<Schema, SchemaError> {
         self.load_lib()?.lower(engine)
     }
 
-    pub fn lower_modules(&self, engine: &SchemaEngine) -> Result<Vec<Asschema>, SchemaError> {
+    pub fn lower_modules(&self, engine: &SchemaEngine) -> Result<Vec<Schema>, SchemaError> {
         self.lower_modules_with_resolver(engine, &ImportResolver::new())
     }
 
@@ -78,7 +78,7 @@ impl SchemaPackage {
         &self,
         engine: &SchemaEngine,
         resolver: &ImportResolver,
-    ) -> Result<Vec<Asschema>, SchemaError> {
+    ) -> Result<Vec<Schema>, SchemaError> {
         let package_resolver = resolver.clone().with_package(self.clone());
         self.load_modules()?
             .iter()
@@ -196,7 +196,7 @@ impl SchemaModuleSource {
         &self.source
     }
 
-    pub fn lower(&self, engine: &SchemaEngine) -> Result<Asschema, SchemaError> {
+    pub fn lower(&self, engine: &SchemaEngine) -> Result<Schema, SchemaError> {
         engine.lower_schema_source(&self.to_schema_source()?, self.identity.clone())
     }
 
@@ -204,7 +204,7 @@ impl SchemaModuleSource {
         &self,
         engine: &SchemaEngine,
         resolver: &ImportResolver,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         engine.lower_schema_source_with_resolver(
             &self.to_schema_source()?,
             self.identity.clone(),

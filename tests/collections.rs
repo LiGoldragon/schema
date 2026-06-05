@@ -10,7 +10,7 @@
 
 use schema_next::{SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
 
-fn lower(source: &str) -> schema_next::Asschema {
+fn lower(source: &str) -> schema_next::Schema {
     SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("collections:lib", "0.1.0"))
         .expect("schema lowers")
@@ -20,11 +20,11 @@ fn roots(namespace: &str) -> String {
     format!("[] [] {{ {namespace} }}")
 }
 
-fn struct_fields<'asschema>(
-    asschema: &'asschema schema_next::Asschema,
+fn struct_fields<'schema>(
+    schema: &'schema schema_next::Schema,
     name: &str,
-) -> &'asschema [schema_next::FieldDeclaration] {
-    match asschema.type_named(name).expect("type present") {
+) -> &'schema [schema_next::FieldDeclaration] {
+    match schema.type_named(name).expect("type present") {
         TypeDeclaration::Struct(declaration) => &declaration.fields,
         TypeDeclaration::Alias(_) | TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a struct")
@@ -32,11 +32,11 @@ fn struct_fields<'asschema>(
     }
 }
 
-fn single_reference<'asschema>(
-    asschema: &'asschema schema_next::Asschema,
+fn single_reference<'schema>(
+    schema: &'schema schema_next::Schema,
     name: &str,
-) -> &'asschema TypeReference {
-    match asschema.type_named(name).expect("type present") {
+) -> &'schema TypeReference {
+    match schema.type_named(name).expect("type present") {
         TypeDeclaration::Alias(declaration) => &declaration.reference,
         TypeDeclaration::Newtype(declaration) => &declaration.reference,
         TypeDeclaration::Struct(_) | TypeDeclaration::Enum(_) => {
@@ -47,19 +47,19 @@ fn single_reference<'asschema>(
 
 #[test]
 fn vec_field_lowers_to_vector_reference() {
-    let asschema = lower(&roots("Service String Cluster (Vec Service)"));
+    let schema = lower(&roots("Service String Cluster (Vec Service)"));
     assert_eq!(
-        single_reference(&asschema, "Cluster"),
+        single_reference(&schema, "Cluster"),
         &TypeReference::Vector(Box::new(TypeReference::new("Service")))
     );
 }
 
 #[test]
 fn scalar_field_names_lower_to_reserved_references() {
-    let asschema = lower(&roots(
+    let schema = lower(&roots(
         "Entry { string String integer Integer boolean Boolean path Path }",
     ));
-    let fields = struct_fields(&asschema, "Entry");
+    let fields = struct_fields(&schema, "Entry");
     assert_eq!(fields[0].name.as_str(), "string");
     assert_eq!(fields[0].reference, TypeReference::String);
     assert_eq!(fields[1].name.as_str(), "integer");
@@ -72,10 +72,10 @@ fn scalar_field_names_lower_to_reserved_references() {
 
 #[test]
 fn scalar_references_nest_inside_collections() {
-    let asschema = lower(&roots(
+    let schema = lower(&roots(
         "Query { optionalInteger (Optional Integer) stringVector (Vec String) booleanByString (Map (String Boolean)) optionalPath (Optional Path) }",
     ));
-    let fields = struct_fields(&asschema, "Query");
+    let fields = struct_fields(&schema, "Query");
     assert_eq!(
         fields[0].reference,
         TypeReference::Optional(Box::new(TypeReference::Integer))
@@ -115,11 +115,11 @@ fn scalar_names_are_reserved_at_namespace_declaration_position() {
 
 #[test]
 fn key_value_field_lowers_to_map_reference() {
-    let asschema = lower(&roots(
+    let schema = lower(&roots(
         "NodeName String NodeProposal String Cluster (Map (NodeName NodeProposal))",
     ));
     assert_eq!(
-        single_reference(&asschema, "Cluster"),
+        single_reference(&schema, "Cluster"),
         &TypeReference::Map(
             Box::new(TypeReference::new("NodeName")),
             Box::new(TypeReference::new("NodeProposal")),
@@ -129,9 +129,9 @@ fn key_value_field_lowers_to_map_reference() {
 
 #[test]
 fn option_field_lowers_to_optional_reference() {
-    let asschema = lower(&roots("Cache String Cluster (Optional Cache)"));
+    let schema = lower(&roots("Cache String Cluster (Optional Cache)"));
     assert_eq!(
-        single_reference(&asschema, "Cluster"),
+        single_reference(&schema, "Cluster"),
         &TypeReference::Optional(Box::new(TypeReference::new("Cache")))
     );
 }
@@ -172,10 +172,10 @@ fn brace_field_is_not_map_type_syntax() {
 
 #[test]
 fn collection_field_and_plain_field_coexist_in_one_struct() {
-    let asschema = lower(&roots(
+    let schema = lower(&roots(
         "Trust { string String } Service { string String } Cluster { trust Trust serviceVector (Vec Service) optionalTrust (Optional Trust) }",
     ));
-    let fields = struct_fields(&asschema, "Cluster");
+    let fields = struct_fields(&schema, "Cluster");
     // Bare symbol stays the legacy plain field (name derived from type).
     assert_eq!(fields[0].name.as_str(), "trust");
     assert_eq!(fields[0].reference, TypeReference::new("Trust"));
@@ -188,11 +188,11 @@ fn collection_field_and_plain_field_coexist_in_one_struct() {
 #[test]
 fn nested_collections_lower_recursively() {
     // A map whose value is itself a vector of an optional leaf.
-    let asschema = lower(&roots(
+    let schema = lower(&roots(
         "Leaf String Key String Nest (Map (Key (Vec (Optional Leaf))))",
     ));
     assert_eq!(
-        single_reference(&asschema, "Nest"),
+        single_reference(&schema, "Nest"),
         &TypeReference::Map(
             Box::new(TypeReference::new("Key")),
             Box::new(TypeReference::Vector(Box::new(TypeReference::Optional(
@@ -206,10 +206,10 @@ fn nested_collections_lower_recursively() {
 fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
-    let asschema = lower(
+    let schema = lower(
         "[] [(Projected (Map (NodeName NodeConfig)))] { NodeName { string String } NodeConfig { string String } }",
     );
-    let payload = asschema.output().variants[0]
+    let payload = schema.output().variants[0]
         .payload
         .as_ref()
         .expect("projected payload");

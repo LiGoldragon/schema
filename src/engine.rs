@@ -2,14 +2,14 @@ use nota_next::{Block, Delimiter, Document, NotaBody};
 
 use crate::{
     ImportResolver, SchemaSource,
-    asschema::{
-        AliasDeclaration, Asschema, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration,
-        Name, TypeDeclaration, TypeReference,
-    },
     declarative::{AssembledStructBody, AssembledVariants},
     macros::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
+    },
+    schema::{
+        AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
+        Schema, TypeDeclaration, TypeReference,
     },
 };
 
@@ -65,13 +65,6 @@ pub enum SchemaError {
     Io {
         path: String,
         reason: String,
-    },
-    SemaDatabase {
-        operation: SemaDatabaseOperation,
-        reason: String,
-    },
-    MissingAsschema {
-        key: String,
     },
     MalformedSchemaPath {
         path: String,
@@ -187,17 +180,6 @@ pub enum SchemaError {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SemaDatabaseOperation {
-    Open,
-    BeginRead,
-    BeginWrite,
-    OpenTable,
-    Read,
-    Write,
-    Commit,
-}
-
 impl From<nota_next::NotaError> for SchemaError {
     fn from(value: nota_next::NotaError) -> Self {
         Self::Nota(value.to_string())
@@ -309,7 +291,7 @@ impl SchemaEngine {
         &self,
         source: &str,
         identity: SchemaIdentity,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document(&document, identity)
     }
@@ -318,7 +300,7 @@ impl SchemaEngine {
         &self,
         source: &SchemaSource,
         identity: SchemaIdentity,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         self.lower_schema_source_with_resolver(source, identity, &ImportResolver::new())
     }
 
@@ -327,10 +309,10 @@ impl SchemaEngine {
         source: &SchemaSource,
         identity: SchemaIdentity,
         resolver: &ImportResolver,
-    ) -> Result<Asschema, SchemaError> {
-        let imports = source.imports().to_asschema_imports()?;
+    ) -> Result<Schema, SchemaError> {
+        let imports = source.imports().to_schema_imports()?;
         let resolved_imports = resolver.resolve_all(&imports, self)?;
-        source.to_asschema(identity, imports, resolved_imports)
+        source.to_schema(identity, imports, resolved_imports)
     }
 
     pub fn lower_source_with_context(
@@ -338,7 +320,7 @@ impl SchemaEngine {
         source: &str,
         identity: SchemaIdentity,
         context: &mut MacroContext,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document_with_context(&document, identity, context)
     }
@@ -347,7 +329,7 @@ impl SchemaEngine {
         &self,
         document: &Document,
         identity: SchemaIdentity,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         self.lower_document_with_context(document, identity, &mut MacroContext::default())
     }
 
@@ -356,7 +338,7 @@ impl SchemaEngine {
         document: &Document,
         identity: SchemaIdentity,
         context: &mut MacroContext,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         self.lower_document_with_resolver(document, identity, context, &ImportResolver::new())
     }
 
@@ -373,7 +355,7 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
         resolver: &ImportResolver,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         context.remember_structure_header(document.structure_header());
 
         if !matches!(document.holds_root_objects(), 3 | 4) {
@@ -419,7 +401,7 @@ impl SchemaEngine {
             context,
         )?;
 
-        Ok(Asschema::new(
+        Ok(Schema::new(
             identity,
             imports,
             resolved_imports,
@@ -435,7 +417,7 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
         resolver: &ImportResolver,
-    ) -> Result<Asschema, SchemaError> {
+    ) -> Result<Schema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document_with_resolver(&document, identity, context, resolver)
     }

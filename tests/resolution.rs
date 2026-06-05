@@ -48,7 +48,7 @@ fn resolver_resolves_import_against_dependency_schema_directory() {
         std::fs::read_to_string(fixture_schema_dir("import-consumer").join("lib.schema"))
             .expect("read consumer schema");
 
-    let asschema = engine
+    let schema = engine
         .lower_source_with_resolver(
             &consumer_source,
             SchemaIdentity::new("import-consumer", "0.1.0"),
@@ -59,9 +59,9 @@ fn resolver_resolves_import_against_dependency_schema_directory() {
 
     // The imported type is NOT in the consumer's own namespace — it is
     // declared by the dependency crate and only referenced here.
-    assert!(asschema.type_named("DatabaseMarker").is_none());
+    assert!(schema.type_named("DatabaseMarker").is_none());
 
-    let resolved = asschema.resolved_imports();
+    let resolved = schema.resolved_imports();
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].local_name().as_str(), "DatabaseMarker");
     assert_eq!(
@@ -84,7 +84,7 @@ fn resolver_resolves_import_of_dependency_root_enum() {
     let engine = SchemaEngine::default();
     let consumer_source = "{ SignalInput plane-crate:signal:Input } [(Observe SignalInput)] [] {}";
 
-    let asschema = engine
+    let schema = engine
         .lower_source_with_resolver(
             consumer_source,
             SchemaIdentity::new("root-import-consumer", "0.1.0"),
@@ -93,12 +93,12 @@ fn resolver_resolves_import_of_dependency_root_enum() {
         )
         .expect("consumer schema resolves dependency root imports");
 
-    assert_eq!(asschema.resolved_imports().len(), 1);
+    assert_eq!(schema.resolved_imports().len(), 1);
     assert_eq!(
-        asschema.resolved_imports()[0].use_item(),
+        schema.resolved_imports()[0].use_item(),
         "pub use plane_crate::schema::signal::Input as SignalInput;"
     );
-    assert!(asschema.type_named("SignalInput").is_none());
+    assert!(schema.type_named("SignalInput").is_none());
 }
 
 #[test]

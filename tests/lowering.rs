@@ -5,25 +5,25 @@ use schema_next::{
 };
 
 #[test]
-fn lowers_spirit_schema_into_ordered_asschema() {
+fn lowers_spirit_schema_into_ordered_schema() {
     let source = include_str!("../schemas/spirit-min.schema");
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("spirit", "0.1.0"))
         .expect("schema lowers");
 
-    assert_eq!(asschema.imports().len(), 0);
-    assert_eq!(asschema.input().name.as_str(), "Input");
-    assert_eq!(asschema.output().name.as_str(), "Output");
+    assert_eq!(schema.imports().len(), 0);
+    assert_eq!(schema.input().name.as_str(), "Input");
+    assert_eq!(schema.output().name.as_str(), "Output");
     assert_eq!(
-        asschema.root_named("Input").expect("input root").variants[0]
+        schema.root_named("Input").expect("input root").variants[0]
             .name
             .as_str(),
         "Record"
     );
-    assert_eq!(asschema.input().name.as_str(), "Input");
-    assert_eq!(asschema.input().variants[0].name.as_str(), "Record");
+    assert_eq!(schema.input().name.as_str(), "Input");
+    assert_eq!(schema.input().variants[0].name.as_str(), "Record");
     assert_eq!(
-        asschema.input().variants[0]
+        schema.input().variants[0]
             .payload
             .as_ref()
             .expect("payload")
@@ -33,7 +33,7 @@ fn lowers_spirit_schema_into_ordered_asschema() {
         "Entry"
     );
     assert_eq!(
-        asschema
+        schema
             .namespace()
             .iter()
             .map(|declaration| declaration.name().as_str())
@@ -55,16 +55,16 @@ fn lowers_spirit_schema_into_ordered_asschema() {
 #[test]
 fn strict_key_value_declarations_lower_to_structs_and_enums() {
     let source = "[] [] { Entry { topic Topic kind Kind } Kind [Decision Constraint] }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
 
     assert!(matches!(
-        asschema.namespace()[0].value(),
+        schema.namespace()[0].value(),
         TypeDeclaration::Struct(_)
     ));
     assert!(matches!(
-        asschema.namespace()[1].value(),
+        schema.namespace()[1].value(),
         TypeDeclaration::Enum(_)
     ));
 }
@@ -72,16 +72,16 @@ fn strict_key_value_declarations_lower_to_structs_and_enums() {
 #[test]
 fn bare_reference_declarations_lower_to_aliases() {
     let source = "[] [] { Topic String Topics (Vec Topic) }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("alias forms lower");
 
-    let TypeDeclaration::Alias(topic) = asschema.type_named("Topic").expect("topic type") else {
+    let TypeDeclaration::Alias(topic) = schema.type_named("Topic").expect("topic type") else {
         panic!("Topic should be an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
 
-    let TypeDeclaration::Alias(topics) = asschema.type_named("Topics").expect("topics type") else {
+    let TypeDeclaration::Alias(topics) = schema.type_named("Topics").expect("topics type") else {
         panic!("Topics should be an alias");
     };
     assert_eq!(
@@ -93,16 +93,16 @@ fn bare_reference_declarations_lower_to_aliases() {
 #[test]
 fn single_field_brace_declarations_lower_to_newtypes() {
     let source = "[] [] { Topic String Entry { Topic * } Wrapper { value Topic } }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("single-field brace declarations lower");
 
-    let TypeDeclaration::Newtype(entry) = asschema.type_named("Entry").expect("entry type") else {
+    let TypeDeclaration::Newtype(entry) = schema.type_named("Entry").expect("entry type") else {
         panic!("Entry should be a transparent newtype");
     };
     assert_eq!(entry.reference, TypeReference::Plain(Name::new("Topic")));
 
-    let TypeDeclaration::Newtype(wrapper) = asschema.type_named("Wrapper").expect("wrapper type")
+    let TypeDeclaration::Newtype(wrapper) = schema.type_named("Wrapper").expect("wrapper type")
     else {
         panic!("Wrapper should be a transparent newtype");
     };
@@ -112,12 +112,12 @@ fn single_field_brace_declarations_lower_to_newtypes() {
 #[test]
 fn single_field_inline_pascal_declarations_lower_to_newtypes() {
     let source = "[] [] { RecordIdentifier Integer Entry { Receipt { RecordIdentifier * } } }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline single-field declaration lowers");
 
     assert_eq!(
-        asschema
+        schema
             .namespace()
             .iter()
             .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
@@ -129,7 +129,7 @@ fn single_field_inline_pascal_declarations_lower_to_newtypes() {
         ]
     );
 
-    let TypeDeclaration::Newtype(receipt) = asschema.type_named("Receipt").expect("receipt type")
+    let TypeDeclaration::Newtype(receipt) = schema.type_named("Receipt").expect("receipt type")
     else {
         panic!("Receipt should be a transparent newtype");
     };
@@ -138,7 +138,7 @@ fn single_field_inline_pascal_declarations_lower_to_newtypes() {
         TypeReference::Plain(Name::new("RecordIdentifier"))
     );
 
-    let TypeDeclaration::Newtype(entry) = asschema.type_named("Entry").expect("entry type") else {
+    let TypeDeclaration::Newtype(entry) = schema.type_named("Entry").expect("entry type") else {
         panic!("Entry should be a transparent newtype");
     };
     assert_eq!(entry.reference, TypeReference::Plain(Name::new("Receipt")));
@@ -178,12 +178,12 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
 #[test]
 fn colon_qualified_names_lower_as_schema_names() {
     let source = "[(Record schema:spirit:Entry)] [] { schema:spirit:Topic String schema:spirit:Entry schema:spirit:Topic }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:spirit:lib", "0.1.0"))
         .expect("schema lowers");
 
     assert_eq!(
-        asschema.input().variants[0]
+        schema.input().variants[0]
             .payload
             .as_ref()
             .expect("record payload")
@@ -193,14 +193,14 @@ fn colon_qualified_names_lower_as_schema_names() {
         "schema:spirit:Entry"
     );
     assert_eq!(
-        asschema.namespace()[1].name().namespace_segments(),
+        schema.namespace()[1].name().namespace_segments(),
         vec!["schema", "spirit", "Entry"]
     );
-    let TypeDeclaration::Alias(topic) = asschema.namespace()[0].value() else {
+    let TypeDeclaration::Alias(topic) = schema.namespace()[0].value() else {
         panic!("topic should be an alias");
     };
     assert_eq!(topic.name.local_part(), "Topic");
-    let TypeDeclaration::Alias(entry) = asschema.namespace()[1].value() else {
+    let TypeDeclaration::Alias(entry) = schema.namespace()[1].value() else {
         panic!("entry should be an alias");
     };
     assert_eq!(
@@ -217,13 +217,13 @@ fn package_loader_reads_schema_lib_entrypoint() {
         .join("spirit-crate");
     let package = SchemaPackage::new(root, "spirit-next", "0.1.0");
     let source = package.load_lib().expect("load lib.schema");
-    let asschema = source
+    let schema = source
         .lower(&SchemaEngine::default())
         .expect("schema lowers");
 
     assert_eq!(source.path(), package.lib_schema_path());
-    assert_eq!(asschema.identity().component().as_str(), "spirit-next:lib");
-    assert!(asschema.type_named("Entry").is_some());
+    assert_eq!(schema.identity().component().as_str(), "spirit-next:lib");
+    assert!(schema.type_named("Entry").is_some());
 }
 
 #[test]
@@ -287,14 +287,14 @@ fn package_loader_reads_all_schema_modules_in_crate() {
 #[test]
 fn root_schema_describes_the_schema_root_type() {
     let source = include_str!("../schemas/root.schema");
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema", "0.1.0"))
         .expect("root schema lowers");
 
-    assert_eq!(asschema.input().name.as_str(), "Input");
-    assert_eq!(asschema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name.as_str(), "Input");
+    assert_eq!(schema.output().name.as_str(), "Output");
 
-    let TypeDeclaration::Struct(schema) = asschema
+    let TypeDeclaration::Struct(schema_struct) = schema
         .type_named("Schema")
         .expect("schema type declaration")
     else {
@@ -302,7 +302,7 @@ fn root_schema_describes_the_schema_root_type() {
     };
 
     assert_eq!(
-        schema
+        schema_struct
             .fields
             .iter()
             .map(|field| field.reference.plain_name().expect("plain field").as_str())
@@ -310,7 +310,7 @@ fn root_schema_describes_the_schema_root_type() {
         vec!["Input", "Output", "Namespace"]
     );
 
-    let TypeDeclaration::Enum(type_declaration) = asschema
+    let TypeDeclaration::Enum(type_declaration) = schema
         .type_named("TypeDeclaration")
         .expect("type declaration enum")
     else {
@@ -335,9 +335,8 @@ fn root_schema_describes_the_schema_root_type() {
         ]
     );
 
-    let TypeDeclaration::Enum(declaration) = asschema
-        .type_named("Declaration")
-        .expect("declaration enum")
+    let TypeDeclaration::Enum(declaration) =
+        schema.type_named("Declaration").expect("declaration enum")
     else {
         panic!("Declaration should be an enum");
     };
@@ -363,11 +362,11 @@ fn root_schema_describes_the_schema_root_type() {
 #[test]
 fn core_schema_describes_default_builtin_macro_positions() {
     let source = include_str!("../schemas/core.schema");
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema-core", "0.1.0"))
         .expect("core schema lowers");
 
-    let TypeDeclaration::Struct(core_schema) = asschema
+    let TypeDeclaration::Struct(core_schema) = schema
         .type_named("CoreSchema")
         .expect("core schema declaration")
     else {
@@ -387,7 +386,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         ]
     );
 
-    let TypeDeclaration::Enum(macro_position) = asschema
+    let TypeDeclaration::Enum(macro_position) = schema
         .type_named("MacroPosition")
         .expect("macro position enum")
     else {
@@ -411,7 +410,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         ]
     );
 
-    let TypeDeclaration::Alias(macro_pattern) = asschema
+    let TypeDeclaration::Alias(macro_pattern) = schema
         .type_named("MacroPattern")
         .expect("macro pattern alias")
     else {
@@ -426,7 +425,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         "MacroPatternObject"
     );
 
-    let TypeDeclaration::Enum(macro_pattern_object) = asschema
+    let TypeDeclaration::Enum(macro_pattern_object) = schema
         .type_named("MacroPatternObject")
         .expect("macro pattern object enum")
     else {
@@ -455,7 +454,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         ]
     );
 
-    let TypeDeclaration::Enum(macro_template_object) = asschema
+    let TypeDeclaration::Enum(macro_template_object) = schema
         .type_named("MacroTemplateObject")
         .expect("macro template object enum")
     else {
@@ -571,10 +570,10 @@ fn macro_lowering_receives_macro_position() {
 #[test]
 fn field_names_are_derived_from_type_names() {
     let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
-    let TypeDeclaration::Struct(entry) = asschema.namespace()[0].value() else {
+    let TypeDeclaration::Struct(entry) = schema.namespace()[0].value() else {
         panic!("entry should be a struct");
     };
 
@@ -585,11 +584,11 @@ fn field_names_are_derived_from_type_names() {
 #[test]
 fn default_engine_lowers_through_registered_structural_forms() {
     let source = include_str!("../schemas/spirit-min.schema");
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("spirit", "0.1.0"))
         .expect("schema lowers through macros");
 
-    let input = asschema.root_named("Input").expect("input root");
+    let input = schema.root_named("Input").expect("input root");
     assert_eq!(
         input
             .variants
@@ -599,7 +598,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         vec!["Record", "Observe"]
     );
 
-    let output = asschema.root_named("Output").expect("output root");
+    let output = schema.root_named("Output").expect("output root");
     assert_eq!(
         output
             .variants
@@ -609,7 +608,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         vec!["RecordAccepted", "RecordsObserved"]
     );
 
-    let entry = asschema
+    let entry = schema
         .namespace()
         .iter()
         .find(|declaration| declaration.name().as_str() == "Entry")
@@ -634,7 +633,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         ]
     );
 
-    let kind = asschema
+    let kind = schema
         .namespace()
         .iter()
         .find(|declaration| declaration.name().as_str() == "Kind")
@@ -703,12 +702,12 @@ impl SchemaMacroHandler for RejectingRootImports {
 #[test]
 fn brace_body_lowers_as_struct_map_with_inline_private_types() {
     let source = "[] [] { Routing {ToInbox Address ToOutbox Address} }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("brace values are struct maps, not enum sugar");
 
     assert_eq!(
-        asschema
+        schema
             .namespace()
             .iter()
             .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
@@ -720,7 +719,7 @@ fn brace_body_lowers_as_struct_map_with_inline_private_types() {
         ]
     );
     assert!(matches!(
-        asschema.type_named("Routing").expect("routing type"),
+        schema.type_named("Routing").expect("routing type"),
         TypeDeclaration::Struct(_)
     ));
 }
@@ -728,10 +727,10 @@ fn brace_body_lowers_as_struct_map_with_inline_private_types() {
 #[test]
 fn strict_declaration_field_pairs_lower_through_default_engine() {
     let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("at declaration lowers");
-    let TypeDeclaration::Struct(entry) = asschema.namespace()[0].value() else {
+    let TypeDeclaration::Struct(entry) = schema.namespace()[0].value() else {
         panic!("entry should be a struct");
     };
 
@@ -746,14 +745,14 @@ fn strict_declaration_field_pairs_lower_through_default_engine() {
 #[test]
 fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
     let source = include_str!("fixtures/big-schemas/derived-members.schema");
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(
             source,
             SchemaIdentity::new("example:derived-members", "0.1.0"),
         )
         .expect("derived member schema lowers");
 
-    let TypeDeclaration::Struct(entry) = asschema.type_named("Entry").expect("entry type") else {
+    let TypeDeclaration::Struct(entry) = schema.type_named("Entry").expect("entry type") else {
         panic!("entry should be a struct");
     };
     assert_eq!(
@@ -773,7 +772,7 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
         ]
     );
 
-    let TypeDeclaration::Struct(query) = asschema.type_named("Query").expect("query type") else {
+    let TypeDeclaration::Struct(query) = schema.type_named("Query").expect("query type") else {
         panic!("query should remain a struct");
     };
     assert_eq!(query.fields[0].name.as_str(), "topics");
@@ -782,7 +781,7 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
         TypeReference::Optional(Box::new(TypeReference::Integer))
     );
 
-    let TypeDeclaration::Enum(some_enum) = asschema.type_named("SomeEnum").expect("some enum type")
+    let TypeDeclaration::Enum(some_enum) = schema.type_named("SomeEnum").expect("some enum type")
     else {
         panic!("SomeEnum should be an enum");
     };
@@ -801,7 +800,7 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
     assert_eq!(some_enum.variants[1].payload, None);
     assert_eq!(some_enum.variants[2].payload, Some(TypeReference::String));
 
-    let TypeDeclaration::Alias(topic) = asschema.type_named("Topic").expect("topic type") else {
+    let TypeDeclaration::Alias(topic) = schema.type_named("Topic").expect("topic type") else {
         panic!("Topic should be an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
@@ -810,12 +809,12 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
 #[test]
 fn inline_pascal_declaration_creates_ordered_namespace_type() {
     let source = "[] [] { Entry { Receipt { recordIdentifier RecordIdentifier } later Receipt } }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline declaration lowers");
 
     assert_eq!(
-        asschema
+        schema
             .namespace()
             .iter()
             .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
@@ -826,7 +825,7 @@ fn inline_pascal_declaration_creates_ordered_namespace_type() {
         ]
     );
 
-    let TypeDeclaration::Struct(entry) = asschema.namespace()[1].value() else {
+    let TypeDeclaration::Struct(entry) = schema.namespace()[1].value() else {
         panic!("entry should be a struct");
     };
     assert_eq!(entry.fields[0].name, Name::new("receipt"));
@@ -843,15 +842,15 @@ fn inline_pascal_declaration_creates_ordered_namespace_type() {
 
 #[test]
 fn root_enum_positions_supply_input_and_output_names() {
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(
             "[(Record Entry)] [] {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("bare input root lowers because the root position names it");
-    assert_eq!(asschema.input().name.as_str(), "Input");
-    assert_eq!(asschema.input().variants[0].name.as_str(), "Record");
-    assert_eq!(asschema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name.as_str(), "Input");
+    assert_eq!(schema.input().variants[0].name.as_str(), "Record");
+    assert_eq!(schema.output().name.as_str(), "Output");
 
     let error = SchemaEngine::default()
         .lower_source(

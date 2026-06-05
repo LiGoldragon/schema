@@ -64,22 +64,22 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
 #[test]
 fn design_example_namespace_brace_contains_key_value_declarations() {
     let source = "[] [] { Topic String Kind [Decision Constraint] }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("key/value namespace lowers");
 
-    let names: Vec<&str> = asschema
+    let names: Vec<&str> = schema
         .namespace()
         .iter()
         .map(|declaration| declaration.name().as_str())
         .collect();
     assert_eq!(names, vec!["Topic", "Kind"]);
 
-    let TypeDeclaration::Alias(topic) = asschema.namespace()[0].value() else {
+    let TypeDeclaration::Alias(topic) = schema.namespace()[0].value() else {
         panic!("Topic should lower as an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
-    let TypeDeclaration::Enum(kind) = asschema.namespace()[1].value() else {
+    let TypeDeclaration::Enum(kind) = schema.namespace()[1].value() else {
         panic!("Kind should lower as an enum");
     };
     let variant_names: Vec<&str> = kind
@@ -411,11 +411,11 @@ fn design_example_schema_node_macro_call_is_tagged_data() {
 fn design_example_root_enum_uses_direct_variant_shapes() {
     let source = "[(Record Entry) Drop] [] {}";
 
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("direct variants lower");
 
-    let variants: Vec<(&str, Option<&str>)> = asschema
+    let variants: Vec<(&str, Option<&str>)> = schema
         .input()
         .variants
         .iter()
@@ -438,12 +438,12 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
 #[test]
 fn design_example_same_name_payload_variant_uses_explicit_payload() {
     let source = "[(Record Record)] [(Recorded Recorded)] { Record { description Description } Recorded { recordIdentifier RecordIdentifier } }";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("explicit same-name variants lower");
 
     assert_eq!(
-        asschema.input().variants[0]
+        schema.input().variants[0]
             .payload
             .as_ref()
             .expect("record payload")
@@ -453,7 +453,7 @@ fn design_example_same_name_payload_variant_uses_explicit_payload() {
         "Record",
     );
     assert_eq!(
-        asschema.output().variants[0]
+        schema.output().variants[0]
             .payload
             .as_ref()
             .expect("recorded payload")
@@ -483,18 +483,18 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
         registry.register_box(schema_macro);
     }
     let engine = SchemaEngine::with_registry(registry);
-    let asschema = engine
+    let schema = engine
         .lower_source(
             "[] [] { Topic String Topics (Bag Topic) }",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");
 
-    let TypeDeclaration::Alias(topic) = asschema.type_named("Topic").expect("topic type") else {
+    let TypeDeclaration::Alias(topic) = schema.type_named("Topic").expect("topic type") else {
         panic!("bare Topic binding should create an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);
-    let TypeDeclaration::Alias(topics) = asschema.type_named("Topics").expect("topics type") else {
+    let TypeDeclaration::Alias(topics) = schema.type_named("Topics").expect("topics type") else {
         panic!("bare Topics binding should create an alias");
     };
     assert_eq!(
@@ -527,14 +527,14 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
           RecordSet (Vec Entry)
         }
     ";
-    let asschema = SchemaEngine::default()
+    let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("spirit-next:lib", "0.1.0"))
         .expect("schema planes lower");
 
-    assert_eq!(asschema.input().name.as_str(), "Input");
-    assert_eq!(asschema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name.as_str(), "Input");
+    assert_eq!(schema.output().name.as_str(), "Output");
 
-    let names: Vec<&str> = asschema
+    let names: Vec<&str> = schema
         .namespace()
         .iter()
         .map(|declaration| declaration.name().as_str())

@@ -1,27 +1,20 @@
-mod asschema;
 mod declarative;
 mod engine;
 mod macros;
 mod module;
 mod raw;
 mod resolution;
+mod schema;
 mod source;
-mod store;
 mod syntax;
 mod upgrade;
 
-pub use asschema::{
-    AliasDeclaration, Asschema, AsschemaArtifact, Declaration, EnumDeclaration, EnumVariant,
-    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, SchemaDeclaredType, SchemaNode,
-    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, SymbolPath,
-    SymbolPathPosition, TypeDeclaration, TypeReference, Visibility,
-};
 pub use declarative::{
     MacroDelimiter, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroPattern,
     MacroPatternDelimited, MacroPatternObject, MacroTemplate, MacroTemplateDelimited,
     MacroTemplateObject, SchemaMacro,
 };
-pub use engine::{SchemaEngine, SchemaError, SchemaIdentity, SemaDatabaseOperation};
+pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
     MacroPosition, MacroRegistry, SchemaMacroHandler,
@@ -34,18 +27,23 @@ pub use nota_next::{
 };
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
+pub use schema::{
+    AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
+    ImportDeclaration, Name, NewtypeDeclaration, Schema, SchemaDeclaredType, SchemaNode,
+    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, SymbolPath,
+    SymbolPathPosition, TypeDeclaration, TypeReference, Visibility,
+};
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceField,
     SourceFieldValue, SourceImport, SourceImports, SourceNamespace, SourceNamespaceEntry,
     SourceReference, SourceRootEnum, SourceStructBody, SourceVariantPayload,
     SourceVariantSignature,
 };
-pub use store::{AsschemaStore, AsschemaStoreKey};
 pub use syntax::{
     SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField, SyntaxReference,
     SyntaxSchema, SyntaxStructDeclaration, SyntaxVariant,
 };
 pub use upgrade::{
-    AddField, AddVariant, AsschemaEdit, ChangeFieldType, DefaultValue, FieldMigration,
-    MigrationSpec, SchemaEdit, SchemaEditReceipt, UpgradeObject, UpgradeReceipt,
+    AddField, AddVariant, ChangeFieldType, DefaultValue, FieldMigration, MigrationSpec, SchemaEdit,
+    SchemaEditApplication, SchemaEditReceipt, UpgradeObject, UpgradeReceipt,
 };

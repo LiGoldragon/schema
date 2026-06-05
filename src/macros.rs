@@ -6,7 +6,7 @@ use nota_next::{
 };
 
 use crate::{
-    Asschema, Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, SchemaError,
+    Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, Schema, SchemaError,
     TypeDeclaration, TypeReference,
 };
 
@@ -220,7 +220,7 @@ impl MacroContext {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MacroOutput {
-    Asschema(Asschema),
+    Schema(Schema),
     Imports(Vec<ImportDeclaration>),
     RootEnum(EnumDeclaration),
     Types(Vec<Declaration>),

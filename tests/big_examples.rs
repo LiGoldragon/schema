@@ -1,12 +1,12 @@
 use std::path::Path;
 
 use schema_next::{
-    Asschema, Declaration, EnumDeclaration, ImportResolver, MacroContext, SchemaEngine,
+    Declaration, EnumDeclaration, ImportResolver, MacroContext, Schema, SchemaEngine,
     SchemaIdentity, TypeDeclaration,
 };
 
 #[test]
-fn big_spirit_example_lowers_to_checked_asschema_output() {
+fn big_spirit_example_lowers_to_checked_schema_output() {
     assert_big_fixture(
         "spirit-reactive-large",
         include_str!("fixtures/big-schemas/spirit-reactive-large.schema"),
@@ -15,7 +15,7 @@ fn big_spirit_example_lowers_to_checked_asschema_output() {
 }
 
 #[test]
-fn big_triad_example_lowers_to_checked_asschema_output() {
+fn big_triad_example_lowers_to_checked_schema_output() {
     assert_big_fixture(
         "triad-reactive-large",
         include_str!("fixtures/big-schemas/triad-reactive-large.schema"),
@@ -42,7 +42,7 @@ fn assert_big_fixture(name: &str, source: &str, resolver: Option<ImportResolver>
     let engine = SchemaEngine::default();
     let mut context = MacroContext::default();
     let identity = SchemaIdentity::new(format!("example:{name}"), "0.1.0");
-    let asschema = match resolver {
+    let schema = match resolver {
         Some(resolver) => engine
             .lower_source_with_resolver(source, identity, &mut context, &resolver)
             .expect("big schema lowers with imports"),
@@ -50,53 +50,53 @@ fn assert_big_fixture(name: &str, source: &str, resolver: Option<ImportResolver>
             .lower_source_with_context(source, identity, &mut context)
             .expect("big schema lowers"),
     };
-    assert_asschema_data_shape(name, &asschema);
+    assert_schema_data_shape(name, &schema);
 }
 
-fn assert_asschema_data_shape(name: &str, asschema: &Asschema) {
+fn assert_schema_data_shape(name: &str, schema: &Schema) {
     assert_eq!(
-        asschema.identity().component().as_str(),
+        schema.identity().component().as_str(),
         format!("example:{name}")
     );
-    assert_eq!(asschema.identity().version(), "0.1.0");
+    assert_eq!(schema.identity().version(), "0.1.0");
     assert!(
-        !asschema.input().variants.is_empty(),
+        !schema.input().variants.is_empty(),
         "{name} should lower typed input variants"
     );
     assert!(
-        !asschema.output().variants.is_empty(),
+        !schema.output().variants.is_empty(),
         "{name} should lower typed output variants"
     );
     assert!(
-        asschema.root_named("Input").is_some(),
+        schema.root_named("Input").is_some(),
         "{name} should expose Input as a direct root enum"
     );
     assert!(
-        asschema.root_named("Output").is_some(),
+        schema.root_named("Output").is_some(),
         "{name} should expose Output as a direct root enum"
     );
     assert!(
-        !asschema.namespace().is_empty(),
+        !schema.namespace().is_empty(),
         "{name} should lower typed namespace declarations"
     );
     match name {
         "spirit-reactive-large" => {
-            assert_has_type(asschema.namespace(), "Entry");
-            assert_has_type(asschema.namespace(), "RecordSet");
-            assert_has_variant(asschema.input(), "Record");
-            assert_has_variant(asschema.output(), "Recorded");
+            assert_has_type(schema.namespace(), "Entry");
+            assert_has_type(schema.namespace(), "RecordSet");
+            assert_has_variant(schema.input(), "Record");
+            assert_has_variant(schema.output(), "Recorded");
         }
         "triad-reactive-large" => {
-            assert_has_type(asschema.namespace(), "SignalRequest");
-            assert_has_type(asschema.namespace(), "NexusRequest");
-            assert_has_type(asschema.namespace(), "SemaRequest");
-            assert_has_variant(asschema.input(), "SignalIn");
-            assert_has_variant(asschema.output(), "SignalOut");
+            assert_has_type(schema.namespace(), "SignalRequest");
+            assert_has_type(schema.namespace(), "NexusRequest");
+            assert_has_type(schema.namespace(), "SemaRequest");
+            assert_has_variant(schema.input(), "SignalIn");
+            assert_has_variant(schema.output(), "SignalOut");
         }
         "imported-mail-consumer" => {
-            assert!(!asschema.imports().is_empty());
-            assert!(!asschema.resolved_imports().is_empty());
-            assert_has_variant(asschema.output(), "Marked");
+            assert!(!schema.imports().is_empty());
+            assert!(!schema.resolved_imports().is_empty());
+            assert_has_variant(schema.output(), "Marked");
         }
         _ => panic!("unhandled big fixture {name}"),
     }
