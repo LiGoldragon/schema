@@ -408,6 +408,7 @@ impl SchemaEngine {
             input,
             output,
             namespace,
+            Vec::new(),
         ))
     }
 

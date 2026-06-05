@@ -12,8 +12,8 @@ use crate::{
     AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
     ImportDeclaration, MacroNodeDefinition as SchemaMacroNodeDefinition, MacroPosition, Name,
     NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, Schema, SchemaEngine,
-    SchemaError, SchemaIdentity, StructDeclaration, TypeDeclaration, TypeReference,
-    macros::BlockDebug,
+    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration,
+    TypeDeclaration, TypeReference, macros::BlockDebug,
 };
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -127,6 +127,7 @@ impl SchemaSource {
         let mut namespace = SourceLoweredNamespace::from_source(&self.namespace, &resolver)?;
         namespace.push_public_declarations(self.input.public_inline_declarations(&resolver)?)?;
         namespace.push_public_declarations(self.output.public_inline_declarations(&resolver)?)?;
+        let streams = self.namespace.stream_declarations()?;
         let input = self.input.to_schema_enum(&namespace)?;
         let output = self.output.to_schema_enum(&namespace)?;
         Ok(Schema::new(
@@ -136,6 +137,7 @@ impl SchemaSource {
             input,
             output,
             namespace.into_declarations(),
+            streams,
         ))
     }
 }
@@ -370,6 +372,24 @@ impl SourceNamespace {
             .collect::<Vec<_>>();
         format!("{{\n{}\n}}", entries.join("\n"))
     }
+
+    fn stream_declarations(&self) -> Result<Vec<StreamDeclaration>, SchemaError> {
+        let mut streams = Vec::new();
+        for entry in &self.entries {
+            if let Some(stream) = entry.to_stream_declaration() {
+                if streams
+                    .iter()
+                    .any(|existing: &StreamDeclaration| existing.name == stream.name)
+                {
+                    return Err(SchemaError::DuplicateSourceDeclaration {
+                        name: stream.name.as_str().to_owned(),
+                    });
+                }
+                streams.push(stream);
+            }
+        }
+        Ok(streams)
+    }
 }
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -397,6 +417,14 @@ impl SourceNamespaceEntry {
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         self.value.to_declaration_group(self.name.clone(), resolver)
     }
+
+    fn to_stream_declaration(&self) -> Option<StreamDeclaration> {
+        self.value.to_stream_declaration(self.name.clone())
+    }
+
+    fn is_type_declaration(&self) -> bool {
+        self.value.is_type_declaration()
+    }
 }
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -416,16 +444,20 @@ pub enum SourceDeclarationValue {
     Text(String),
     Struct(#[rkyv(omit_bounds)] SourceStructBody),
     Enum(#[rkyv(omit_bounds)] SourceEnumBody),
+    Stream(#[rkyv(omit_bounds)] SourceStreamBody),
 }
 
 impl SourceDeclarationValue {
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         match block {
-            Block::Atom(_)
-            | Block::Delimited {
+            Block::Atom(_) => Ok(Self::Reference(SourceReference::from_block(block)?)),
+            Block::Delimited {
                 delimiter: Delimiter::Parenthesis,
                 ..
-            } => Ok(Self::Reference(SourceReference::from_block(block)?)),
+            } => match Self::from_stream_block(block)? {
+                Some(value) => Ok(value),
+                None => Ok(Self::Reference(SourceReference::from_block(block)?)),
+            },
             Block::PipeText(text) => Ok(Self::Text(text.text.clone())),
             Block::Delimited {
                 delimiter: Delimiter::Brace,
@@ -444,12 +476,17 @@ impl SourceDeclarationValue {
         }
     }
 
+    fn from_stream_block(block: &Block) -> Result<Option<Self>, SchemaError> {
+        SourceStreamBody::from_block(block).map(|body| body.map(Self::Stream))
+    }
+
     fn to_schema_text(&self) -> String {
         match self {
             Self::Reference(reference) => reference.to_schema_text(),
             Self::Text(text) => NotaString::new(text).format(),
             Self::Struct(body) => body.to_schema_text(),
             Self::Enum(body) => body.to_schema_text(),
+            Self::Stream(body) => body.to_schema_text(),
         }
     }
 
@@ -467,7 +504,163 @@ impl SourceDeclarationValue {
             }),
             Self::Struct(body) => body.to_declaration_group(name, resolver),
             Self::Enum(body) => body.to_declaration_group(name, resolver),
+            Self::Stream(_) => Ok(SourceDeclarationGroup::empty()),
         }
+    }
+
+    fn to_stream_declaration(&self, name: Name) -> Option<StreamDeclaration> {
+        match self {
+            Self::Stream(body) => Some(body.to_stream_declaration(name)),
+            Self::Reference(_) | Self::Text(_) | Self::Struct(_) | Self::Enum(_) => None,
+        }
+    }
+
+    fn is_type_declaration(&self) -> bool {
+        !matches!(self, Self::Stream(_))
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SourceStreamBody {
+    token: SourceReference,
+    opened: SourceReference,
+    event: SourceReference,
+    close: SourceReference,
+}
+
+impl SourceStreamBody {
+    pub fn token(&self) -> &SourceReference {
+        &self.token
+    }
+
+    pub fn opened(&self) -> &SourceReference {
+        &self.opened
+    }
+
+    pub fn event(&self) -> &SourceReference {
+        &self.event
+    }
+
+    pub fn close(&self) -> &SourceReference {
+        &self.close
+    }
+
+    fn from_block(block: &Block) -> Result<Option<Self>, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "source stream body")?;
+        let objects = body.root_objects();
+        let Some(head) = objects.first().and_then(Block::demote_to_string) else {
+            return Ok(None);
+        };
+        if head != "Stream" {
+            return Ok(None);
+        }
+        if objects.len() != 2 {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form: "stream declaration",
+                expected: "Stream plus one brace payload",
+                found: objects.len(),
+            });
+        }
+        let fields = SourceStreamFields::from_block(&objects[1])?;
+        Ok(Some(fields.into_stream_body()?))
+    }
+
+    fn to_schema_text(&self) -> String {
+        Delimiter::Parenthesis.wrap([
+            "Stream".to_owned(),
+            SourceDelimitedText::new(
+                Delimiter::Brace,
+                vec![
+                    format!("token {}", self.token.to_schema_text()),
+                    format!("opened {}", self.opened.to_schema_text()),
+                    format!("event {}", self.event.to_schema_text()),
+                    format!("close {}", self.close.to_schema_text()),
+                ],
+            )
+            .inline(),
+        ])
+    }
+
+    fn to_stream_declaration(&self, name: Name) -> StreamDeclaration {
+        StreamDeclaration::new(
+            name,
+            self.token.to_type_reference(),
+            self.opened.to_type_reference(),
+            self.event.to_type_reference(),
+            self.close.to_type_reference(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceStreamFields {
+    token: Option<SourceReference>,
+    opened: Option<SourceReference>,
+    event: Option<SourceReference>,
+    close: Option<SourceReference>,
+}
+
+impl SourceStreamFields {
+    fn empty() -> Self {
+        Self {
+            token: None,
+            opened: None,
+            event: None,
+            close: None,
+        }
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Brace, "stream declaration fields")?;
+        if body.root_objects().len() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: body.root_objects().len(),
+            });
+        }
+        let mut fields = Self::empty();
+        for pair in body.root_objects().chunks_exact(2) {
+            let field = SourceAtom::from_block(&pair[0])?;
+            let reference = SourceReference::from_block(&pair[1])?;
+            fields.insert(field, reference)?;
+        }
+        Ok(fields)
+    }
+
+    fn insert(
+        &mut self,
+        field: SourceAtom<'_>,
+        reference: SourceReference,
+    ) -> Result<(), SchemaError> {
+        match field.0 {
+            "token" => self.token = Some(reference),
+            "opened" => self.opened = Some(reference),
+            "event" => self.event = Some(reference),
+            "close" => self.close = Some(reference),
+            other => {
+                return Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: format!("stream field {other}"),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn into_stream_body(self) -> Result<SourceStreamBody, SchemaError> {
+        Ok(SourceStreamBody {
+            token: Self::required_field(self.token, "token")?,
+            opened: Self::required_field(self.opened, "opened")?,
+            event: Self::required_field(self.event, "event")?,
+            close: Self::required_field(self.close, "close")?,
+        })
+    }
+
+    fn required_field(
+        field: Option<SourceReference>,
+        field_name: &'static str,
+    ) -> Result<SourceReference, SchemaError> {
+        field.ok_or_else(|| SchemaError::ExpectedSyntaxDeclaration {
+            found: format!("stream missing {field_name} field"),
+        })
     }
 }
 
@@ -796,6 +989,7 @@ pub struct SourceVariantSignature {
     name: Name,
     #[rkyv(omit_bounds)]
     payload: Option<SourceVariantPayload>,
+    stream_relation: Option<StreamRelation>,
 }
 
 impl SourceVariantSignature {
@@ -810,6 +1004,10 @@ impl SourceVariantSignature {
         }
     }
 
+    pub fn stream_relation(&self) -> Option<&StreamRelation> {
+        self.stream_relation.as_ref()
+    }
+
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         Self::from_structural_block(block).map_err(SchemaError::from)
     }
@@ -817,7 +1015,16 @@ impl SourceVariantSignature {
     fn to_schema_text(&self) -> String {
         match &self.payload {
             Some(payload) => {
-                Delimiter::Parenthesis.wrap([self.name.to_nota(), payload.to_schema_text()])
+                if let Some(relation) = &self.stream_relation {
+                    Delimiter::Parenthesis.wrap([
+                        self.name.to_nota(),
+                        payload.to_schema_text(),
+                        Self::stream_relation_keyword(relation).to_owned(),
+                        relation.stream_name().to_nota(),
+                    ])
+                } else {
+                    Delimiter::Parenthesis.wrap([self.name.to_nota(), payload.to_schema_text()])
+                }
             }
             None => self.name.to_nota(),
         }
@@ -837,10 +1044,18 @@ impl SourceVariantSignature {
             }
             None => None,
         };
-        Ok(EnumVariant {
-            name: self.name.clone(),
-            payload,
+        let variant = EnumVariant::new(self.name.clone(), payload);
+        Ok(match &self.stream_relation {
+            Some(relation) => variant.with_stream_relation(relation.clone()),
+            None => variant,
         })
+    }
+
+    fn stream_relation_keyword(relation: &StreamRelation) -> &'static str {
+        match relation {
+            StreamRelation::Opens(_) => "opens",
+            StreamRelation::Belongs(_) => "belongs",
+        }
     }
 
     fn public_inline_declaration(
@@ -907,6 +1122,7 @@ impl StructuralMacroNode for SourceVariantSignature {
                     Ok(Self {
                         name: variant_name,
                         payload: None,
+                        stream_relation: None,
                     })
                 }
                 "data variant" => {
@@ -916,6 +1132,31 @@ impl StructuralMacroNode for SourceVariantSignature {
                         payload: Some(SourceVariantPayload::from_block(
                             variant_match.block("payload")?,
                         )?),
+                        stream_relation: None,
+                    })
+                }
+                "opens variant" => {
+                    let variant_match = SourceVariantMatch::new(&matched);
+                    Ok(Self {
+                        name: variant_match.name("variant_name")?,
+                        payload: Some(SourceVariantPayload::from_block(
+                            variant_match.block("payload")?,
+                        )?),
+                        stream_relation: Some(StreamRelation::Opens(
+                            variant_match.name("stream_name")?,
+                        )),
+                    })
+                }
+                "belongs variant" => {
+                    let variant_match = SourceVariantMatch::new(&matched);
+                    Ok(Self {
+                        name: variant_match.name("variant_name")?,
+                        payload: Some(SourceVariantPayload::from_block(
+                            variant_match.block("payload")?,
+                        )?),
+                        stream_relation: Some(StreamRelation::Belongs(
+                            variant_match.name("stream_name")?,
+                        )),
                     })
                 }
                 other => Err(SchemaError::MacroDidNotMatch {
@@ -1167,6 +1408,7 @@ impl SourceTypeResolver {
             .namespace()
             .entries()
             .iter()
+            .filter(|entry| entry.is_type_declaration())
             .map(|entry| entry.name().clone())
             .collect::<Vec<_>>();
         names.extend(source.input().body().inline_declaration_names());

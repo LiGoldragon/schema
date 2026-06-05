@@ -30,8 +30,9 @@ pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
     AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
     ImportDeclaration, Name, NewtypeDeclaration, Schema, SchemaDeclaredType, SchemaNode,
-    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StructDeclaration, StructFieldMap, SymbolPath,
-    SymbolPathPosition, TypeDeclaration, TypeReference, Visibility,
+    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StreamDeclaration, StreamRelation,
+    StructDeclaration, StructFieldMap, SymbolPath, SymbolPathPosition, TypeDeclaration,
+    TypeReference, Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceField,

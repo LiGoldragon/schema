@@ -204,6 +204,71 @@ fn schema_source_artifact_round_trips_through_binary_archive() {
 }
 
 #[test]
+fn schema_source_lowers_stream_declarations_and_variant_relations() {
+    let source = "{}\n[(Watch WatchRequest opens RecordStream) (Unwatch SubscriptionToken)]\n[(Watching SubscriptionReceipt)]\n{\n  RuntimeEvent [(RecordChanged RecordChanged belongs RecordStream)]\n  RecordStream (Stream { token SubscriptionToken opened SubscriptionReceipt event RuntimeEvent close SubscriptionToken })\n  WatchRequest { topics Topics }\n  Topics { values (Vec Topic) }\n  Topic String\n  SubscriptionToken Integer\n  SubscriptionReceipt { subscriptionToken SubscriptionToken }\n  RecordChanged { topic Topic }\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+
+    assert_eq!(
+        artifact.to_schema_text(),
+        source,
+        "stream declarations and stream variant relations encode as schema source"
+    );
+
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    assert_eq!(schema.streams().len(), 1);
+    let stream = &schema.streams()[0];
+    assert_eq!(stream.name.as_str(), "RecordStream");
+    assert_eq!(
+        stream.token.plain_name().map(schema_next::Name::as_str),
+        Some("SubscriptionToken")
+    );
+    assert_eq!(
+        stream.opened.plain_name().map(schema_next::Name::as_str),
+        Some("SubscriptionReceipt")
+    );
+    assert_eq!(
+        stream.event.plain_name().map(schema_next::Name::as_str),
+        Some("RuntimeEvent")
+    );
+    assert_eq!(
+        stream.close.plain_name().map(schema_next::Name::as_str),
+        Some("SubscriptionToken")
+    );
+    assert!(
+        schema.type_named("RecordStream").is_none(),
+        "stream declarations are schema metadata, not namespace data types"
+    );
+
+    let watch_relation = schema.input().variants[0]
+        .stream_relation
+        .as_ref()
+        .expect("Watch opens a stream");
+    assert!(matches!(
+        watch_relation,
+        schema_next::StreamRelation::Opens(name) if name.as_str() == "RecordStream"
+    ));
+
+    let Some(TypeDeclaration::Enum(runtime_event)) = schema.type_named("RuntimeEvent") else {
+        panic!("RuntimeEvent should lower to an enum");
+    };
+    let event_relation = runtime_event.variants[0]
+        .stream_relation
+        .as_ref()
+        .expect("RecordChanged belongs to a stream");
+    assert!(matches!(
+        event_relation,
+        schema_next::StreamRelation::Belongs(name) if name.as_str() == "RecordStream"
+    ));
+}
+
+#[test]
 fn source_enum_variants_are_typed_structural_macro_nodes() {
     let source = "{}\n[Reserved (Record Entry) (Inline { Topic * })]\n[]\n{\n  Entry { Topic * }\n  Topic String\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");

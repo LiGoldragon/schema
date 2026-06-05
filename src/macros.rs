@@ -460,6 +460,50 @@ impl MacroNodeDefinition {
                     )]),
                     "parenthesized variant signature carrying variant name and payload type",
                 ),
+                NotaMacroNodeDefinition::new(
+                    "opens variant",
+                    MacroPosition::EnumVariants.position_predicate(),
+                    Pattern::new(vec![PatternElement::delimited(
+                        DelimitedShape::new(
+                            MacroDelimiter::Parenthesis,
+                            NotaMacroObjectCount::Exact(4),
+                            Some(CaptureName::new("variant_signature")),
+                        )
+                        .with_children(Pattern::new(vec![
+                            PatternElement::atom(AtomShape::pascal_case(Some(CaptureName::new(
+                                "variant_name",
+                            )))),
+                            PatternElement::any(Some(CaptureName::new("payload"))),
+                            PatternElement::literal("opens"),
+                            PatternElement::atom(AtomShape::pascal_case(Some(CaptureName::new(
+                                "stream_name",
+                            )))),
+                        ])),
+                    )]),
+                    "parenthesized variant signature carrying variant name, payload type, opens keyword, and stream name",
+                ),
+                NotaMacroNodeDefinition::new(
+                    "belongs variant",
+                    MacroPosition::EnumVariants.position_predicate(),
+                    Pattern::new(vec![PatternElement::delimited(
+                        DelimitedShape::new(
+                            MacroDelimiter::Parenthesis,
+                            NotaMacroObjectCount::Exact(4),
+                            Some(CaptureName::new("variant_signature")),
+                        )
+                        .with_children(Pattern::new(vec![
+                            PatternElement::atom(AtomShape::pascal_case(Some(CaptureName::new(
+                                "variant_name",
+                            )))),
+                            PatternElement::any(Some(CaptureName::new("payload"))),
+                            PatternElement::literal("belongs"),
+                            PatternElement::atom(AtomShape::pascal_case(Some(CaptureName::new(
+                                "stream_name",
+                            )))),
+                        ])),
+                    )]),
+                    "parenthesized variant signature carrying variant name, payload type, belongs keyword, and stream name",
+                ),
             ],
         )
     }

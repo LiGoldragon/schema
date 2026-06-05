@@ -298,10 +298,10 @@ impl SchemaEditApplication {
                     });
                 }
                 let mut variants = declaration.variants.clone();
-                variants.push(EnumVariant {
-                    name: edit.variant_name.clone(),
-                    payload: edit.payload.clone(),
-                });
+                variants.push(EnumVariant::new(
+                    edit.variant_name.clone(),
+                    edit.payload.clone(),
+                ));
                 Ok(EnumDeclaration::new(declaration.name.clone(), variants))
             })?;
         let receipt = schema.edit_receipt(None);
@@ -316,6 +316,7 @@ struct SchemaEditor {
     input: crate::EnumDeclaration,
     output: crate::EnumDeclaration,
     namespace: Vec<Declaration>,
+    streams: Vec<crate::StreamDeclaration>,
 }
 
 impl SchemaEditor {
@@ -327,6 +328,7 @@ impl SchemaEditor {
             input: schema.input().clone(),
             output: schema.output().clone(),
             namespace: schema.namespace().to_vec(),
+            streams: schema.streams().to_vec(),
         }
     }
 
@@ -398,6 +400,7 @@ impl SchemaEditor {
             self.input,
             self.output,
             self.namespace,
+            self.streams,
         )
     }
 }
@@ -547,6 +550,7 @@ impl Schema {
         let input = self.input().clone();
         let output = self.output().clone();
         let namespace = self.namespace().to_vec();
+        let streams = self.streams().to_vec();
         Self::new(
             identity,
             imports,
@@ -554,6 +558,7 @@ impl Schema {
             input,
             output,
             namespace,
+            streams,
         )
     }
 }

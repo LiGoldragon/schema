@@ -1844,10 +1844,7 @@ impl<'template> AssembledVariant<'template> {
         if self.object.is_parenthesis() {
             self.lower_parenthesis(registry, context)
         } else if self.object.qualifies_as_pascal_case_symbol() {
-            Ok(EnumVariant {
-                name: self.object.schema_name()?,
-                payload: None,
-            })
+            Ok(EnumVariant::new(self.object.schema_name()?, None))
         } else {
             Err(SchemaError::ExpectedEnumVariant)
         }
@@ -1859,19 +1856,18 @@ impl<'template> AssembledVariant<'template> {
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
         match self.object.holds_root_objects() {
-            2 => Ok(EnumVariant {
-                name: self
-                    .object
+            2 => Ok(EnumVariant::new(
+                self.object
                     .root_object_at(0)
                     .expect("count checked")
                     .schema_name()?,
-                payload: Some(
+                Some(
                     self.object
                         .root_object_at(1)
                         .expect("count checked")
                         .type_reference(registry, context)?,
                 ),
-            }),
+            )),
             _ => Err(SchemaError::ExpectedEnumVariant),
         }
     }

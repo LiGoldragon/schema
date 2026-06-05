@@ -66,12 +66,22 @@ Enum variant entries in authored source are typed structural NOTA nodes.
 `SourceVariantSignature` implements `nota-next::StructuralMacroNode` and uses
 the same ordered `EnumVariants` structural cases as codec-facing
 `nota-next::StructuralVariant` values: a bare PascalCase atom is a unit/header
-variant, and a parenthesized two-object block is a data-carrying variant. After
-the expected enum type selects the structural case, Schema decodes the captures
-into either a reference payload or an inline declaration payload, and
-`SchemaSourceArtifact` writes the same structural form back out. That keeps
-schema sugar inside NOTA instead of making it a separate one-way lowering
-language.
+variant, a parenthesized two-object block is a data-carrying variant, and the
+four-object forms `(Variant Payload opens StreamName)` /
+`(Variant Payload belongs StreamName)` attach subscription lifecycle metadata.
+After the expected enum type selects the structural case, Schema decodes the
+captures into either a reference payload or an inline declaration payload, plus
+an optional `StreamRelation`, and `SchemaSourceArtifact` writes the same
+structural form back out. That keeps schema sugar inside NOTA instead of making
+it a separate one-way lowering language.
+
+Stream declarations are typed source metadata in the namespace map, not
+namespace Rust data types. The source form is `StreamName (Stream { token Token
+opened Snapshot event Event close Close })`; it lowers to semantic
+`StreamDeclaration` data on `Schema::streams()` and is excluded from
+`Schema::namespace()`. This keeps push-subscription features visible in schema
+while preventing stream lifecycle records from masquerading as ordinary payload
+types.
 
 ## Raw Core Schema Reading
 

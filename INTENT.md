@@ -40,6 +40,17 @@ declarations lower to public, inline PascalCase declarations lower to private.
 *Enum bodies are homogeneous vectors of variant-signature objects.* A unit
 variant is a bare PascalCase symbol; a data-carrying variant is
 `(Variant PayloadType)`. Bracket members remain one variant-signature object.
+Data-carrying variants may also declare stream lifecycle relations:
+`(Subscribe Payload opens StreamName)` and
+`(Delta DeltaPayload belongs StreamName)`.
+
+*Streams are schema metadata, not namespace data types.* A stream declaration
+is authored as `StreamName (Stream { token Token opened Snapshot event Event
+close Close })` inside the namespace map. It lowers to semantic
+`StreamDeclaration` data and is excluded from namespace type declarations.
+The `opens` and `belongs` variant relations point at these stream
+declarations so subscription features are visible in schema before daemon
+implementation code is inspected.
 
 *Root input/output headers may list exported variant names directly.* When a
 bare header entry resolves to a namespace declaration, the variant carries the

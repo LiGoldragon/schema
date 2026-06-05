@@ -211,6 +211,7 @@ pub struct Schema {
     input: EnumDeclaration,
     output: EnumDeclaration,
     namespace: Vec<Declaration>,
+    streams: Vec<StreamDeclaration>,
 }
 
 impl Schema {
@@ -221,6 +222,7 @@ impl Schema {
         input: EnumDeclaration,
         output: EnumDeclaration,
         namespace: Vec<Declaration>,
+        streams: Vec<StreamDeclaration>,
     ) -> Self {
         Self {
             identity,
@@ -229,6 +231,7 @@ impl Schema {
             input,
             output,
             namespace,
+            streams,
         }
     }
 
@@ -268,6 +271,10 @@ impl Schema {
 
     pub fn namespace(&self) -> &[Declaration] {
         &self.namespace
+    }
+
+    pub fn streams(&self) -> &[StreamDeclaration] {
+        &self.streams
     }
 
     pub fn type_named(&self, name: &str) -> Option<&TypeDeclaration> {
@@ -726,6 +733,83 @@ impl EnumDeclaration {
 pub struct EnumVariant {
     pub name: Name,
     pub payload: Option<TypeReference>,
+    pub stream_relation: Option<StreamRelation>,
+}
+
+impl EnumVariant {
+    pub fn new(name: Name, payload: Option<TypeReference>) -> Self {
+        Self {
+            name,
+            payload,
+            stream_relation: None,
+        }
+    }
+
+    pub fn with_stream_relation(mut self, stream_relation: StreamRelation) -> Self {
+        self.stream_relation = Some(stream_relation);
+        self
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum StreamRelation {
+    Opens(Name),
+    Belongs(Name),
+}
+
+impl StreamRelation {
+    pub fn stream_name(&self) -> &Name {
+        match self {
+            Self::Opens(name) | Self::Belongs(name) => name,
+        }
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct StreamDeclaration {
+    pub name: Name,
+    pub token: TypeReference,
+    pub opened: TypeReference,
+    pub event: TypeReference,
+    pub close: TypeReference,
+}
+
+impl StreamDeclaration {
+    pub fn new(
+        name: Name,
+        token: TypeReference,
+        opened: TypeReference,
+        event: TypeReference,
+        close: TypeReference,
+    ) -> Self {
+        Self {
+            name,
+            token,
+            opened,
+            event,
+            close,
+        }
+    }
 }
 
 /// A type at a reference position — a struct field's type, an enum
