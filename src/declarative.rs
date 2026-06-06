@@ -490,12 +490,12 @@ impl MacroTemplate {
         let mut objects = self.object.expand_objects(bindings)?;
         let object = objects
             .pop()
-            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
                 found: String::new(),
             })?;
         let source = object.compact_notation();
         if !objects.is_empty() {
-            return Err(SchemaError::UnknownAssembledTemplate { found: source });
+            return Err(SchemaError::UnknownMacroExpansionTemplate { found: source });
         }
         Ok(ExpandedTemplate { object, source })
     }
@@ -1008,7 +1008,7 @@ impl ExpandedTemplate {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<MacroOutput, SchemaError> {
-        AssembledTemplate::new(ObjectView::Expanded(&self.object)).lower(registry, context)
+        MacroExpansionTemplate::new(ObjectView::Expanded(&self.object)).lower(registry, context)
     }
 }
 
@@ -1319,7 +1319,7 @@ impl<'object> ExpandedReference<'object> {
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
         let name = self.inline_declaration_name("inline struct declaration")?;
-        let fields = AssembledFields::from_objects(
+        let fields = MacroExpansionFields::from_objects(
             self.children[1..]
                 .iter()
                 .map(ObjectView::Expanded)
@@ -1345,7 +1345,7 @@ impl<'object> ExpandedReference<'object> {
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
         let name = self.inline_declaration_name("inline enum declaration")?;
-        let variants = AssembledVariants::from_objects(
+        let variants = MacroExpansionVariants::from_objects(
             self.children[1..]
                 .iter()
                 .map(ObjectView::Expanded)
@@ -1371,11 +1371,11 @@ impl<'object> ExpandedReference<'object> {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct AssembledTemplate<'template> {
+struct MacroExpansionTemplate<'template> {
     object: ObjectView<'template>,
 }
 
-impl<'template> AssembledTemplate<'template> {
+impl<'template> MacroExpansionTemplate<'template> {
     fn new(object: ObjectView<'template>) -> Self {
         Self { object }
     }
@@ -1385,27 +1385,27 @@ impl<'template> AssembledTemplate<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<MacroOutput, SchemaError> {
-        let children = self.parenthesized_children("assembled template")?;
+        let children = self.parenthesized_children("macro expansion template")?;
         let head = children
             .first()
-            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
                 found: self.object.compact_notation(),
             })?
             .schema_name()?;
         match head.as_str() {
-            "Type" => AssembledType::new(self.child(&children, 1, "Type")?)
+            "Type" => MacroExpansionType::new(self.child(&children, 1, "Type")?)
                 .lower(registry, context)
                 .map(MacroOutput::Type),
-            "Fields" => AssembledFields::from_objects(children[1..].to_vec())
+            "Fields" => MacroExpansionFields::from_objects(children[1..].to_vec())
                 .lower(registry, context)
                 .map(MacroOutput::Fields),
-            "Variants" => AssembledVariants::from_objects(children[1..].to_vec())
+            "Variants" => MacroExpansionVariants::from_objects(children[1..].to_vec())
                 .lower(registry, context)
                 .map(MacroOutput::Variants),
-            "Reference" => AssembledReference::new(children[1..].to_vec())
+            "Reference" => MacroExpansionReference::new(children[1..].to_vec())
                 .lower(registry, context)
                 .map(MacroOutput::Reference),
-            found => Err(SchemaError::UnknownAssembledTemplate {
+            found => Err(SchemaError::UnknownMacroExpansionTemplate {
                 found: found.to_owned(),
             }),
         }
@@ -1420,7 +1420,7 @@ impl<'template> AssembledTemplate<'template> {
         children
             .get(index)
             .copied()
-            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
                 found: template_name.to_owned(),
             })
     }
@@ -1436,11 +1436,11 @@ impl<'template> AssembledTemplate<'template> {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct AssembledType<'template> {
+struct MacroExpansionType<'template> {
     object: ObjectView<'template>,
 }
 
-impl<'template> AssembledType<'template> {
+impl<'template> MacroExpansionType<'template> {
     fn new(object: ObjectView<'template>) -> Self {
         Self { object }
     }
@@ -1450,11 +1450,11 @@ impl<'template> AssembledType<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
-        let children =
-            AssembledTemplate::new(self.object).parenthesized_children("assembled type")?;
+        let children = MacroExpansionTemplate::new(self.object)
+            .parenthesized_children("macro expansion type")?;
         let kind = children
             .first()
-            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
                 found: "Type".to_owned(),
             })?
             .schema_name()?;
@@ -1462,7 +1462,7 @@ impl<'template> AssembledType<'template> {
             "Struct" => self.lower_struct(&children, registry, context),
             "Enum" => self.lower_enum(&children, registry, context),
             "Newtype" => self.lower_newtype(&children, registry, context),
-            found => Err(SchemaError::UnknownAssembledTemplate {
+            found => Err(SchemaError::UnknownMacroExpansionTemplate {
                 found: found.to_owned(),
             }),
         }
@@ -1476,7 +1476,7 @@ impl<'template> AssembledType<'template> {
     ) -> Result<TypeDeclaration, SchemaError> {
         let name = self.child(children, 1, "Struct")?.schema_name()?;
         let body = self.child(children, 2, "Struct")?;
-        AssembledStructBody::new(name, body.root_objects()).lower_type(registry, context)
+        MacroExpansionStructBody::new(name, body.root_objects()).lower_type(registry, context)
     }
 
     fn lower_enum(
@@ -1488,7 +1488,7 @@ impl<'template> AssembledType<'template> {
         let name = self.child(children, 1, "Enum")?.schema_name()?;
         let body = self.child(children, 2, "Enum")?;
         let variants =
-            AssembledVariants::from_objects(body.root_objects()).lower(registry, context)?;
+            MacroExpansionVariants::from_objects(body.root_objects()).lower(registry, context)?;
         Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
     }
 
@@ -1516,24 +1516,24 @@ impl<'template> AssembledType<'template> {
         children
             .get(index)
             .copied()
-            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
                 found: template_name.to_owned(),
             })
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct AssembledFields<'template> {
+pub(crate) struct MacroExpansionFields<'template> {
     objects: Vec<ObjectView<'template>>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct AssembledStructBody<'template> {
+pub(crate) struct MacroExpansionStructBody<'template> {
     name: Name,
     objects: Vec<ObjectView<'template>>,
 }
 
-impl<'template> AssembledStructBody<'template> {
+impl<'template> MacroExpansionStructBody<'template> {
     fn new(name: Name, objects: Vec<ObjectView<'template>>) -> Self {
         Self { name, objects }
     }
@@ -1551,7 +1551,7 @@ impl<'template> AssembledStructBody<'template> {
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
         let fields =
-            AssembledFields::from_objects(self.objects.clone()).lower(registry, context)?;
+            MacroExpansionFields::from_objects(self.objects.clone()).lower(registry, context)?;
         if fields.len() == 1 {
             let reference = fields.into_iter().next().expect("length checked").reference;
             Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
@@ -1567,7 +1567,7 @@ impl<'template> AssembledStructBody<'template> {
     }
 }
 
-impl<'template> AssembledFields<'template> {
+impl<'template> MacroExpansionFields<'template> {
     pub(crate) fn new(objects: &'template [Block]) -> Self {
         Self {
             objects: objects.iter().map(ObjectView::Block).collect(),
@@ -1596,18 +1596,25 @@ impl<'template> AssembledFields<'template> {
                     });
                 }
                 fields.push(
-                    AssembledField::new_named_pair(self.objects[index], self.objects[next_index])
-                        .lower(registry, context)?,
+                    MacroExpansionField::new_named_pair(
+                        self.objects[index],
+                        self.objects[next_index],
+                    )
+                    .lower(registry, context)?,
                 );
                 index += 2;
             } else if self.starts_ambiguous_pascal_pair(index) {
                 fields.push(
-                    AssembledField::new_named_pair(self.objects[index], self.objects[index + 1])
-                        .lower(registry, context)?,
+                    MacroExpansionField::new_named_pair(
+                        self.objects[index],
+                        self.objects[index + 1],
+                    )
+                    .lower(registry, context)?,
                 );
                 index += 2;
             } else {
-                fields.push(AssembledField::new(self.objects[index]).lower(registry, context)?);
+                fields
+                    .push(MacroExpansionField::new(self.objects[index]).lower(registry, context)?);
                 index += 1;
             }
         }
@@ -1659,12 +1666,12 @@ impl<'template> AssembledFields<'template> {
 /// lower-case field symbol remains the explicit escape hatch for
 /// uncommon names.
 #[derive(Clone, Copy, Debug)]
-struct AssembledField<'template> {
+struct MacroExpansionField<'template> {
     object: ObjectView<'template>,
     paired_reference: Option<ObjectView<'template>>,
 }
 
-impl<'template> AssembledField<'template> {
+impl<'template> MacroExpansionField<'template> {
     fn new(object: ObjectView<'template>) -> Self {
         Self {
             object,
@@ -1743,10 +1750,11 @@ impl<'template> AssembledField<'template> {
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
         if let Some(children) = object.delimited_children(Delimiter::Brace) {
-            return AssembledStructBody::new(name, children).lower_type(registry, context);
+            return MacroExpansionStructBody::new(name, children).lower_type(registry, context);
         }
         if let Some(children) = object.delimited_children(Delimiter::SquareBracket) {
-            let variants = AssembledVariants::from_objects(children).lower(registry, context)?;
+            let variants =
+                MacroExpansionVariants::from_objects(children).lower(registry, context)?;
             return Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)));
         }
         Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
@@ -1800,11 +1808,11 @@ impl<'template> AssembledField<'template> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct AssembledVariants<'template> {
+pub(crate) struct MacroExpansionVariants<'template> {
     objects: Vec<ObjectView<'template>>,
 }
 
-impl<'template> AssembledVariants<'template> {
+impl<'template> MacroExpansionVariants<'template> {
     pub(crate) fn new(objects: &'template [Block]) -> Self {
         Self {
             objects: objects.iter().map(ObjectView::Block).collect(),
@@ -1822,17 +1830,17 @@ impl<'template> AssembledVariants<'template> {
     ) -> Result<Vec<EnumVariant>, SchemaError> {
         self.objects
             .iter()
-            .map(|object| AssembledVariant::new(*object).lower(registry, context))
+            .map(|object| MacroExpansionVariant::new(*object).lower(registry, context))
             .collect()
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-struct AssembledVariant<'template> {
+struct MacroExpansionVariant<'template> {
     object: ObjectView<'template>,
 }
 
-impl<'template> AssembledVariant<'template> {
+impl<'template> MacroExpansionVariant<'template> {
     fn new(object: ObjectView<'template>) -> Self {
         Self { object }
     }
@@ -1921,11 +1929,11 @@ impl<'template> StreamRelationObject<'template> {
 }
 
 #[derive(Clone, Debug)]
-struct AssembledReference<'template> {
+struct MacroExpansionReference<'template> {
     objects: Vec<ObjectView<'template>>,
 }
 
-impl<'template> AssembledReference<'template> {
+impl<'template> MacroExpansionReference<'template> {
     fn new(objects: Vec<ObjectView<'template>>) -> Self {
         Self { objects }
     }
@@ -1936,7 +1944,7 @@ impl<'template> AssembledReference<'template> {
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
         if self.objects.len() != 1 {
-            return Err(SchemaError::UnknownAssembledTemplate {
+            return Err(SchemaError::UnknownMacroExpansionTemplate {
                 found: "Reference".to_owned(),
             });
         }
@@ -1951,11 +1959,11 @@ impl<'template> AssembledReference<'template> {
         if !object.is_parenthesis() {
             return object.type_reference(registry, context);
         }
-        let children =
-            AssembledTemplate::new(object).parenthesized_children("assembled reference")?;
+        let children = MacroExpansionTemplate::new(object)
+            .parenthesized_children("macro expansion reference")?;
         let head = children
             .first()
-            .ok_or_else(|| SchemaError::UnknownAssembledTemplate {
+            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
                 found: "Reference".to_owned(),
             })?
             .schema_name()?;

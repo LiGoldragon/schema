@@ -124,10 +124,13 @@ queries, and semantic assertions.
 `Schema` archives through rkyv with `Schema::to_binary_bytes` and
 `Schema::from_binary_bytes`. There is intentionally no `Schema::to_nota`, no
 semantic `.asschema` / `.asschema.rkyv` artifact owner, and no schema store in this
-crate. The removed Asschema text/binary artifact and redb-backed store were
-compatibility endpoints; the current pipeline keeps the text/binary source
-artifact at `SchemaSourceArtifact` and keeps database work in production SEMA
-engines, not in schema-next.
+crate. Asschema is retired, not preserved as a compatibility endpoint: the
+`.asschema` text artifact, the `.asschema.rkyv` binary, the `AsschemaArtifact`
+owner, and the redb-backed semantic store are removed outright. The pipeline is
+`.schema` -> schema-in-Rust (`SchemaSource` source nouns own resolution) ->
+`Schema` -> Rust. The text/binary source artifact lives at
+`SchemaSourceArtifact`, and database work lives in production SEMA engines, not
+in schema-next.
 
 Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Schema` through rkyv:
@@ -182,7 +185,7 @@ one-field struct map with an invented field name. Its long form is
 Rust emitter consumes the contained reference directly when emitting a tuple
 newtype.
 
-Struct-body lowering has the same rule before the assembled endpoint is
+Struct-body lowering has the same rule before the semantic `Schema` value is
 written: a body that produces exactly one field becomes `Newtype`, and a body
 that produces two or more fields stays `Struct`. The source may spell that
 single field as a derived member (`Entry { Topic * }`) or an explicit one-field
@@ -218,7 +221,7 @@ making its Rust noun schema-emitted.
 Declarative macro expansion preserves structural NOTA objects while lowering.
 Pattern captures store the matched `Block` values, rest captures store ordered
 `Block` vectors, and templates expand into an owned object tree before
-`AssembledTemplate` lowers the result. Compact notation remains only as a
+`MacroExpansionTemplate` lowers the result. Compact notation remains only as a
 diagnostic string for `MacroContext`; the live expansion path does not emit a
 template string and parse it back through `Document::parse`.
 

@@ -37,8 +37,8 @@ pub use schema::{
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceField,
     SourceFieldValue, SourceImport, SourceImports, SourceNamespace, SourceNamespaceEntry,
-    SourceReference, SourceRootEnum, SourceStructBody, SourceVariantPayload,
-    SourceVariantSignature,
+    SourceReference, SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
+    SourceVariantSignature, StreamRelationKeyword,
 };
 pub use syntax::{
     SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField, SyntaxReference,

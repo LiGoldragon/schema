@@ -7,7 +7,7 @@ use nota_next::{
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
-    declarative::{AssembledFields, AssembledVariants},
+    declarative::{MacroExpansionFields, MacroExpansionVariants},
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -1024,7 +1024,7 @@ impl TypeReference {
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
         let name = Self::inline_declaration_name(objects, "inline struct declaration")?;
-        let fields = AssembledFields::new(&objects[1..]).lower(registry, context)?;
+        let fields = MacroExpansionFields::new(&objects[1..]).lower(registry, context)?;
         if fields.len() == 1 {
             let reference = fields.into_iter().next().expect("length checked").reference;
             context.remember_inline_declaration(Declaration::private(TypeDeclaration::Newtype(
@@ -1045,7 +1045,7 @@ impl TypeReference {
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
         let name = Self::inline_declaration_name(objects, "inline enum declaration")?;
-        let variants = AssembledVariants::new(&objects[1..]).lower(registry, context)?;
+        let variants = MacroExpansionVariants::new(&objects[1..]).lower(registry, context)?;
         context.remember_inline_declaration(Declaration::private(TypeDeclaration::Enum(
             EnumDeclaration::new(name.clone(), variants),
         )));

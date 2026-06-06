@@ -348,14 +348,18 @@ fn source_enum_variant_reports_structural_macro_expected_shapes() {
         panic!("expected structural macro-node error, got {error:?}");
     };
 
-    assert_eq!(position, "EnumVariants");
+    assert_eq!(position, "SourceVariantSignature");
     assert_eq!(found, "parenthesis");
     assert!(
-        expected.iter().any(|case| case.contains("unit variant")),
+        expected.iter().any(|case| case.contains("Unit")),
         "diagnostic names the unit structural case"
     );
     assert!(
-        expected.iter().any(|case| case.contains("data variant")),
+        expected.iter().any(|case| case.contains("Data")),
         "diagnostic names the data structural case"
+    );
+    assert!(
+        expected.iter().any(|case| case.contains("Streaming")),
+        "diagnostic names the streaming structural case"
     );
 }

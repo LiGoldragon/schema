@@ -2,7 +2,7 @@ use nota_next::{Block, Delimiter, Document, NotaBody};
 
 use crate::{
     ImportResolver, SchemaSource,
-    declarative::{AssembledStructBody, AssembledVariants},
+    declarative::{MacroExpansionStructBody, MacroExpansionVariants},
     macros::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
@@ -103,7 +103,7 @@ pub enum SchemaError {
     ConflictingMacroBinding {
         name: String,
     },
-    UnknownAssembledTemplate {
+    UnknownMacroExpansionTemplate {
         found: String,
     },
     EmptyTypeReference,
@@ -258,6 +258,30 @@ impl From<nota_next::StructuralMacroError<SchemaError>> for SchemaError {
             }
             nota_next::StructuralMacroError::Dispatch(error) => Self::from(error),
             nota_next::StructuralMacroError::MatchedNode(error) => error,
+        }
+    }
+}
+
+impl From<nota_next::StructuralMacroNodeError> for SchemaError {
+    fn from(value: nota_next::StructuralMacroNodeError) -> Self {
+        Self::MalformedSchemaNode {
+            found: value.to_string(),
+        }
+    }
+}
+
+impl From<nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>> for SchemaError {
+    fn from(value: nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>) -> Self {
+        match value {
+            nota_next::StructuralMacroError::Parse { error } => Self::Nota(error),
+            nota_next::StructuralMacroError::ExpectedSingleRoot { found } => {
+                Self::ExpectedRootObjectCount {
+                    expected: "one structural macro node root object",
+                    found,
+                }
+            }
+            nota_next::StructuralMacroError::Dispatch(error) => Self::from(error),
+            nota_next::StructuralMacroError::MatchedNode(error) => Self::from(error),
         }
     }
 }
@@ -592,7 +616,7 @@ impl<'schema> KeyValueDeclaration<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
-        AssembledStructBody::from_blocks(name, root_objects).lower_type(registry, context)
+        MacroExpansionStructBody::from_blocks(name, root_objects).lower_type(registry, context)
     }
 
     fn lower_enum(
@@ -602,7 +626,7 @@ impl<'schema> KeyValueDeclaration<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
-        let variants = AssembledVariants::new(root_objects).lower(registry, context)?;
+        let variants = MacroExpansionVariants::new(root_objects).lower(registry, context)?;
         Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
     }
 
@@ -963,6 +987,6 @@ impl<'schema> RootEnumBlock<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<EnumVariant>, SchemaError> {
-        AssembledVariants::new(self.variants).lower(registry, context)
+        MacroExpansionVariants::new(self.variants).lower(registry, context)
     }
 }

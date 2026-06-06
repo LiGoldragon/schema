@@ -4,16 +4,15 @@ use std::{
 };
 
 use nota_next::{
-    Block, CaptureName, Delimiter, Document, MacroCandidate, MacroMatch, NotaBody, NotaEncode,
-    NotaString, StructuralMacroError, StructuralMacroNode, StructuralVariant, StructuralVariantSet,
+    Block, CaptureName, Delimiter, Document, MacroCandidate, NotaBody, NotaEncode, NotaString,
+    StructuralMacroError, StructuralMacroNode, StructuralVariant,
 };
 
 use crate::{
     AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
-    ImportDeclaration, MacroNodeDefinition as SchemaMacroNodeDefinition, MacroPosition, Name,
-    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, Schema, SchemaEngine,
-    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration,
-    TypeDeclaration, TypeReference, macros::BlockDebug,
+    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport,
+    Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
+    StructDeclaration, TypeDeclaration, TypeReference, macros::BlockDebug,
 };
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -914,7 +913,9 @@ impl SourceEnumBody {
     fn from_blocks(blocks: &[Block]) -> Result<Self, SchemaError> {
         let mut variants = Vec::new();
         for block in blocks {
-            variants.push(SourceVariantSignature::from_block(block)?);
+            variants.push(
+                SourceVariantSignature::from_structural_block(block).map_err(SchemaError::from)?,
+            );
         }
         Ok(Self { variants })
     }
@@ -923,7 +924,7 @@ impl SourceEnumBody {
         Delimiter::SquareBracket.wrap(
             self.variants
                 .iter()
-                .map(SourceVariantSignature::to_schema_text),
+                .map(SourceVariantSignature::to_structural_nota),
         )
     }
 
@@ -977,7 +978,16 @@ impl SourceEnumBody {
     }
 }
 
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::StructuralMacroNode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 #[rkyv(
     bytecheck(bounds(
         __C: rkyv::validation::ArchiveContext,
@@ -989,48 +999,47 @@ impl SourceEnumBody {
     ),
     deserialize_bounds(__D::Error: rkyv::rancor::Source)
 )]
-pub struct SourceVariantSignature {
-    name: Name,
-    #[rkyv(omit_bounds)]
-    payload: Option<SourceVariantPayload>,
-    stream_relation: Option<StreamRelation>,
+pub enum SourceVariantSignature {
+    #[shape(pascal_atom)]
+    Unit(SourceVariantName),
+    #[shape(pascal_head, arity = 2)]
+    Data(SourceVariantName, #[rkyv(omit_bounds)] SourceVariantPayload),
+    #[shape(pascal_head, arity = 4)]
+    Streaming(
+        SourceVariantName,
+        #[rkyv(omit_bounds)] SourceVariantPayload,
+        StreamRelationKeyword,
+        SourceVariantName,
+    ),
 }
 
 impl SourceVariantSignature {
     pub fn name(&self) -> &Name {
-        &self.name
+        match self {
+            Self::Unit(name) | Self::Data(name, _) | Self::Streaming(name, ..) => name.name(),
+        }
     }
 
     pub fn payload(&self) -> Option<&SourceReference> {
-        match self.payload.as_ref() {
+        match self.payload_value() {
             Some(SourceVariantPayload::Reference(reference)) => Some(reference),
             Some(SourceVariantPayload::Declaration(_)) | None => None,
         }
     }
 
-    pub fn stream_relation(&self) -> Option<&StreamRelation> {
-        self.stream_relation.as_ref()
-    }
-
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        Self::from_structural_block(block).map_err(SchemaError::from)
-    }
-
-    fn to_schema_text(&self) -> String {
-        match &self.payload {
-            Some(payload) => {
-                if let Some(relation) = &self.stream_relation {
-                    Delimiter::Parenthesis.wrap([
-                        self.name.to_nota(),
-                        payload.to_schema_text(),
-                        Self::stream_relation_keyword(relation).to_owned(),
-                        relation.stream_name().to_nota(),
-                    ])
-                } else {
-                    Delimiter::Parenthesis.wrap([self.name.to_nota(), payload.to_schema_text()])
-                }
+    pub fn stream_relation(&self) -> Option<StreamRelation> {
+        match self {
+            Self::Streaming(_, _, keyword, stream_name) => {
+                Some(keyword.into_stream_relation(stream_name.name().clone()))
             }
-            None => self.name.to_nota(),
+            Self::Unit(_) | Self::Data(_, _) => None,
+        }
+    }
+
+    fn payload_value(&self) -> Option<&SourceVariantPayload> {
+        match self {
+            Self::Data(_, payload) | Self::Streaming(_, payload, _, _) => Some(payload),
+            Self::Unit(_) => None,
         }
     }
 
@@ -1038,37 +1047,31 @@ impl SourceVariantSignature {
         &self,
         resolver: &impl SourceVariantResolver,
     ) -> Result<EnumVariant, SchemaError> {
-        let payload = match &self.payload {
+        let name = self.name().clone();
+        let payload = match self.payload_value() {
             Some(SourceVariantPayload::Reference(reference)) => Some(reference.to_type_reference()),
             Some(SourceVariantPayload::Declaration(_)) => {
-                Some(TypeReference::from_name(self.name.clone()))
+                Some(TypeReference::from_name(name.clone()))
             }
-            None if resolver.resolves_variant_payload(&self.name) => {
-                Some(TypeReference::from_name(self.name.clone()))
+            None if resolver.resolves_variant_payload(&name) => {
+                Some(TypeReference::from_name(name.clone()))
             }
             None => None,
         };
-        let variant = EnumVariant::new(self.name.clone(), payload);
-        Ok(match &self.stream_relation {
-            Some(relation) => variant.with_stream_relation(relation.clone()),
+        let variant = EnumVariant::new(name, payload);
+        Ok(match self.stream_relation() {
+            Some(relation) => variant.with_stream_relation(relation),
             None => variant,
         })
-    }
-
-    fn stream_relation_keyword(relation: &StreamRelation) -> &'static str {
-        match relation {
-            StreamRelation::Opens(_) => "opens",
-            StreamRelation::Belongs(_) => "belongs",
-        }
     }
 
     fn public_inline_declaration(
         &self,
         resolver: &SourceTypeResolver,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
-        match &self.payload {
+        match self.payload_value() {
             Some(SourceVariantPayload::Declaration(value)) => {
-                value.to_declaration_group(self.name.clone(), resolver)
+                value.to_declaration_group(self.name().clone(), resolver)
             }
             Some(SourceVariantPayload::Reference(_)) | None => Ok(SourceDeclarationGroup::empty()),
         }
@@ -1078,136 +1081,87 @@ impl SourceVariantSignature {
         &self,
         resolver: &SourceTypeResolver,
     ) -> Result<Vec<TypeDeclaration>, SchemaError> {
-        match &self.payload {
+        match self.payload_value() {
             Some(SourceVariantPayload::Declaration(value)) => Ok(value
-                .to_declaration_group(self.name.clone(), resolver)?
+                .to_declaration_group(self.name().clone(), resolver)?
                 .into_type_declarations()),
             Some(SourceVariantPayload::Reference(_)) | None => Ok(Vec::new()),
         }
     }
 
     fn inline_declaration_name(&self) -> Option<Name> {
-        match &self.payload {
-            Some(SourceVariantPayload::Declaration(_)) => Some(self.name.clone()),
+        match self.payload_value() {
+            Some(SourceVariantPayload::Declaration(_)) => Some(self.name().clone()),
             Some(SourceVariantPayload::Reference(_)) | None => None,
         }
     }
 }
 
-impl StructuralMacroNode for SourceVariantSignature {
+/// A PascalCase schema symbol at a variant-name or stream-name position. It owns
+/// the lowered `Name` and decodes itself from a bare PascalCase atom, so the
+/// `SourceVariantSignature` derive can recurse into each name field.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SourceVariantName(Name);
+
+impl SourceVariantName {
+    fn name(&self) -> &Name {
+        &self.0
+    }
+
+    fn qualifies(value: &str) -> bool {
+        value
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase())
+            && !value.contains('@')
+    }
+}
+
+impl StructuralMacroNode for SourceVariantName {
     type Error = SchemaError;
 
     fn structural_position() -> nota_next::PositionPredicate {
-        MacroPosition::EnumVariants.position_predicate()
+        nota_next::PositionPredicate::named("variant name")
     }
 
     fn structural_variants() -> Vec<StructuralVariant> {
-        SchemaMacroNodeDefinition::enum_variants()
-            .cases()
-            .to_vec()
-            .into_iter()
-            .map(StructuralVariant::from_macro_node)
-            .collect()
+        vec![
+            nota_next::BlockShape::pascal_atom(Some(CaptureName::new("name")))
+                .into_structural_variant("symbol", "PascalCase atom"),
+        ]
+    }
+
+    fn from_structural_block(block: &Block) -> Result<Self, StructuralMacroError<Self::Error>> {
+        let Some(text) = block.demote_to_string() else {
+            return Err(StructuralMacroError::MatchedNode(
+                SchemaError::ExpectedSymbol {
+                    found: block.reemit_fallback(),
+                },
+            ));
+        };
+        if !Self::qualifies(text) {
+            return Err(StructuralMacroError::MatchedNode(
+                SchemaError::ExpectedSyntaxEnumVariant {
+                    found: block.reemit_fallback(),
+                },
+            ));
+        }
+        Ok(Self(Name::new(text)))
     }
 
     fn from_structural_candidate(
         candidate: MacroCandidate<'_>,
     ) -> Result<Self, StructuralMacroError<Self::Error>> {
-        let variants =
-            StructuralVariantSet::new(Self::structural_position(), Self::structural_variants())
-                .map_err(StructuralMacroError::Dispatch)?;
-        let matched = variants
-            .dispatch(&candidate)
-            .map_err(StructuralMacroError::Dispatch)?;
-        (|| -> Result<Self, Self::Error> {
-            match matched.macro_name() {
-                "unit variant" => {
-                    let variant_name = SourceVariantMatch::new(&matched).name("variant_name")?;
-                    Ok(Self {
-                        name: variant_name,
-                        payload: None,
-                        stream_relation: None,
-                    })
-                }
-                "data variant" => {
-                    let variant_match = SourceVariantMatch::new(&matched);
-                    Ok(Self {
-                        name: variant_match.name("variant_name")?,
-                        payload: Some(SourceVariantPayload::from_block(
-                            variant_match.block("payload")?,
-                        )?),
-                        stream_relation: None,
-                    })
-                }
-                "opens variant" => {
-                    let variant_match = SourceVariantMatch::new(&matched);
-                    Ok(Self {
-                        name: variant_match.name("variant_name")?,
-                        payload: Some(SourceVariantPayload::from_block(
-                            variant_match.block("payload")?,
-                        )?),
-                        stream_relation: Some(StreamRelation::Opens(
-                            variant_match.name("stream_name")?,
-                        )),
-                    })
-                }
-                "belongs variant" => {
-                    let variant_match = SourceVariantMatch::new(&matched);
-                    Ok(Self {
-                        name: variant_match.name("variant_name")?,
-                        payload: Some(SourceVariantPayload::from_block(
-                            variant_match.block("payload")?,
-                        )?),
-                        stream_relation: Some(StreamRelation::Belongs(
-                            variant_match.name("stream_name")?,
-                        )),
-                    })
-                }
-                other => Err(SchemaError::MacroDidNotMatch {
-                    macro_name: other.to_owned(),
-                }),
-            }
-        })()
-        .map_err(StructuralMacroError::MatchedNode)
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
     }
 
     fn to_structural_nota(&self) -> String {
-        self.to_schema_text()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SourceVariantMatch<'match_value, 'block> {
-    matched: &'match_value MacroMatch<'block>,
-}
-
-impl<'match_value, 'block> SourceVariantMatch<'match_value, 'block> {
-    fn new(matched: &'match_value MacroMatch<'block>) -> Self {
-        Self { matched }
-    }
-
-    fn name(&self, capture_name: &'static str) -> Result<Name, SchemaError> {
-        let block = self.block(capture_name)?;
-        let Some(name) = block.demote_to_string() else {
-            return Err(SchemaError::ExpectedSymbol {
-                found: block.reemit_fallback(),
-            });
-        };
-        if !SourceVariantName::new(name).is_valid() {
-            return Err(SchemaError::ExpectedSyntaxEnumVariant {
-                found: block.reemit_fallback(),
-            });
-        }
-        Ok(Name::new(name))
-    }
-
-    fn block(&self, capture_name: &'static str) -> Result<&'block Block, SchemaError> {
-        let name = CaptureName::new(capture_name);
-        self.matched
-            .block_capture(&name)
-            .ok_or_else(|| SchemaError::MissingMacroBinding {
-                name: capture_name.to_owned(),
-            })
+        self.0.to_nota()
     }
 }
 
@@ -1229,13 +1183,6 @@ pub enum SourceVariantPayload {
 }
 
 impl SourceVariantPayload {
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        match SourceReference::from_block(block) {
-            Ok(reference) => Ok(Self::Reference(reference)),
-            Err(_) => SourceDeclarationValue::from_block(block).map(Self::Declaration),
-        }
-    }
-
     fn to_schema_text(&self) -> String {
         match self {
             Self::Reference(reference) => reference.to_schema_text(),
@@ -1244,20 +1191,71 @@ impl SourceVariantPayload {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct SourceVariantName<'source>(&'source str);
+impl StructuralMacroNode for SourceVariantPayload {
+    type Error = SchemaError;
 
-impl<'source> SourceVariantName<'source> {
-    fn new(value: &'source str) -> Self {
-        Self(value)
+    fn structural_position() -> nota_next::PositionPredicate {
+        nota_next::PositionPredicate::named("variant payload")
     }
 
-    fn is_valid(&self) -> bool {
-        self.0
-            .chars()
-            .next()
-            .is_some_and(|character| character.is_ascii_uppercase())
-            && !self.0.contains('@')
+    fn structural_variants() -> Vec<StructuralVariant> {
+        Vec::new()
+    }
+
+    fn from_structural_block(block: &Block) -> Result<Self, StructuralMacroError<Self::Error>> {
+        let decoded = match SourceReference::from_block(block) {
+            Ok(reference) => Self::Reference(reference),
+            Err(_) => SourceDeclarationValue::from_block(block)
+                .map(Self::Declaration)
+                .map_err(StructuralMacroError::MatchedNode)?,
+        };
+        Ok(decoded)
+    }
+
+    fn from_structural_candidate(
+        candidate: MacroCandidate<'_>,
+    ) -> Result<Self, StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        self.to_schema_text()
+    }
+}
+
+/// The `opens` / `belongs` discriminator that precedes a stream name in a
+/// streaming variant signature. It is a keyword structural macro node so the
+/// `SourceVariantSignature` derive decodes the marker recursively rather than
+/// matching a literal string by hand.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::StructuralMacroNode,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum StreamRelationKeyword {
+    #[shape(keyword = "opens")]
+    Opens,
+    #[shape(keyword = "belongs")]
+    Belongs,
+}
+
+impl StreamRelationKeyword {
+    fn into_stream_relation(self, stream_name: Name) -> StreamRelation {
+        match self {
+            Self::Opens => StreamRelation::Opens(stream_name),
+            Self::Belongs => StreamRelation::Belongs(stream_name),
+        }
     }
 }
 
