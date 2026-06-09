@@ -121,6 +121,21 @@ fn self_tagged_variant_form_equals_explicit_repetition() {
 }
 
 #[test]
+fn bytes_is_a_reserved_scalar_leaf_not_a_declared_name() {
+    let schema = SchemaEngine::default()
+        .lower_source(
+            "[] [] { Digest Bytes }",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect("bytes scalar lowers");
+
+    let TypeDeclaration::Alias(digest) = schema.type_named("Digest").expect("digest type") else {
+        panic!("Digest should lower to an alias over the Bytes scalar");
+    };
+    assert_eq!(digest.reference, TypeReference::Bytes);
+}
+
+#[test]
 fn single_field_brace_declarations_lower_to_newtypes() {
     let source = "[] [] { Topic String Entry { Topic * } Wrapper { value Topic } }";
     let schema = SchemaEngine::default()

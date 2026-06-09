@@ -834,6 +834,7 @@ pub enum TypeReference {
     Integer,
     Boolean,
     Path,
+    Bytes,
     Plain(Name),
     Vector(#[rkyv(omit_bounds)] Box<TypeReference>),
     Map(
@@ -851,6 +852,7 @@ impl NotaDecode for TypeReference {
                 "Integer" => Ok(Self::Integer),
                 "Boolean" => Ok(Self::Boolean),
                 "Path" => Ok(Self::Path),
+                "Bytes" => Ok(Self::Bytes),
                 other => Err(NotaDecodeError::UnknownVariant {
                     enum_name: "TypeReference",
                     variant: other.to_owned(),
@@ -886,6 +888,7 @@ impl NotaEncode for TypeReference {
             Self::Integer => "Integer".to_owned(),
             Self::Boolean => "Boolean".to_owned(),
             Self::Path => "Path".to_owned(),
+            Self::Bytes => "Bytes".to_owned(),
             Self::Plain(name) => format!("(Plain {})", name.to_nota()),
             Self::Vector(reference) => format!("(Vector {})", reference.to_nota()),
             Self::Map(key, value) => format!("(Map ({} {}))", key.to_nota(), value.to_nota()),
@@ -908,12 +911,16 @@ impl TypeReference {
             "Integer" => Self::Integer,
             "Boolean" => Self::Boolean,
             "Path" => Self::Path,
+            "Bytes" => Self::Bytes,
             _ => Self::Plain(name),
         }
     }
 
     pub fn is_reserved_scalar_name(name: &Name) -> bool {
-        matches!(name.as_str(), "String" | "Integer" | "Boolean" | "Path")
+        matches!(
+            name.as_str(),
+            "String" | "Integer" | "Boolean" | "Path" | "Bytes"
+        )
     }
 
     pub fn scalar_name(&self) -> Option<&'static str> {
@@ -922,6 +929,7 @@ impl TypeReference {
             Self::Integer => Some("Integer"),
             Self::Boolean => Some("Boolean"),
             Self::Path => Some("Path"),
+            Self::Bytes => Some("Bytes"),
             Self::Plain(_) | Self::Vector(_) | Self::Map(..) | Self::Optional(_) => None,
         }
     }
@@ -936,6 +944,7 @@ impl TypeReference {
             | Self::Integer
             | Self::Boolean
             | Self::Path
+            | Self::Bytes
             | Self::Vector(_)
             | Self::Map(..)
             | Self::Optional(_) => None,

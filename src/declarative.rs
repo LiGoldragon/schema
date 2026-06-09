@@ -1790,6 +1790,7 @@ impl<'template> MacroExpansionField<'template> {
             TypeReference::Integer => Name::new("integer"),
             TypeReference::Boolean => Name::new("boolean"),
             TypeReference::Path => Name::new("path"),
+            TypeReference::Bytes => Name::new("bytes"),
             TypeReference::Plain(name) => Name::new(name.field_name()),
             TypeReference::Vector(inner) => {
                 Name::new(format!("{}_vector", self.derived_name_for_reference(inner)))
