@@ -6,7 +6,6 @@ mod raw;
 mod resolution;
 mod schema;
 mod source;
-mod syntax;
 mod upgrade;
 
 pub use declarative::{
@@ -39,10 +38,6 @@ pub use source::{
     SourceFieldValue, SourceImport, SourceImports, SourceNamespace, SourceNamespaceEntry,
     SourceReference, SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
     SourceVariantSignature, StreamRelationKeyword,
-};
-pub use syntax::{
-    SyntaxDatatype, SyntaxDeclaration, SyntaxEnumDeclaration, SyntaxField, SyntaxReference,
-    SyntaxSchema, SyntaxStructDeclaration, SyntaxVariant,
 };
 pub use upgrade::{
     AddField, AddVariant, ChangeFieldType, DefaultValue, FieldMigration, MigrationSpec, SchemaEdit,
