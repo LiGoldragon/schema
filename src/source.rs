@@ -1286,6 +1286,7 @@ impl StreamRelationKeyword {
 )]
 pub enum SourceReference {
     Plain(Name),
+    FixedBytes(u64),
     Vector(#[rkyv(omit_bounds)] Box<SourceReference>),
     Optional(#[rkyv(omit_bounds)] Box<SourceReference>),
     Map(
@@ -1331,10 +1332,24 @@ impl SourceReference {
             "Vec" | "Vector" => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
             "Optional" | "Option" => Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
             "Map" | "KeyValue" => Self::from_map_record(&items[1]),
+            "Bytes" => Self::from_fixed_bytes_record(&items[1]),
             _ => Err(SchemaError::ExpectedSyntaxReference {
                 found: SourceSequenceNotation::new(sequence).description(),
             }),
         }
+    }
+
+    /// Parse the numeric width of a fixed-size byte reference `(Bytes N)`.
+    /// This is the grammar's only numeric type-argument; the width lowers to
+    /// a `[u8; N]` array at the emitter.
+    fn from_fixed_bytes_record(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
+        let width = raw
+            .as_atom()
+            .and_then(|text| text.parse::<u64>().ok())
+            .ok_or_else(|| SchemaError::ExpectedSyntaxReference {
+                found: SourceRawNotation::new(raw).description(),
+            })?;
+        Ok(Self::FixedBytes(width))
     }
 
     fn from_map_record(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
@@ -1359,6 +1374,9 @@ impl SourceReference {
     fn to_schema_text(&self) -> String {
         match self {
             Self::Plain(name) => name.to_nota(),
+            Self::FixedBytes(width) => {
+                Delimiter::Parenthesis.wrap(["Bytes".to_owned(), width.to_string()])
+            }
             Self::Vector(reference) => {
                 Delimiter::Parenthesis.wrap(["Vec".to_owned(), reference.to_schema_text()])
             }
@@ -1375,6 +1393,7 @@ impl SourceReference {
     fn to_type_reference(&self) -> TypeReference {
         match self {
             Self::Plain(name) => TypeReference::from_name(name.clone()),
+            Self::FixedBytes(width) => TypeReference::FixedBytes(*width),
             Self::Vector(reference) => {
                 TypeReference::Vector(Box::new(reference.to_type_reference()))
             }

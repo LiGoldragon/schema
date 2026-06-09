@@ -138,6 +138,22 @@ fn bytes_is_a_reserved_scalar_leaf_not_a_declared_name() {
 }
 
 #[test]
+fn fixed_size_bytes_lowers_to_a_fixed_bytes_reference() {
+    let schema = SchemaEngine::default()
+        .lower_source(
+            "[] [] { Digest (Bytes 32) }",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect("fixed-size bytes lowers");
+
+    let declaration = schema.type_named("Digest").expect("digest type");
+    let TypeDeclaration::Newtype(digest) = declaration else {
+        panic!("Digest should be a newtype over fixed-size Bytes, got {declaration:?}");
+    };
+    assert_eq!(digest.reference, TypeReference::FixedBytes(32));
+}
+
+#[test]
 fn single_field_brace_declarations_lower_to_newtypes() {
     let source = "[] [] { Topic String Entry { Topic * } Wrapper { value Topic } }";
     let schema = SchemaEngine::default()

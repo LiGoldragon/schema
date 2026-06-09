@@ -1270,6 +1270,14 @@ impl<'object> ExpandedReference<'object> {
                     "Map" | "KeyValue" => {
                         return self.grouped_map_payload(&self.children[1], registry, context);
                     }
+                    "Bytes" => {
+                        if let Some(width) = self.children[1]
+                            .demote_to_string()
+                            .and_then(|text| text.parse::<u64>().ok())
+                        {
+                            return Ok(TypeReference::FixedBytes(width));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1791,6 +1799,7 @@ impl<'template> MacroExpansionField<'template> {
             TypeReference::Boolean => Name::new("boolean"),
             TypeReference::Path => Name::new("path"),
             TypeReference::Bytes => Name::new("bytes"),
+            TypeReference::FixedBytes(_) => Name::new("bytes"),
             TypeReference::Plain(name) => Name::new(name.field_name()),
             TypeReference::Vector(inner) => {
                 Name::new(format!("{}_vector", self.derived_name_for_reference(inner)))

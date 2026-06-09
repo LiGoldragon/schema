@@ -811,6 +811,7 @@ pub enum TypeReference {
     Boolean,
     Path,
     Bytes,
+    FixedBytes(u64),
     Plain(Name),
     Vector(#[rkyv(omit_bounds)] Box<TypeReference>),
     Map(
@@ -849,6 +850,14 @@ impl NotaDecode for TypeReference {
                 &children[1],
             )?))),
             "Map" => Self::from_nota_map_payload(&children[1]),
+            "FixedBytes" => Ok(Self::FixedBytes(
+                children[1]
+                    .demote_to_string()
+                    .and_then(|text| text.parse::<u64>().ok())
+                    .ok_or(NotaDecodeError::ExpectedAtom {
+                        type_name: "FixedBytes width",
+                    })?,
+            )),
             other => Err(NotaDecodeError::UnknownVariant {
                 enum_name: "TypeReference",
                 variant: other.to_owned(),
@@ -865,6 +874,7 @@ impl NotaEncode for TypeReference {
             Self::Boolean => "Boolean".to_owned(),
             Self::Path => "Path".to_owned(),
             Self::Bytes => "Bytes".to_owned(),
+            Self::FixedBytes(width) => format!("(FixedBytes {width})"),
             Self::Plain(name) => format!("(Plain {})", name.to_nota()),
             Self::Vector(reference) => format!("(Vector {})", reference.to_nota()),
             Self::Map(key, value) => format!("(Map ({} {}))", key.to_nota(), value.to_nota()),
@@ -906,7 +916,11 @@ impl TypeReference {
             Self::Boolean => Some("Boolean"),
             Self::Path => Some("Path"),
             Self::Bytes => Some("Bytes"),
-            Self::Plain(_) | Self::Vector(_) | Self::Map(..) | Self::Optional(_) => None,
+            Self::FixedBytes(_)
+            | Self::Plain(_)
+            | Self::Vector(_)
+            | Self::Map(..)
+            | Self::Optional(_) => None,
         }
     }
 
@@ -921,6 +935,7 @@ impl TypeReference {
             | Self::Boolean
             | Self::Path
             | Self::Bytes
+            | Self::FixedBytes(_)
             | Self::Vector(_)
             | Self::Map(..)
             | Self::Optional(_) => None,
@@ -1074,11 +1089,28 @@ impl TypeReference {
                     "Map" | "KeyValue" => {
                         return Self::from_grouped_map_payload(&objects[1], registry, context);
                     }
+                    "Bytes" => {
+                        return Self::from_fixed_bytes_width(&objects[1]);
+                    }
                     _ => {}
                 }
             }
         }
         Self::from_macro_invocation(block, registry, context)
+    }
+
+    /// Lower the numeric width of a fixed-size byte reference `(Bytes N)`
+    /// into `TypeReference::FixedBytes(N)` — the grammar's one numeric
+    /// type-argument.
+    fn from_fixed_bytes_width(block: &Block) -> Result<Self, SchemaError> {
+        let width = block
+            .demote_to_string()
+            .and_then(|text| text.parse::<u64>().ok())
+            .ok_or_else(|| SchemaError::UnknownTypeReferenceForm {
+                head: "Bytes".to_owned(),
+                argument_count: 1,
+            })?;
+        Ok(Self::FixedBytes(width))
     }
 
     fn from_grouped_map_payload(
