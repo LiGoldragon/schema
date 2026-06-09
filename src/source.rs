@@ -1002,6 +1002,8 @@ impl SourceEnumBody {
 pub enum SourceVariantSignature {
     #[shape(pascal_atom)]
     Unit(SourceVariantName),
+    #[shape(pascal_head, arity = 1)]
+    SelfTagged(SourceVariantName),
     #[shape(pascal_head, arity = 2)]
     Data(SourceVariantName, #[rkyv(omit_bounds)] SourceVariantPayload),
     #[shape(pascal_head, arity = 4)]
@@ -1016,7 +1018,10 @@ pub enum SourceVariantSignature {
 impl SourceVariantSignature {
     pub fn name(&self) -> &Name {
         match self {
-            Self::Unit(name) | Self::Data(name, _) | Self::Streaming(name, ..) => name.name(),
+            Self::Unit(name)
+            | Self::SelfTagged(name)
+            | Self::Data(name, _)
+            | Self::Streaming(name, ..) => name.name(),
         }
     }
 
@@ -1032,14 +1037,14 @@ impl SourceVariantSignature {
             Self::Streaming(_, _, keyword, stream_name) => {
                 Some(keyword.into_stream_relation(stream_name.name().clone()))
             }
-            Self::Unit(_) | Self::Data(_, _) => None,
+            Self::Unit(_) | Self::SelfTagged(_) | Self::Data(_, _) => None,
         }
     }
 
     fn payload_value(&self) -> Option<&SourceVariantPayload> {
         match self {
             Self::Data(_, payload) | Self::Streaming(_, payload, _, _) => Some(payload),
-            Self::Unit(_) => None,
+            Self::Unit(_) | Self::SelfTagged(_) => None,
         }
     }
 
@@ -1048,15 +1053,20 @@ impl SourceVariantSignature {
         resolver: &impl SourceVariantResolver,
     ) -> Result<EnumVariant, SchemaError> {
         let name = self.name().clone();
-        let payload = match self.payload_value() {
-            Some(SourceVariantPayload::Reference(reference)) => Some(reference.to_type_reference()),
-            Some(SourceVariantPayload::Declaration(_)) => {
+        let payload = match self {
+            Self::SelfTagged(_) => Some(TypeReference::from_name(name.clone())),
+            Self::Data(_, SourceVariantPayload::Reference(reference))
+            | Self::Streaming(_, SourceVariantPayload::Reference(reference), _, _) => {
+                Some(reference.to_type_reference())
+            }
+            Self::Data(_, SourceVariantPayload::Declaration(_))
+            | Self::Streaming(_, SourceVariantPayload::Declaration(_), _, _) => {
                 Some(TypeReference::from_name(name.clone()))
             }
-            None if resolver.resolves_variant_payload(&name) => {
+            Self::Unit(_) if resolver.resolves_variant_payload(&name) => {
                 Some(TypeReference::from_name(name.clone()))
             }
-            None => None,
+            Self::Unit(_) => None,
         };
         let variant = EnumVariant::new(name, payload);
         Ok(match self.stream_relation() {

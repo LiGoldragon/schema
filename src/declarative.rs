@@ -1865,6 +1865,17 @@ impl<'template> MacroExpansionVariant<'template> {
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
         match self.object.holds_root_objects() {
+            1 => {
+                let name = self
+                    .object
+                    .root_object_at(0)
+                    .expect("count checked")
+                    .schema_name()?;
+                Ok(EnumVariant::new(
+                    name.clone(),
+                    Some(TypeReference::from_name(name)),
+                ))
+            }
             2 => Ok(EnumVariant::new(
                 self.object
                     .root_object_at(0)

@@ -91,6 +91,36 @@ fn bare_reference_declarations_lower_to_aliases() {
 }
 
 #[test]
+fn self_tagged_variant_form_equals_explicit_repetition() {
+    let compact = SchemaEngine::default()
+        .lower_source(
+            "[ (Entry) ] [] { Entry { value String } }",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect("compact self-tagged variant lowers");
+    let explicit = SchemaEngine::default()
+        .lower_source(
+            "[ (Entry Entry) ] [] { Entry { value String } }",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect("explicit repetition lowers");
+
+    let variant = &compact.input().variants[0];
+    assert_eq!(variant.name.as_str(), "Entry");
+    assert_eq!(
+        variant
+            .payload
+            .as_ref()
+            .expect("payload")
+            .plain_name()
+            .expect("plain payload")
+            .as_str(),
+        "Entry"
+    );
+    assert_eq!(variant.payload, explicit.input().variants[0].payload);
+}
+
+#[test]
 fn single_field_brace_declarations_lower_to_newtypes() {
     let source = "[] [] { Topic String Entry { Topic * } Wrapper { value Topic } }";
     let schema = SchemaEngine::default()
