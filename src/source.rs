@@ -9,7 +9,7 @@ use nota_next::{
 };
 
 use crate::{
-    AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
     ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport,
     Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
     StructDeclaration, TypeDeclaration, TypeReference, macros::BlockDebug,
@@ -500,7 +500,10 @@ impl SourceDeclarationValue {
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self {
             Self::Reference(reference) => Ok(SourceDeclarationGroup::primary(
-                TypeDeclaration::Alias(AliasDeclaration::new(name, reference.to_type_reference())),
+                TypeDeclaration::Newtype(NewtypeDeclaration::new(
+                    name,
+                    reference.to_type_reference(),
+                )),
             )),
             Self::Text(_) => Err(SchemaError::ExpectedSyntaxDeclaration {
                 found: "text declaration".to_owned(),

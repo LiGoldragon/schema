@@ -136,8 +136,8 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
         schema.type_named("Lookup").is_some(),
         "root header should resolve through the exported namespace object"
     );
-    let Some(TypeDeclaration::Alias(lookup)) = schema.type_named("Lookup") else {
-        panic!("bare namespace binding should lower to an alias");
+    let Some(TypeDeclaration::Newtype(lookup)) = schema.type_named("Lookup") else {
+        panic!("bare namespace binding should lower to a newtype");
     };
     assert_eq!(
         lookup.reference.plain_name().map(schema_next::Name::as_str),

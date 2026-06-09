@@ -75,8 +75,8 @@ fn design_example_namespace_brace_contains_key_value_declarations() {
         .collect();
     assert_eq!(names, vec!["Topic", "Kind"]);
 
-    let TypeDeclaration::Alias(topic) = schema.namespace()[0].value() else {
-        panic!("Topic should lower as an alias");
+    let TypeDeclaration::Newtype(topic) = schema.namespace()[0].value() else {
+        panic!("Topic should lower as a newtype");
     };
     assert_eq!(topic.reference, TypeReference::String);
     let TypeDeclaration::Enum(kind) = schema.namespace()[1].value() else {
@@ -490,12 +490,12 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
         )
         .expect("schema lowers through user macros");
 
-    let TypeDeclaration::Alias(topic) = schema.type_named("Topic").expect("topic type") else {
-        panic!("bare Topic binding should create an alias");
+    let TypeDeclaration::Newtype(topic) = schema.type_named("Topic").expect("topic type") else {
+        panic!("bare Topic binding should create a newtype");
     };
     assert_eq!(topic.reference, TypeReference::String);
-    let TypeDeclaration::Alias(topics) = schema.type_named("Topics").expect("topics type") else {
-        panic!("bare Topics binding should create an alias");
+    let TypeDeclaration::Newtype(topics) = schema.type_named("Topics").expect("topics type") else {
+        panic!("bare Topics binding should create a newtype");
     };
     assert_eq!(
         topics.reference,

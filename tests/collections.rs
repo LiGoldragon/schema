@@ -26,7 +26,7 @@ fn struct_fields<'schema>(
 ) -> &'schema [schema_next::FieldDeclaration] {
     match schema.type_named(name).expect("type present") {
         TypeDeclaration::Struct(declaration) => &declaration.fields,
-        TypeDeclaration::Alias(_) | TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
+        TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a struct")
         }
     }
@@ -37,7 +37,6 @@ fn single_reference<'schema>(
     name: &str,
 ) -> &'schema TypeReference {
     match schema.type_named(name).expect("type present") {
-        TypeDeclaration::Alias(declaration) => &declaration.reference,
         TypeDeclaration::Newtype(declaration) => &declaration.reference,
         TypeDeclaration::Struct(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a single-reference declaration")

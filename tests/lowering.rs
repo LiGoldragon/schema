@@ -70,19 +70,21 @@ fn strict_key_value_declarations_lower_to_structs_and_enums() {
 }
 
 #[test]
-fn bare_reference_declarations_lower_to_aliases() {
+fn bare_reference_declarations_lower_to_newtypes() {
+    // The bare `Name Type` form declares a distinct newtype, not a transparent
+    // alias (record qz6j: aliases offer no correctness and are not used).
     let source = "[] [] { Topic String Topics (Vec Topic) }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("alias forms lower");
+        .expect("bare reference forms lower");
 
-    let TypeDeclaration::Alias(topic) = schema.type_named("Topic").expect("topic type") else {
-        panic!("Topic should be an alias");
+    let TypeDeclaration::Newtype(topic) = schema.type_named("Topic").expect("topic type") else {
+        panic!("Topic should be a newtype");
     };
     assert_eq!(topic.reference, TypeReference::String);
 
-    let TypeDeclaration::Alias(topics) = schema.type_named("Topics").expect("topics type") else {
-        panic!("Topics should be an alias");
+    let TypeDeclaration::Newtype(topics) = schema.type_named("Topics").expect("topics type") else {
+        panic!("Topics should be a newtype");
     };
     assert_eq!(
         topics.reference,
@@ -129,8 +131,8 @@ fn bytes_is_a_reserved_scalar_leaf_not_a_declared_name() {
         )
         .expect("bytes scalar lowers");
 
-    let TypeDeclaration::Alias(digest) = schema.type_named("Digest").expect("digest type") else {
-        panic!("Digest should lower to an alias over the Bytes scalar");
+    let TypeDeclaration::Newtype(digest) = schema.type_named("Digest").expect("digest type") else {
+        panic!("Digest should lower to a newtype over the Bytes scalar");
     };
     assert_eq!(digest.reference, TypeReference::Bytes);
 }
@@ -241,11 +243,11 @@ fn colon_qualified_names_lower_as_schema_names() {
         schema.namespace()[1].name().namespace_segments(),
         vec!["schema", "spirit", "Entry"]
     );
-    let TypeDeclaration::Alias(topic) = schema.namespace()[0].value() else {
+    let TypeDeclaration::Newtype(topic) = schema.namespace()[0].value() else {
         panic!("topic should be an alias");
     };
     assert_eq!(topic.name.local_part(), "Topic");
-    let TypeDeclaration::Alias(entry) = schema.namespace()[1].value() else {
+    let TypeDeclaration::Newtype(entry) = schema.namespace()[1].value() else {
         panic!("entry should be an alias");
     };
     assert_eq!(
@@ -455,7 +457,7 @@ fn core_schema_describes_default_builtin_macro_positions() {
         ]
     );
 
-    let TypeDeclaration::Alias(macro_pattern) = schema
+    let TypeDeclaration::Newtype(macro_pattern) = schema
         .type_named("MacroPattern")
         .expect("macro pattern alias")
     else {
@@ -845,7 +847,7 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
     assert_eq!(some_enum.variants[1].payload, None);
     assert_eq!(some_enum.variants[2].payload, Some(TypeReference::String));
 
-    let TypeDeclaration::Alias(topic) = schema.type_named("Topic").expect("topic type") else {
+    let TypeDeclaration::Newtype(topic) = schema.type_named("Topic").expect("topic type") else {
         panic!("Topic should be an alias");
     };
     assert_eq!(topic.reference, TypeReference::String);

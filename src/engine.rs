@@ -8,8 +8,8 @@ use crate::{
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     schema::{
-        AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        Schema, TypeDeclaration, TypeReference,
+        Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
+        NewtypeDeclaration, Schema, TypeDeclaration, TypeReference,
     },
 };
 
@@ -649,7 +649,7 @@ impl<'schema> KeyValueDeclaration<'schema> {
             });
         }
         let reference = TypeReference::from_block_with_registry(definition, registry, context)?;
-        Ok(TypeDeclaration::Alias(AliasDeclaration::new(
+        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
             name, reference,
         )))
     }

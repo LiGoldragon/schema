@@ -27,7 +27,7 @@ pub use nota_next::{
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
-    AliasDeclaration, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
     ImportDeclaration, Name, NewtypeDeclaration, Schema, SchemaDeclaredType, SchemaNode,
     SchemaNodeData, SchemaNodePair, SchemaNodeValue, StreamDeclaration, StreamRelation,
     StructDeclaration, StructFieldMap, SymbolPath, SymbolPathPosition, TypeDeclaration,
