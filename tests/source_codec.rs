@@ -190,6 +190,154 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
 }
 
 #[test]
+fn root_payload_field_declarations_are_exported_namespace_types() {
+    let source = "{}\n[(Record { Topic String Description String })]\n[]\n{}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    assert_eq!(
+        schema
+            .namespace()
+            .iter()
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Topic", schema_next::Visibility::Public),
+            ("Description", schema_next::Visibility::Public),
+            ("Record", schema_next::Visibility::Public),
+        ]
+    );
+    let Some(TypeDeclaration::Newtype(topic)) = schema.type_named("Topic") else {
+        panic!("Topic should lower to a public newtype");
+    };
+    assert_eq!(topic.reference, schema_next::TypeReference::String);
+    let Some(TypeDeclaration::Struct(record)) = schema.type_named("Record") else {
+        panic!("Record should lower to a public struct");
+    };
+    assert_eq!(
+        record
+            .fields
+            .iter()
+            .map(|field| {
+                (
+                    field.name.as_str(),
+                    field.reference.plain_name().map(schema_next::Name::as_str),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("topic", Some("Topic")),
+            ("description", Some("Description"))
+        ]
+    );
+}
+
+#[test]
+fn later_inline_payloads_resolve_root_payload_field_declarations() {
+    let source = "{}\n[(Record { Topic String Description String }) (Select [(ByTopic { Topic * }) (ByDescription { Description * })])]\n[]\n{}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    assert_eq!(
+        schema
+            .namespace()
+            .iter()
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Topic", schema_next::Visibility::Public),
+            ("Description", schema_next::Visibility::Public),
+            ("Record", schema_next::Visibility::Public),
+            ("ByTopic", schema_next::Visibility::Private),
+            ("ByDescription", schema_next::Visibility::Private),
+            ("Select", schema_next::Visibility::Public),
+        ]
+    );
+    let Some(TypeDeclaration::Newtype(by_topic)) = schema.type_named("ByTopic") else {
+        panic!("ByTopic should lower to a private newtype helper");
+    };
+    assert_eq!(
+        by_topic
+            .reference
+            .plain_name()
+            .map(schema_next::Name::as_str),
+        Some("Topic")
+    );
+}
+
+#[test]
+fn trailing_namespace_can_reference_root_payload_field_declarations() {
+    let source = "{}\n[(Record { Topic String Description String })]\n[]\n{ Wrapper { Topic * } }";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    let Some(TypeDeclaration::Newtype(wrapper)) = schema.type_named("Wrapper") else {
+        panic!("Wrapper should lower to a public newtype");
+    };
+    assert_eq!(
+        wrapper
+            .reference
+            .plain_name()
+            .map(schema_next::Name::as_str),
+        Some("Topic")
+    );
+}
+
+#[test]
+fn duplicate_inline_and_namespace_declarations_are_errors() {
+    let source = "{}\n[(Record { Topic String })]\n[]\n{ Topic String }";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let error = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect_err("duplicate Topic declaration should fail");
+
+    assert!(matches!(
+        error,
+        SchemaError::DuplicateSourceDeclaration { name } if name == "Topic"
+    ));
+}
+
+#[test]
+fn duplicate_inline_declarations_are_errors() {
+    let source = "{}\n[(Record { Topic String }) (Describe { Topic String })]\n[]\n{}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let error = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect_err("duplicate inline Topic declaration should fail");
+
+    assert!(matches!(
+        error,
+        SchemaError::DuplicateSourceDeclaration { name } if name == "Topic"
+    ));
+}
+
+#[test]
 fn schema_source_artifact_round_trips_through_binary_archive() {
     let source = "{}\n[(Lookup { RecordIdentifier * }) (Count { Query * })]\n[]\n{\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");

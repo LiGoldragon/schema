@@ -8,8 +8,8 @@ use crate::{
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     schema::{
-        Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, Schema, TypeDeclaration, TypeReference,
+        Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name, NewtypeDeclaration,
+        Schema, TypeDeclaration, TypeReference,
     },
 };
 

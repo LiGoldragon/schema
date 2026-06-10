@@ -9,10 +9,10 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport,
-    Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
-    StructDeclaration, TypeDeclaration, TypeReference, macros::BlockDebug,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
+    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, Schema, SchemaEngine,
+    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration,
+    TypeDeclaration, TypeReference, macros::BlockDebug,
 };
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -499,12 +499,11 @@ impl SourceDeclarationValue {
         resolver: &SourceTypeResolver,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self {
-            Self::Reference(reference) => Ok(SourceDeclarationGroup::primary(
-                TypeDeclaration::Newtype(NewtypeDeclaration::new(
-                    name,
-                    reference.to_type_reference(),
-                )),
-            )),
+            Self::Reference(reference) => {
+                Ok(SourceDeclarationGroup::primary(TypeDeclaration::Newtype(
+                    NewtypeDeclaration::new(name, reference.to_type_reference()),
+                )))
+            }
             Self::Text(_) => Err(SchemaError::ExpectedSyntaxDeclaration {
                 found: "text declaration".to_owned(),
             }),
@@ -723,10 +722,25 @@ impl SourceStructBody {
         name: Name,
         resolver: &SourceTypeResolver,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
+        self.to_declaration_group_with_visibility(
+            name,
+            resolver,
+            SourceInlineDeclarationVisibility::PrivateHelper,
+        )
+    }
+
+    fn to_declaration_group_with_visibility(
+        &self,
+        name: Name,
+        resolver: &SourceTypeResolver,
+        field_visibility: SourceInlineDeclarationVisibility,
+    ) -> Result<SourceDeclarationGroup, SchemaError> {
         let mut private = Vec::new();
+        let mut public = Vec::new();
         let mut fields = Vec::new();
         for field in &self.fields {
-            let lowered = field.to_lowered_field(resolver)?;
+            let lowered = field.to_lowered_field(resolver, field_visibility)?;
+            public.extend(lowered.public_declarations);
             private.extend(lowered.private_declarations);
             fields.push(lowered.field);
         }
@@ -735,7 +749,14 @@ impl SourceStructBody {
         } else {
             TypeDeclaration::Struct(StructDeclaration::new(name, fields))
         };
-        Ok(SourceDeclarationGroup::new(private, primary))
+        Ok(SourceDeclarationGroup::new(public, private, primary))
+    }
+
+    fn inline_field_declaration_names(&self) -> Vec<Name> {
+        self.fields
+            .iter()
+            .filter_map(SourceField::inline_declaration_name)
+            .collect()
     }
 }
 
@@ -799,9 +820,11 @@ impl SourceField {
     fn to_lowered_field(
         &self,
         resolver: &SourceTypeResolver,
+        visibility: SourceInlineDeclarationVisibility,
     ) -> Result<SourceLoweredField, SchemaError> {
         match &self.value {
             SourceFieldValue::Derived => Ok(SourceLoweredField::new(
+                Vec::new(),
                 Vec::new(),
                 FieldDeclaration {
                     name: Name::new(self.name.field_name()),
@@ -811,11 +834,14 @@ impl SourceField {
             SourceFieldValue::Reference(reference)
                 if SourceIdentifierCase::new(&self.name).is_type() =>
             {
+                let declaration = TypeDeclaration::Newtype(NewtypeDeclaration::new(
+                    self.name.clone(),
+                    reference.to_type_reference(),
+                ));
+                let declarations = SourceLoweredInlineDeclarations::new(visibility, declaration);
                 Ok(SourceLoweredField::new(
-                    vec![TypeDeclaration::Newtype(NewtypeDeclaration::new(
-                        self.name.clone(),
-                        reference.to_type_reference(),
-                    ))],
+                    declarations.public,
+                    declarations.private,
                     FieldDeclaration {
                         name: Name::new(self.name.field_name()),
                         reference: TypeReference::from_name(self.name.clone()),
@@ -823,6 +849,7 @@ impl SourceField {
                 ))
             }
             SourceFieldValue::Reference(reference) => Ok(SourceLoweredField::new(
+                Vec::new(),
                 Vec::new(),
                 FieldDeclaration {
                     name: Name::new(self.name.field_name()),
@@ -833,8 +860,10 @@ impl SourceField {
                 if SourceIdentifierCase::new(&self.name).is_type() =>
             {
                 let group = value.to_declaration_group(self.name.clone(), resolver)?;
+                let declarations = group.into_field_declarations(visibility);
                 Ok(SourceLoweredField::new(
-                    group.into_type_declarations(),
+                    declarations.public,
+                    declarations.private,
                     FieldDeclaration {
                         name: Name::new(self.name.field_name()),
                         reference: TypeReference::from_name(self.name.clone()),
@@ -844,6 +873,19 @@ impl SourceField {
             SourceFieldValue::Declaration(_) => Err(SchemaError::ExpectedSyntaxDeclaration {
                 found: format!("inline declaration field {}", self.name),
             }),
+        }
+    }
+
+    fn inline_declaration_name(&self) -> Option<Name> {
+        match &self.value {
+            SourceFieldValue::Reference(_) | SourceFieldValue::Declaration(_)
+                if SourceIdentifierCase::new(&self.name).is_type() =>
+            {
+                Some(self.name.clone())
+            }
+            SourceFieldValue::Derived
+            | SourceFieldValue::Reference(_)
+            | SourceFieldValue::Declaration(_) => None,
         }
     }
 }
@@ -941,6 +983,7 @@ impl SourceEnumBody {
             private.extend(variant.private_inline_declarations(resolver)?);
         }
         Ok(SourceDeclarationGroup::new(
+            Vec::new(),
             private,
             TypeDeclaration::Enum(
                 self.to_schema_enum(name, &SourceVariantPayloadResolution::explicit_only())?,
@@ -964,6 +1007,13 @@ impl SourceEnumBody {
         self.variants
             .iter()
             .filter_map(SourceVariantSignature::inline_declaration_name)
+            .collect()
+    }
+
+    fn public_inline_field_declaration_names(&self) -> Vec<Name> {
+        self.variants
+            .iter()
+            .flat_map(SourceVariantSignature::public_inline_field_declaration_names)
             .collect()
     }
 
@@ -1083,6 +1133,12 @@ impl SourceVariantSignature {
         resolver: &SourceTypeResolver,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self.payload_value() {
+            Some(SourceVariantPayload::Declaration(SourceDeclarationValue::Struct(body))) => body
+                .to_declaration_group_with_visibility(
+                    self.name().clone(),
+                    resolver,
+                    SourceInlineDeclarationVisibility::PublicSourceScope,
+                ),
             Some(SourceVariantPayload::Declaration(value)) => {
                 value.to_declaration_group(self.name().clone(), resolver)
             }
@@ -1106,6 +1162,17 @@ impl SourceVariantSignature {
         match self.payload_value() {
             Some(SourceVariantPayload::Declaration(_)) => Some(self.name().clone()),
             Some(SourceVariantPayload::Reference(_)) | None => None,
+        }
+    }
+
+    fn public_inline_field_declaration_names(&self) -> Vec<Name> {
+        match self.payload_value() {
+            Some(SourceVariantPayload::Declaration(SourceDeclarationValue::Struct(body))) => {
+                body.inline_field_declaration_names()
+            }
+            Some(SourceVariantPayload::Declaration(_))
+            | Some(SourceVariantPayload::Reference(_))
+            | None => Vec::new(),
         }
     }
 }
@@ -1447,6 +1514,18 @@ impl SourceTypeResolver {
             .collect::<Vec<_>>();
         names.extend(source.input().body().inline_declaration_names());
         names.extend(source.output().body().inline_declaration_names());
+        names.extend(
+            source
+                .input()
+                .body()
+                .public_inline_field_declaration_names(),
+        );
+        names.extend(
+            source
+                .output()
+                .body()
+                .public_inline_field_declaration_names(),
+        );
         Self { names }
     }
 
@@ -1523,6 +1602,7 @@ impl SourceVariantResolver for SourceLoweredNamespace {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SourceDeclarationGroup {
+    public: Vec<TypeDeclaration>,
     private: Vec<TypeDeclaration>,
     primary: Option<TypeDeclaration>,
 }
@@ -1530,6 +1610,7 @@ struct SourceDeclarationGroup {
 impl SourceDeclarationGroup {
     fn empty() -> Self {
         Self {
+            public: Vec::new(),
             private: Vec::new(),
             primary: None,
         }
@@ -1537,13 +1618,19 @@ impl SourceDeclarationGroup {
 
     fn primary(primary: TypeDeclaration) -> Self {
         Self {
+            public: Vec::new(),
             private: Vec::new(),
             primary: Some(primary),
         }
     }
 
-    fn new(private: Vec<TypeDeclaration>, primary: TypeDeclaration) -> Self {
+    fn new(
+        public: Vec<TypeDeclaration>,
+        private: Vec<TypeDeclaration>,
+        primary: TypeDeclaration,
+    ) -> Self {
         Self {
+            public,
             private,
             primary: Some(primary),
         }
@@ -1551,10 +1638,11 @@ impl SourceDeclarationGroup {
 
     fn into_public_declarations(self) -> Vec<Declaration> {
         let mut declarations = self
-            .private
+            .public
             .into_iter()
-            .map(Declaration::private)
+            .map(Declaration::public)
             .collect::<Vec<_>>();
+        declarations.extend(self.private.into_iter().map(Declaration::private));
         if let Some(primary) = self.primary {
             declarations.push(Declaration::public(primary));
         }
@@ -1562,23 +1650,78 @@ impl SourceDeclarationGroup {
     }
 
     fn into_type_declarations(self) -> Vec<TypeDeclaration> {
-        let mut declarations = self.private;
+        let mut declarations = self.public;
+        declarations.extend(self.private);
         if let Some(primary) = self.primary {
             declarations.push(primary);
         }
         declarations
     }
+
+    fn into_field_declarations(
+        self,
+        visibility: SourceInlineDeclarationVisibility,
+    ) -> SourceLoweredInlineDeclarations {
+        let mut public = self.public;
+        let mut private = self.private;
+        match visibility {
+            SourceInlineDeclarationVisibility::PublicSourceScope => {
+                if let Some(primary) = self.primary {
+                    public.push(primary);
+                }
+            }
+            SourceInlineDeclarationVisibility::PrivateHelper => {
+                if let Some(primary) = self.primary {
+                    private.push(primary);
+                }
+            }
+        }
+        SourceLoweredInlineDeclarations { public, private }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceInlineDeclarationVisibility {
+    PublicSourceScope,
+    PrivateHelper,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceLoweredInlineDeclarations {
+    public: Vec<TypeDeclaration>,
+    private: Vec<TypeDeclaration>,
+}
+
+impl SourceLoweredInlineDeclarations {
+    fn new(visibility: SourceInlineDeclarationVisibility, declaration: TypeDeclaration) -> Self {
+        match visibility {
+            SourceInlineDeclarationVisibility::PublicSourceScope => Self {
+                public: vec![declaration],
+                private: Vec::new(),
+            },
+            SourceInlineDeclarationVisibility::PrivateHelper => Self {
+                public: Vec::new(),
+                private: vec![declaration],
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SourceLoweredField {
+    public_declarations: Vec<TypeDeclaration>,
     private_declarations: Vec<TypeDeclaration>,
     field: FieldDeclaration,
 }
 
 impl SourceLoweredField {
-    fn new(private_declarations: Vec<TypeDeclaration>, field: FieldDeclaration) -> Self {
+    fn new(
+        public_declarations: Vec<TypeDeclaration>,
+        private_declarations: Vec<TypeDeclaration>,
+        field: FieldDeclaration,
+    ) -> Self {
         Self {
+            public_declarations,
             private_declarations,
             field,
         }
