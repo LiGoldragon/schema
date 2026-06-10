@@ -60,7 +60,7 @@
             grep -R "design_example_schema_node_macro_call_is_tagged_data" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_user_declared_macros_extend_structural_and_named_slots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_same_name_payload_variant_uses_explicit_payload" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_same_name_payload_variant_uses_self_tagged_payload" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
             touch $out
           '';
@@ -96,7 +96,7 @@
             touch $out
           '';
           no-btree-canonical = pkgs.runCommand "schema-next-no-btree-canonical" { } ''
-            if grep -R "BTreeMap" ${src}/src/asschema.rs; then
+            if grep -R "BTreeMap" ${src}/src ${src}/tests ${src}/schemas; then
               echo "BTreeMap must not be canonical assembled-schema storage" >&2
               exit 1
             fi
@@ -107,7 +107,7 @@
               echo "obsolete .asschema syntax fixtures must not remain in schema-next" >&2
               exit 1
             fi
-            grep -R "asschema_data_model_is_built_from_real_schema_fixture" ${src}/tests/asschema_definition.rs >/dev/null
+            grep -R "schema_source_and_semantic_schema_round_trip_without_asschema_artifacts" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             grep -R "raw_core_schema_fixture_is_legal_nota_before_schema_reading" ${src}/tests/raw_core_schema.rs >/dev/null
             if grep -R -n -E '\[Input \[|\[Output \[|\(Struct \[|\(Enum \[|\(Newtype \[|\(Map \[\(Plain|\(Carries \(Plain' ${src}/src ${src}/tests ${src}/schemas; then
               echo "obsolete ASSchema vector-record syntax must not remain in active code or fixtures" >&2
@@ -176,12 +176,10 @@
             grep -R "macro_library_split_does_not_return_through_public_surface" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             # Claim 4 — honest enum bodies CLOSED.
             grep -R "production_schema_sources_use_honest_enum_bodies" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            grep -R "spirit_min_input_enum_body_has_parenthesized_data_variants" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            # Claim 5 — Asschema typed data + NOTA + rkyv + SEMA projection CLOSED.
-            grep -R "asschema_is_typed_data_with_named_field_accessors" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            grep -R "asschema_round_trips_through_nota_and_rkyv" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            grep -R "asschema_store_persists_through_redb_and_reexports_nota" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            grep -R "checked_in_core_asschema_artifact_matches_lowered_schema" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "spirit_min_input_enum_body_has_compact_root_variants" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            # Claim 5 — SchemaSource plus semantic Schema own the retired Asschema path.
+            grep -R "schema_is_typed_data_with_named_field_accessors" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "schema_source_and_semantic_schema_round_trip_without_asschema_artifacts" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             touch $out
           '';
           namespace-braces-are-key-value = pkgs.runCommand "schema-next-namespace-braces-are-key-value" { } ''
