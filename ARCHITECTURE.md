@@ -59,15 +59,20 @@ variant-signature object in the bracket vector; if the namespace declares
 `Lookup(Plain Lookup)`, and `Lookup` is an exported newtype object. A
 parenthesized inline declaration such as `(Lookup { RecordIdentifier * })`
 also creates an exported `Lookup` declaration before the root enum is lowered.
-This resolution happens on `SchemaSource` data, not by rewriting the user's
-source string into the older `(Lookup RecordIdentifier)` pair form.
+When that root inline struct declares direct PascalCase fields, such as
+`(Record { Topic String Description String })`, the fields `Topic` and
+`Description` are exported too; later inline payloads and the trailing
+namespace can use `Topic *` and `Description *`. Duplicate declarations are
+rejected. This resolution happens on `SchemaSource` data, not by rewriting the
+user's source string into the older `(Lookup RecordIdentifier)` pair form.
 
 Enum variant entries in authored source are typed structural NOTA nodes.
 `SourceVariantSignature` implements `nota-next::StructuralMacroNode` and uses
 the same ordered `EnumVariants` structural cases as codec-facing
 `nota-next::StructuralVariant` values: a bare PascalCase atom is a unit/header
-variant, a parenthesized two-object block is a data-carrying variant, and the
-four-object forms `(Variant Payload opens StreamName)` /
+variant, a parenthesized one-object block is a same-named data-carrying
+variant, a parenthesized two-object block is the explicit different-payload
+form, and the four-object forms `(Variant Payload opens StreamName)` /
 `(Variant Payload belongs StreamName)` attach subscription lifecycle metadata.
 After the expected enum type selects the structural case, Schema decodes the
 captures into either a reference payload or an inline declaration payload, plus
@@ -238,9 +243,9 @@ map. Schema sugar may shorten values, but it must not turn a brace entry into
 one logical declaration object.
 
 - Root input/output positions are known by the schema reader and are written
-  as bare bracket bodies: `[]`, `[Record Observe]`, or explicit signatures
-  such as `[(Record Entry) Observe]`. The root does not carry labels; position supplies
-  `Input` and `Output`.
+  as bare bracket bodies: `[]`, `[Record Observe]`, or direct inline payloads
+  such as `[(Record { Topic String Description String }) Observe]`. The root
+  does not carry labels; position supplies `Input` and `Output`.
 - Namespace braces contain `TypeName Value` pairs. `Topic String` and
   `Topics (Vec Topic)` are alias declarations; `Entry { topic Topic }` is a
   struct declaration; `Kind [Decision Correction]` is an enum declaration.
@@ -251,14 +256,17 @@ one logical declaration object.
   explicit. `Topics *` derives the field name from an already-defined type and
   lowers to `topics: Topics`.
 - Enum bodies are bracket/vector structure. Each object in that vector is a
-  variant signature: a bare PascalCase symbol for a unit variant or a
-  parenthesized `(Variant PayloadType)` record for a data-carrying variant.
+  variant signature: a bare PascalCase symbol for a unit variant,
+  parenthesized `(Variant)` for a same-named data-carrying variant, or
+  parenthesized `(Variant PayloadType)` only when the payload name differs.
   A variant signature is one object, so the bracket remains a homogeneous
   vector of variant-signature objects.
 - At root input/output positions, a bare PascalCase variant may resolve to a
   same-named exported namespace declaration. The source header says `Lookup`;
   the namespace says what `Lookup` is. Inline root declarations are also
-  accepted and are inserted into the exported namespace before assembly.
+  accepted and are inserted into the exported namespace before assembly; direct
+  PascalCase fields inside root inline struct payloads become exported
+  declarations available to later entries.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
 `(Map (Key Value))` still lower at reference positions to `TypeReference`
@@ -371,8 +379,8 @@ module boundaries.
   are freshness-checked against their source inputs and consumed through typed
   artifact objects.
 - The root schema is positional. Current MVP shape:
-  - field 1: input root enum body, for example `[(Record Entry) Reindex]`
-  - field 2: output root enum body, for example `[(Recorded Receipt) (Rejected Rejection)]`
+  - field 1: input root enum body, for example `[Record Reindex]`
+  - field 2: output root enum body, for example `[Recorded (Rejected Rejection)]`
   - field 3: namespace map `{ TypeName Value ... }`
   - optional leading field: imports map `{ Local dependency-crate:module:Type }`
 - Input and output roots are actor reaction languages. They declare
@@ -393,7 +401,9 @@ module boundaries.
   reference defines an alias: `Topic String`, `Topics (Vec Topic)`.
 - Square brackets are NOTA vector/bracket structure. At enum-body positions
   they contain homogeneous variant-signature objects: bare symbols for unit
-  variants and parenthesized `(Variant PayloadType)` records for data variants.
+  variants, parenthesized `(Variant)` records for same-named data variants,
+  and parenthesized `(Variant PayloadType)` records only when the payload type
+  name differs.
 - The root `Schema` name is implicit when reading a `.schema` file. Nested
   enum, struct, and newtype definitions still carry their own names.
 - `schemas/root.schema` describes that known root `Schema` type.

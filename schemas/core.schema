@@ -6,7 +6,7 @@
   BuiltinMacroShapes { macroShape (Vec MacroShape) }
   BuiltinMacroOutputs { macroOutputKind (Vec MacroOutputKind) }
   BuiltinMacroDefinitions { sourceEntries (Vec MacroLibrarySourceEntry) }
-  MacroLibrarySourceEntry [(SchemaMacro SchemaMacro)]
+  MacroLibrarySourceEntry [(SchemaMacro)]
   SchemaMacro { MacroName * MacroPosition * MacroPattern * MacroTemplate * }
   MacroName String
   MacroPattern MacroPatternObject

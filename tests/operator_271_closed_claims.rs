@@ -166,9 +166,9 @@ fn macro_library_split_does_not_return_through_public_surface() {
 }
 
 /// Claim 4 — Strict schema syntax: the production `core.schema` and
-/// `spirit-min.schema` carry honest parenthesized enum-body data variants
-/// like `(Record Entry)` plus bare PascalCase unit variants. The retired
-/// `Record@Entry` short-suffix sugar must not appear.
+/// `spirit-min.schema` carry legal NOTA enum bodies. Root headers use compact
+/// exported object names, namespace enums use structural variant signatures,
+/// and the retired `Record@Entry` short-suffix sugar must not appear.
 #[test]
 fn production_schema_sources_use_honest_enum_bodies() {
     let core_schema = include_str!("../schemas/core.schema");
@@ -197,12 +197,11 @@ fn production_schema_sources_use_honest_enum_bodies() {
     }
 }
 
-/// Claim 4 — Spirit-min carries enum bodies of the explicit
-/// `[(Record Entry) (Observe Query)]` shape, with each element being a
-/// parenthesized data-variant record. The first root object (input) holds
-/// at least two variants of this shape.
+/// Claim 4 — Spirit-min carries compact root enum bodies of the
+/// `[Record Observe]` shape. The namespace defines those payload objects one
+/// level below the root header.
 #[test]
-fn spirit_min_input_enum_body_has_parenthesized_data_variants() {
+fn spirit_min_input_enum_body_has_compact_root_variants() {
     let source = include_str!("../schemas/spirit-min.schema");
     let document = Document::parse(source).expect("spirit-min.schema parses as NOTA");
     let root_objects = document.root_objects();
@@ -224,24 +223,22 @@ fn spirit_min_input_enum_body_has_parenthesized_data_variants() {
         "input is a SquareBracket enum-body vector"
     );
 
-    // Every element of the vector is either a bare atom (unit variant) or
-    // a parenthesized record (data variant). spirit-min carries only data
-    // variants, so each element MUST be a parenthesized record.
+    // Root payloads are exported namespace objects, so every input root entry
+    // is the compact bare operation name.
     assert!(
         !variants.is_empty(),
         "input vector contains at least one variant"
     );
-    for variant in variants {
-        match variant {
-            Block::Delimited {
-                delimiter: Delimiter::Parenthesis,
-                ..
-            } => { /* parenthesized data variant; expected shape */ }
+    let names = variants
+        .iter()
+        .map(|variant| match variant {
+            Block::Atom(atom) => atom.text(),
             _ => panic!(
-                "every spirit-min input variant must be parenthesized data variant; got {variant:?}"
+                "every spirit-min input variant must be a bare operation name; got {variant:?}"
             ),
-        }
-    }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names, vec!["Record", "Observe"]);
 }
 
 /// Claim 5 — `Schema` is typed Rust data. The type carries the schema

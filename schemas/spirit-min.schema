@@ -1,6 +1,10 @@
-[(Record Entry) (Observe Query)]
-[(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]
+[Record Observe]
+[RecordAccepted RecordsObserved]
 {
+  Record Entry
+  Observe Query
+  RecordAccepted RecordIdentifier
+  RecordsObserved RecordSet
   Topic String
   Topics (Vec Topic)
   Description String

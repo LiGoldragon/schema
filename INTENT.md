@@ -35,11 +35,15 @@ and macro-call form.
 
 *Semantic schema namespace entries are visibility-tagged.* The semantic shape
 is public/private declaration data over `Name` plus `TypeDeclaration`; top-level
-declarations lower to public, inline PascalCase declarations lower to private.
+declarations lower to public, direct PascalCase field declarations inside root
+inline payload structs lower to public, and nested inline PascalCase helper
+declarations lower to private.
 
 *Enum bodies are homogeneous vectors of variant-signature objects.* A unit
-variant is a bare PascalCase symbol; a data-carrying variant is
-`(Variant PayloadType)`. Bracket members remain one variant-signature object.
+variant is a bare PascalCase symbol. A same-named data-carrying variant should
+use the compact self-tagged form `(Variant)`; the explicit
+`(Variant PayloadType)` form remains for intentionally different variant and
+payload names. Bracket members remain one variant-signature object.
 Data-carrying variants may also declare stream lifecycle relations:
 `(Subscribe Payload opens StreamName)` and
 `(Delta DeltaPayload belongs StreamName)`.
@@ -54,8 +58,11 @@ implementation code is inspected.
 
 *Root input/output headers may list exported variant names directly.* When a
 bare header entry resolves to a namespace declaration, the variant carries the
-same-named payload type. Inline declarations are inserted into the exported
-namespace before the root enum is assembled.
+same-named payload type. Root inline declarations are inserted into the
+exported namespace before the root enum is assembled, and direct PascalCase
+field declarations inside root inline struct payloads are also exported for
+later inline payloads and namespace declarations. Duplicate declarations are
+errors.
 
 *Authored schema is its own typed value before semantic schema.*
 `SchemaSource` reads `.schema` documents into source-language data (imports,

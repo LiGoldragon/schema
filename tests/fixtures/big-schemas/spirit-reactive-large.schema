@@ -1,18 +1,30 @@
-[(Record Entry)
- (Correct Correction)
- (Observe Query)
- (Watch WatchRequest)
- (Unwatch SubscriptionToken)
+[Record
+ Correct
+ Observe
+ Watch
+ Unwatch
  Reindex
  Compact]
-[(Recorded RecordReceipt)
- (Corrected CorrectionReceipt)
- (Observed RecordSet)
- (Watching SubscriptionReceipt)
- (Unwatched SubscriptionReceipt)
- (Rejected Rejection)
- (Indexed IndexReceipt)]
+[Recorded
+ Corrected
+ Observed
+ Watching
+ Unwatched
+ Rejected
+ Indexed]
 {
+  Record Entry
+  Correct Correction
+  Observe Query
+  Watch WatchRequest
+  Unwatch SubscriptionToken
+  Recorded RecordReceipt
+  Corrected CorrectionReceipt
+  Observed RecordSet
+  Watching SubscriptionReceipt
+  Unwatched SubscriptionReceipt
+  Rejected Rejection
+  Indexed IndexReceipt
   Topic { string String }
   Topics { values (Vec Topic) }
   Description { string String }

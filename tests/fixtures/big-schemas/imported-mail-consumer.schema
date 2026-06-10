@@ -1,15 +1,24 @@
 { DatabaseMarker marker-core:mail:DatabaseMarker
   CommitSequence marker-core:mail:CommitSequence }
-[(Record Entry)
- (Observe Query)
- (Mark DatabaseMarker)
- (Commit CommitSequence)]
-[(Recorded RecordReceipt)
- (Observed RecordSet)
- (Marked DatabaseMarker)
- (Committed CommitSequence)
- (Rejected Rejection)]
+[Record
+ Observe
+ Mark
+ Commit]
+[Recorded
+ Observed
+ Marked
+ Committed
+ Rejected]
 {
+  Record Entry
+  Observe Query
+  Mark DatabaseMarker
+  Commit CommitSequence
+  Recorded RecordReceipt
+  Observed RecordSet
+  Marked DatabaseMarker
+  Committed CommitSequence
+  Rejected Rejection
   Topic { string String }
   Topics { values (Vec Topic) }
   Description { string String }

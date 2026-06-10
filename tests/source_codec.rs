@@ -4,6 +4,13 @@ use schema_next::{
     SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, TypeDeclaration,
 };
 
+fn source_codec_fixture(name: &str) -> String {
+    fs::read_to_string(format!("tests/fixtures/source-codec/{name}.schema"))
+        .unwrap_or_else(|error| panic!("read source-codec schema fixture {name}: {error}"))
+        .trim_end()
+        .to_owned()
+}
+
 #[test]
 fn schema_source_artifact_round_trips_module_source_text() {
     let source = fs::read_to_string("tests/fixtures/spirit-crate/schema/lib.schema")
@@ -18,38 +25,38 @@ fn schema_source_artifact_round_trips_module_source_text() {
         "canonical schema source text should recover the same source object"
     );
     assert_eq!(
-        "{}\n[(Record Entry) (Observe Query)]\n[(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]\n{\n  Topic { string String }\n  Topics { values (Vec Topic) }\n  Description { string String }\n  RecordIdentifier { integer Integer }\n  Entry { topics Topics kind Kind description Description magnitude Magnitude }\n  Query { topic Topic kind Kind }\n  RecordSet { entries (Vec Entry) }\n  Kind [Decision Principle Correction Clarification Constraint]\n  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]\n}",
+        "{}\n[Record Observe]\n[RecordAccepted RecordsObserved]\n{\n  Record Entry\n  Observe Query\n  RecordAccepted RecordIdentifier\n  RecordsObserved RecordSet\n  Topic { string String }\n  Topics { values (Vec Topic) }\n  Description { string String }\n  RecordIdentifier { integer Integer }\n  Entry { topics Topics kind Kind description Description magnitude Magnitude }\n  Query { topic Topic kind Kind }\n  RecordSet { entries (Vec Entry) }\n  Kind [Decision Principle Correction Clarification Constraint]\n  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]\n}",
         canonical,
         "source codec should write one canonical schema source surface"
     );
 }
 
 #[test]
-fn schema_source_lowers_to_same_schema_as_direct_source() {
+fn schema_source_lowers_through_engine_schema_source_endpoint() {
     let source = fs::read_to_string("tests/fixtures/spirit-crate/schema/lib.schema")
         .expect("read schema source fixture");
     let identity = SchemaIdentity::new("spirit-next:lib", "0.1.0");
     let engine = SchemaEngine::default();
-    let direct = engine
-        .lower_source(&source, identity.clone())
-        .expect("direct source lowers");
     let source_artifact =
         SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
-    let via_source = source_artifact
+    let through_endpoint = engine
+        .lower_schema_source(source_artifact.source(), identity.clone())
+        .expect("schema source endpoint lowers");
+    let through_object = source_artifact
         .source()
         .lower(&engine, identity)
         .expect("schema source object lowers");
 
     assert_eq!(
-        direct, via_source,
-        "schema source object should be a semantics-preserving stage before schema"
+        through_endpoint, through_object,
+        "schema source object and engine endpoint should lower the same typed schema"
     );
 }
 
 #[test]
 fn schema_source_reference_fields_lower_to_canonical_field_names() {
-    let source = "{}\n[]\n[]\n{\n  Topic String\n  RecordIdentifier Integer\n  Entry { recordIdentifier RecordIdentifier byTopic (Map (Topic RecordIdentifier)) }\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("reference-fields");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -75,9 +82,8 @@ fn schema_source_reference_fields_lower_to_canonical_field_names() {
 
 #[test]
 fn namespace_enum_bare_variants_do_not_resolve_to_same_named_payloads() {
-    let source =
-        "{}\n[]\n[]\n{\n  Correction { Topic * }\n  Topic String\n  Kind [Decision Correction]\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("namespace-enum-bare-variants");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -103,8 +109,8 @@ fn namespace_enum_bare_variants_do_not_resolve_to_same_named_payloads() {
 
 #[test]
 fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
-    let source = "{}\n[Lookup Count]\n[Found Counted]\n{\n  Lookup RecordIdentifier\n  Count Query\n  Found Entry\n  Counted Integer\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n  Entry { Topic * }\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("root-header-bare-names");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -147,8 +153,8 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
 
 #[test]
 fn root_header_inline_declarations_are_exported_namespace_payloads() {
-    let source = "{}\n[(Lookup { RecordIdentifier * }) (Count { Query * })]\n[]\n{\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("root-inline-payloads");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -191,8 +197,8 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
 
 #[test]
 fn root_payload_field_declarations_are_exported_namespace_types() {
-    let source = "{}\n[(Record { Topic String Description String })]\n[]\n{}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("root-payload-field-declarations");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -240,8 +246,8 @@ fn root_payload_field_declarations_are_exported_namespace_types() {
 
 #[test]
 fn later_inline_payloads_resolve_root_payload_field_declarations() {
-    let source = "{}\n[(Record { Topic String Description String }) (Select [(ByTopic { Topic * }) (ByDescription { Description * })])]\n[]\n{}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("later-inline-payloads");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -279,8 +285,8 @@ fn later_inline_payloads_resolve_root_payload_field_declarations() {
 
 #[test]
 fn trailing_namespace_can_reference_root_payload_field_declarations() {
-    let source = "{}\n[(Record { Topic String Description String })]\n[]\n{ Wrapper { Topic * } }";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("trailing-namespace-reference");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
         .source()
         .lower(
@@ -303,8 +309,8 @@ fn trailing_namespace_can_reference_root_payload_field_declarations() {
 
 #[test]
 fn duplicate_inline_and_namespace_declarations_are_errors() {
-    let source = "{}\n[(Record { Topic String })]\n[]\n{ Topic String }";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("duplicate-inline-and-namespace");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let error = artifact
         .source()
         .lower(
@@ -321,8 +327,8 @@ fn duplicate_inline_and_namespace_declarations_are_errors() {
 
 #[test]
 fn duplicate_inline_declarations_are_errors() {
-    let source = "{}\n[(Record { Topic String }) (Describe { Topic String })]\n[]\n{}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("duplicate-inline-fields");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let error = artifact
         .source()
         .lower(
@@ -339,8 +345,8 @@ fn duplicate_inline_declarations_are_errors() {
 
 #[test]
 fn schema_source_artifact_round_trips_through_binary_archive() {
-    let source = "{}\n[(Lookup { RecordIdentifier * }) (Count { Query * })]\n[]\n{\n  RecordIdentifier Integer\n  Query { Topic * }\n  Topic String\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("root-inline-payloads");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let bytes = artifact
         .to_binary_bytes()
         .expect("schema source artifact archives");
@@ -353,8 +359,8 @@ fn schema_source_artifact_round_trips_through_binary_archive() {
 
 #[test]
 fn schema_source_lowers_stream_declarations_and_variant_relations() {
-    let source = "{}\n[(Watch WatchRequest opens RecordStream) (Unwatch SubscriptionToken)]\n[(Watching SubscriptionReceipt)]\n{\n  RuntimeEvent [(RecordChanged RecordChanged belongs RecordStream)]\n  RecordStream (Stream { token SubscriptionToken opened SubscriptionReceipt event RuntimeEvent close SubscriptionToken })\n  WatchRequest { topics Topics }\n  Topics { values (Vec Topic) }\n  Topic String\n  SubscriptionToken Integer\n  SubscriptionReceipt { subscriptionToken SubscriptionToken }\n  RecordChanged { topic Topic }\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("stream-relations");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
 
     assert_eq!(
         artifact.to_schema_text(),
@@ -418,8 +424,8 @@ fn schema_source_lowers_stream_declarations_and_variant_relations() {
 
 #[test]
 fn source_enum_variants_are_typed_structural_macro_nodes() {
-    let source = "{}\n[Reserved (Record Entry) (Inline { Topic * })]\n[]\n{\n  Entry { Topic * }\n  Topic String\n}";
-    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let source = source_codec_fixture("structural-variant-nodes");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
 
     assert_eq!(
         artifact.to_schema_text(),
@@ -483,8 +489,8 @@ fn source_enum_variants_are_typed_structural_macro_nodes() {
 
 #[test]
 fn source_enum_variant_reports_structural_macro_expected_shapes() {
-    let source = "{}\n[(Record Entry Extra)]\n[]\n{}";
-    let error = SchemaSourceArtifact::from_schema_text(source)
+    let source = source_codec_fixture("unsupported-three-object-variant");
+    let error = SchemaSourceArtifact::from_schema_text(&source)
         .expect_err("three-object variant signature is not a supported structural case");
 
     let SchemaError::UnsupportedMacroNodeStructure {

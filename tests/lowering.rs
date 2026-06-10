@@ -1,14 +1,19 @@
 use schema_next::{
     MacroContext, MacroLibrary, MacroObject, MacroOutput, MacroPosition, MacroRegistry, Name,
-    SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage, TypeDeclaration,
-    TypeReference, Visibility,
+    SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage, SchemaSourceArtifact,
+    TypeDeclaration, TypeReference, Visibility,
 };
 
 #[test]
 fn lowers_spirit_schema_into_ordered_schema() {
     let source = include_str!("../schemas/spirit-min.schema");
-    let schema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("spirit", "0.1.0"))
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("spirit", "0.1.0"),
+        )
         .expect("schema lowers");
 
     assert_eq!(schema.imports().len(), 0);
@@ -30,7 +35,7 @@ fn lowers_spirit_schema_into_ordered_schema() {
             .plain_name()
             .expect("plain payload")
             .as_str(),
-        "Entry"
+        "Record"
     );
     assert_eq!(
         schema
@@ -39,6 +44,10 @@ fn lowers_spirit_schema_into_ordered_schema() {
             .map(|declaration| declaration.name().as_str())
             .collect::<Vec<_>>(),
         vec![
+            "Record",
+            "Observe",
+            "RecordAccepted",
+            "RecordsObserved",
             "Topic",
             "Topics",
             "Description",
@@ -94,17 +103,17 @@ fn bare_reference_declarations_lower_to_newtypes() {
 
 #[test]
 fn self_tagged_variant_form_equals_explicit_repetition() {
+    let compact_source =
+        std::fs::read_to_string("tests/fixtures/lowering/self-tagged-variant.schema")
+            .expect("read compact variant fixture");
+    let explicit_source =
+        std::fs::read_to_string("tests/fixtures/lowering/explicit-repeated-variant.schema")
+            .expect("read explicit repeated variant fixture");
     let compact = SchemaEngine::default()
-        .lower_source(
-            "[ (Entry) ] [] { Entry { value String } }",
-            SchemaIdentity::new("example", "0.1.0"),
-        )
+        .lower_source(&compact_source, SchemaIdentity::new("example", "0.1.0"))
         .expect("compact self-tagged variant lowers");
     let explicit = SchemaEngine::default()
-        .lower_source(
-            "[ (Entry Entry) ] [] { Entry { value String } }",
-            SchemaIdentity::new("example", "0.1.0"),
-        )
+        .lower_source(&explicit_source, SchemaIdentity::new("example", "0.1.0"))
         .expect("explicit repetition lowers");
 
     let variant = &compact.input().variants[0];
@@ -647,8 +656,13 @@ fn field_names_are_derived_from_type_names() {
 #[test]
 fn default_engine_lowers_through_registered_structural_forms() {
     let source = include_str!("../schemas/spirit-min.schema");
-    let schema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("spirit", "0.1.0"))
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("spirit", "0.1.0"),
+        )
         .expect("schema lowers through macros");
 
     let input = schema.root_named("Input").expect("input root");

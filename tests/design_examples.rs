@@ -433,14 +433,15 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
     assert_eq!(variants, vec![("Record", Some("Entry")), ("Drop", None)]);
 }
 
-/// Illustrates: same-name payload variants are explicit data-carrying
+/// Illustrates: same-name payload variants use compact self-tagged data
 /// variants. The old star suffix is gone from authored schema.
 #[test]
-fn design_example_same_name_payload_variant_uses_explicit_payload() {
-    let source = "[(Record Record)] [(Recorded Recorded)] { Record { description Description } Recorded { recordIdentifier RecordIdentifier } }";
+fn design_example_same_name_payload_variant_uses_self_tagged_payload() {
+    let source = std::fs::read_to_string("tests/fixtures/design/same-name-payload-variant.schema")
+        .expect("read same-name payload fixture");
     let schema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("explicit same-name variants lower");
+        .lower_source(&source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("self-tagged same-name variants lower");
 
     assert_eq!(
         schema.input().variants[0]

@@ -21,9 +21,13 @@ use schema_next::{
 };
 
 fn entry_schema_source() -> &'static str {
-    "[(Record Entry) (Observe Query)]\n\
-     [(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]\n\
+    "[Record Observe]\n\
+     [RecordAccepted RecordsObserved]\n\
      {\n\
+       Record Entry\n\
+       Observe Query\n\
+       RecordAccepted RecordIdentifier\n\
+       RecordsObserved RecordSet\n\
        Topic String\n\
        Description String\n\
        RecordIdentifier Integer\n\
