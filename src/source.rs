@@ -418,7 +418,8 @@ impl SourceNamespaceEntry {
         &self,
         resolver: &SourceTypeResolver,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
-        self.value.to_declaration_group(self.name.clone(), resolver)
+        self.value
+            .to_namespace_declaration_group(self.name.clone(), resolver)
     }
 
     fn to_stream_declaration(&self) -> Option<StreamDeclaration> {
@@ -510,6 +511,19 @@ impl SourceDeclarationValue {
             Self::Struct(body) => body.to_declaration_group(name, resolver),
             Self::Enum(body) => body.to_declaration_group(name, resolver),
             Self::Stream(_) => Ok(SourceDeclarationGroup::empty()),
+        }
+    }
+
+    fn to_namespace_declaration_group(
+        &self,
+        name: Name,
+        resolver: &SourceTypeResolver,
+    ) -> Result<SourceDeclarationGroup, SchemaError> {
+        match self {
+            Self::Enum(body) => body.to_public_declaration_group(name, resolver),
+            Self::Reference(_) | Self::Text(_) | Self::Struct(_) | Self::Stream(_) => {
+                self.to_declaration_group(name, resolver)
+            }
         }
     }
 
@@ -985,6 +999,28 @@ impl SourceEnumBody {
         Ok(SourceDeclarationGroup::new(
             Vec::new(),
             private,
+            TypeDeclaration::Enum(
+                self.to_schema_enum(name, &SourceVariantPayloadResolution::explicit_only())?,
+            ),
+        ))
+    }
+
+    fn to_public_declaration_group(
+        &self,
+        name: Name,
+        resolver: &SourceTypeResolver,
+    ) -> Result<SourceDeclarationGroup, SchemaError> {
+        let mut public = Vec::new();
+        for variant in &self.variants {
+            public.extend(
+                variant
+                    .public_inline_declaration(resolver)?
+                    .into_type_declarations(),
+            );
+        }
+        Ok(SourceDeclarationGroup::new(
+            public,
+            Vec::new(),
             TypeDeclaration::Enum(
                 self.to_schema_enum(name, &SourceVariantPayloadResolution::explicit_only())?,
             ),

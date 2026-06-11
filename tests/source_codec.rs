@@ -108,6 +108,57 @@ fn namespace_enum_bare_variants_do_not_resolve_to_same_named_payloads() {
 }
 
 #[test]
+fn namespace_inline_enum_variant_declarations_are_public_payload_types() {
+    let source = source_codec_fixture("namespace-inline-enum-variants");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    assert_eq!(
+        schema
+            .namespace()
+            .iter()
+            .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Craft", schema_next::Visibility::Public),
+            ("Information", schema_next::Visibility::Public),
+            ("Domain", schema_next::Visibility::Public),
+            ("Entry", schema_next::Visibility::Public),
+        ],
+        "inline enum variants exposed through a public namespace enum must be public payload types"
+    );
+    let Some(TypeDeclaration::Enum(domain)) = schema.type_named("Domain") else {
+        panic!("Domain should lower to an enum");
+    };
+    assert_eq!(
+        domain
+            .variants
+            .iter()
+            .map(|variant| {
+                (
+                    variant.name.as_str(),
+                    variant
+                        .payload
+                        .as_ref()
+                        .and_then(schema_next::TypeReference::plain_name)
+                        .map(schema_next::Name::as_str),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("Craft", Some("Craft")),
+            ("Information", Some("Information"))
+        ]
+    );
+}
+
+#[test]
 fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
     let source = source_codec_fixture("root-header-bare-names");
     let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
