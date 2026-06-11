@@ -1587,6 +1587,7 @@ pub enum SourceReference {
     FixedBytes(u64),
     Vector(#[rkyv(omit_bounds)] Box<SourceReference>),
     Optional(#[rkyv(omit_bounds)] Box<SourceReference>),
+    ScopeOf(#[rkyv(omit_bounds)] Box<SourceReference>),
     Map(
         #[rkyv(omit_bounds)] Box<SourceReference>,
         #[rkyv(omit_bounds)] Box<SourceReference>,
@@ -1629,6 +1630,7 @@ impl SourceReference {
         match head {
             "Vec" | "Vector" => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
             "Optional" | "Option" => Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
+            "ScopeOf" | "Scope" => Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
             "Map" | "KeyValue" => Self::from_map_record(&items[1]),
             "Bytes" => Self::from_fixed_bytes_record(&items[1]),
             _ => Err(SchemaError::ExpectedSyntaxReference {
@@ -1681,6 +1683,9 @@ impl SourceReference {
             Self::Optional(reference) => {
                 Delimiter::Parenthesis.wrap(["Optional".to_owned(), reference.to_schema_text()])
             }
+            Self::ScopeOf(reference) => {
+                Delimiter::Parenthesis.wrap(["ScopeOf".to_owned(), reference.to_schema_text()])
+            }
             Self::Map(key, value) => Delimiter::Parenthesis.wrap([
                 "Map".to_owned(),
                 Delimiter::Parenthesis.wrap([key.to_schema_text(), value.to_schema_text()]),
@@ -1697,6 +1702,9 @@ impl SourceReference {
             }
             Self::Optional(reference) => {
                 TypeReference::Optional(Box::new(reference.to_type_reference()))
+            }
+            Self::ScopeOf(reference) => {
+                TypeReference::ScopeOf(Box::new(reference.to_type_reference()))
             }
             Self::Map(key, value) => TypeReference::Map(
                 Box::new(key.to_type_reference()),

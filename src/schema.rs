@@ -848,12 +848,13 @@ impl StreamDeclaration {
 ///
 /// `String`, `Integer`, `Boolean`, and `Path` are reserved scalar leaves.
 /// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
-/// `Map`, and `Optional` carry inner references. These are Schema
+/// `Map`, `Optional`, and `ScopeOf` carry inner references. These are Schema
 /// type-reference objects read over nota-next's parsed structure:
 /// `(Vec T)` lowers to `Vector<T>`,
 /// `(Map (K V))` lowers to `Map<K, V>`, and `(Optional T)` lowers to
-/// `Optional<T>`. Parentheses with other heads remain available for
-/// user-declared type-reference macros.
+/// `Optional<T>`. `(ScopeOf T)` lowers to the typed prefix-scope language for
+/// `T`. Parentheses with other heads remain available for user-declared
+/// type-reference macros.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 #[rkyv(
     bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
@@ -874,6 +875,7 @@ pub enum TypeReference {
         #[rkyv(omit_bounds)] Box<TypeReference>,
     ),
     Optional(#[rkyv(omit_bounds)] Box<TypeReference>),
+    ScopeOf(#[rkyv(omit_bounds)] Box<TypeReference>),
 }
 
 impl NotaDecode for TypeReference {
@@ -902,6 +904,9 @@ impl NotaDecode for TypeReference {
             "Plain" => Ok(Self::Plain(Name::from_nota_block(&children[1])?)),
             "Vector" => Ok(Self::Vector(Box::new(Self::from_nota_block(&children[1])?))),
             "Optional" => Ok(Self::Optional(Box::new(Self::from_nota_block(
+                &children[1],
+            )?))),
+            "ScopeOf" => Ok(Self::ScopeOf(Box::new(Self::from_nota_block(
                 &children[1],
             )?))),
             "Map" => Self::from_nota_map_payload(&children[1]),
@@ -934,6 +939,7 @@ impl NotaEncode for TypeReference {
             Self::Vector(reference) => format!("(Vector {})", reference.to_nota()),
             Self::Map(key, value) => format!("(Map ({} {}))", key.to_nota(), value.to_nota()),
             Self::Optional(reference) => format!("(Optional {})", reference.to_nota()),
+            Self::ScopeOf(reference) => format!("(ScopeOf {})", reference.to_nota()),
         }
     }
 }
@@ -975,7 +981,8 @@ impl TypeReference {
             | Self::Plain(_)
             | Self::Vector(_)
             | Self::Map(..)
-            | Self::Optional(_) => None,
+            | Self::Optional(_)
+            | Self::ScopeOf(_) => None,
         }
     }
 
@@ -993,7 +1000,8 @@ impl TypeReference {
             | Self::FixedBytes(_)
             | Self::Vector(_)
             | Self::Map(..)
-            | Self::Optional(_) => None,
+            | Self::Optional(_)
+            | Self::ScopeOf(_) => None,
         }
     }
 
@@ -1019,8 +1027,9 @@ impl TypeReference {
     ///
     /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
     /// lowers to `Plain`. Schema type-reference objects lower at this
-    /// position: `(Vec T)` -> `Vector`, `(Map (K V))` -> `Map`, and
-    /// `(Optional T)` -> `Optional`. The inner positions recurse, so
+    /// position: `(Vec T)` -> `Vector`, `(Map (K V))` -> `Map`,
+    /// `(Optional T)` -> `Optional`, and `(ScopeOf T)` -> `ScopeOf`.
+    /// The inner positions recurse, so
     /// `(Vec (Optional Topic))` and `(Map (NodeName (Vec Service)))`
     /// nest. nota-next did the structural parse; this is pure semantic
     /// lowering over its `Block`s, not a hand-rolled text parser.
@@ -1136,6 +1145,13 @@ impl TypeReference {
                     }
                     "Optional" | "Option" => {
                         return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
+                            &objects[1],
+                            registry,
+                            context,
+                        )?)));
+                    }
+                    "ScopeOf" | "Scope" => {
+                        return Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,

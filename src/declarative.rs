@@ -1267,6 +1267,11 @@ impl<'object> ExpandedReference<'object> {
                             self.children[1].type_reference(registry, context)?,
                         )));
                     }
+                    "ScopeOf" | "Scope" => {
+                        return Ok(TypeReference::ScopeOf(Box::new(
+                            self.children[1].type_reference(registry, context)?,
+                        )));
+                    }
                     "Map" | "KeyValue" => {
                         return self.grouped_map_payload(&self.children[1], registry, context);
                     }
@@ -1813,6 +1818,9 @@ impl<'template> MacroExpansionField<'template> {
                 "optional_{}",
                 self.derived_name_for_reference(inner)
             )),
+            TypeReference::ScopeOf(inner) => {
+                Name::new(format!("{}_scope", self.derived_name_for_reference(inner)))
+            }
         }
     }
 }
@@ -1993,6 +2001,9 @@ impl<'template> MacroExpansionReference<'template> {
                 Self::lower_object(children[1], registry, context)?,
             ))),
             "Optional" if children.len() == 2 => Ok(TypeReference::Optional(Box::new(
+                Self::lower_object(children[1], registry, context)?,
+            ))),
+            "ScopeOf" if children.len() == 2 => Ok(TypeReference::ScopeOf(Box::new(
                 Self::lower_object(children[1], registry, context)?,
             ))),
             "Map" if children.len() == 3 => Ok(TypeReference::Map(
