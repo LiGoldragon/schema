@@ -28,15 +28,17 @@ pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
     Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
-    NewtypeDeclaration, Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair,
-    SchemaNodeValue, StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap,
-    SymbolPath, SymbolPathPosition, TypeDeclaration, TypeReference, Visibility,
+    NewtypeDeclaration, RelationDeclaration, RelationValue, Schema, SchemaDeclaredType, SchemaNode,
+    SchemaNodeData, SchemaNodePair, SchemaNodeValue, StreamDeclaration, StreamRelation,
+    StructDeclaration, StructFieldMap, SymbolPath, SymbolPathPosition, TypeDeclaration,
+    TypeReference, Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceField,
     SourceFieldValue, SourceImport, SourceImports, SourceNamespace, SourceNamespaceEntry,
-    SourceReference, SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
-    SourceVariantSignature, StreamRelationKeyword,
+    SourceReference, SourceRelation, SourceRelationValue, SourceRelations, SourceRootEnum,
+    SourceStructBody, SourceVariantName, SourceVariantPayload, SourceVariantSignature,
+    StreamRelationKeyword,
 };
 pub use upgrade::{
     AddField, AddVariant, ChangeFieldType, DefaultValue, FieldMigration, MigrationSpec, SchemaEdit,

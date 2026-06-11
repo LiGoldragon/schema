@@ -436,6 +436,7 @@ impl SchemaEngine {
             output,
             namespace,
             streams,
+            Vec::new(),
         ))
     }
 

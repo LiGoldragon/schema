@@ -10,9 +10,10 @@ use nota_next::{
 
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
-    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ResolvedImport, Schema, SchemaEngine,
-    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration,
-    TypeDeclaration, TypeReference, macros::BlockDebug,
+    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, RelationDeclaration, RelationValue,
+    ResolvedImport, Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration,
+    StreamRelation, StructDeclaration, TypeDeclaration, TypeReference,
+    macros::{BlockDebug, SchemaBlockExt},
 };
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -21,6 +22,7 @@ pub struct SchemaSource {
     input: SourceRootEnum,
     output: SourceRootEnum,
     namespace: SourceNamespace,
+    relations: SourceRelations,
 }
 
 impl SchemaSource {
@@ -30,24 +32,47 @@ impl SchemaSource {
     }
 
     pub fn from_document(document: &Document) -> Result<Self, SchemaError> {
-        if !matches!(document.holds_root_objects(), 3 | 4) {
+        if !matches!(document.holds_root_objects(), 3 | 4 | 5) {
             return Err(SchemaError::ExpectedRootObjectCount {
-                expected: "3 root values (input output namespace) or 4 with leading imports",
+                expected: "3 root values (input output namespace), optional leading imports, optional trailing relations",
                 found: document.holds_root_objects(),
             });
         }
 
-        let (imports, input_index, output_index, namespace_index) = if document.holds_root_objects()
-            == 4
-        {
+        let first_is_imports = document.root_object_at(0).is_some_and(|block| {
+            matches!(
+                block,
+                Block::Delimited {
+                    delimiter: Delimiter::Brace,
+                    ..
+                }
+            )
+        });
+        let (imports, input_index) = if first_is_imports {
             (
                 SourceImports::from_block(document.root_object_at(0).expect("checked root count"))?,
                 1,
-                2,
-                3,
             )
         } else {
-            (SourceImports::empty(), 0, 1, 2)
+            (SourceImports::empty(), 0)
+        };
+        let output_index = input_index + 1;
+        let namespace_index = input_index + 2;
+        let relations_index = namespace_index + 1;
+        if document.holds_root_objects() < relations_index {
+            return Err(SchemaError::ExpectedRootObjectCount {
+                expected: "input output namespace after optional imports",
+                found: document.holds_root_objects(),
+            });
+        }
+        let relations = if document.holds_root_objects() == relations_index + 1 {
+            SourceRelations::from_block(
+                document
+                    .root_object_at(relations_index)
+                    .expect("checked root count"),
+            )?
+        } else {
+            SourceRelations::empty()
         };
 
         Ok(Self {
@@ -69,6 +94,7 @@ impl SchemaSource {
                     .root_object_at(namespace_index)
                     .expect("checked root count"),
             )?,
+            relations,
         })
     }
 
@@ -88,18 +114,25 @@ impl SchemaSource {
         &self.namespace
     }
 
+    pub fn relations(&self) -> &SourceRelations {
+        &self.relations
+    }
+
     pub fn stream_declarations(&self) -> Result<Vec<StreamDeclaration>, SchemaError> {
         self.namespace.stream_declarations()
     }
 
     pub fn to_schema_text(&self) -> String {
-        [
+        let mut roots = vec![
             self.imports.to_schema_text(),
             self.input.body().to_schema_text(),
             self.output.body().to_schema_text(),
             self.namespace.to_schema_text(),
-        ]
-        .join("\n")
+        ];
+        if !self.relations.is_empty() {
+            roots.push(self.relations.to_schema_text());
+        }
+        roots.join("\n")
     }
 
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
@@ -141,6 +174,7 @@ impl SchemaSource {
             output,
             namespace.into_declarations(),
             streams,
+            self.relations.to_schema_relations(),
         ))
     }
 }
@@ -428,6 +462,167 @@ impl SourceNamespaceEntry {
 
     fn is_type_declaration(&self) -> bool {
         self.value.is_type_declaration()
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SourceRelations {
+    entries: Vec<SourceRelation>,
+}
+
+impl SourceRelations {
+    pub fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn entries(&self) -> &[SourceRelation] {
+        &self.entries
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::SquareBracket, "source relations")?;
+        let mut entries = Vec::new();
+        for object in body.root_objects() {
+            entries.push(SourceRelation::from_block(object)?);
+        }
+        Ok(Self { entries })
+    }
+
+    fn to_schema_text(&self) -> String {
+        Delimiter::SquareBracket.wrap(self.entries.iter().map(SourceRelation::to_schema_text))
+    }
+
+    fn to_schema_relations(&self) -> Vec<RelationDeclaration> {
+        self.entries
+            .iter()
+            .map(SourceRelation::to_schema_relation)
+            .collect()
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub enum SourceRelation {
+    Equivalence(SourceEquivalenceRelation),
+}
+
+impl SourceRelation {
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "source relation")?;
+        let objects = body.root_objects();
+        if objects.len() != 2 {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form: "relation declaration",
+                expected: "relation name plus value vector",
+                found: objects.len(),
+            });
+        }
+        let head = SourceAtom::from_block(&objects[0])?;
+        match head.0 {
+            "Equivalence" => Ok(Self::Equivalence(SourceEquivalenceRelation::from_block(
+                &objects[1],
+            )?)),
+            other => Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: format!("relation {other}"),
+            }),
+        }
+    }
+
+    fn to_schema_text(&self) -> String {
+        match self {
+            Self::Equivalence(relation) => {
+                Delimiter::Parenthesis.wrap(["Equivalence".to_owned(), relation.to_schema_text()])
+            }
+        }
+    }
+
+    fn to_schema_relation(&self) -> RelationDeclaration {
+        match self {
+            Self::Equivalence(relation) => {
+                RelationDeclaration::Equivalence(relation.to_relation_values())
+            }
+        }
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SourceEquivalenceRelation {
+    values: Vec<SourceRelationValue>,
+}
+
+impl SourceEquivalenceRelation {
+    pub fn values(&self) -> &[SourceRelationValue] {
+        &self.values
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::SquareBracket, "equivalence values")?;
+        let mut values = Vec::new();
+        for object in body.root_objects() {
+            values.push(SourceRelationValue::from_block(object)?);
+        }
+        Ok(Self { values })
+    }
+
+    fn to_schema_text(&self) -> String {
+        Delimiter::SquareBracket.wrap(self.values.iter().map(SourceRelationValue::to_schema_text))
+    }
+
+    fn to_relation_values(&self) -> Vec<RelationValue> {
+        self.values
+            .iter()
+            .map(SourceRelationValue::to_relation_value)
+            .collect()
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SourceRelationValue {
+    path: Vec<Name>,
+}
+
+impl SourceRelationValue {
+    pub fn path(&self) -> &[Name] {
+        &self.path
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        match block {
+            Block::Atom(_) => Ok(Self {
+                path: vec![block.schema_name()?],
+            }),
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                root_objects,
+                ..
+            } => {
+                let mut path = Vec::new();
+                for object in root_objects {
+                    path.extend(Self::from_block(object)?.path);
+                }
+                Ok(Self { path })
+            }
+            Block::Delimited { .. } | Block::PipeText(_) => Err(SchemaError::ExpectedSymbol {
+                found: block.reemit_fallback(),
+            }),
+        }
+    }
+
+    fn to_schema_text(&self) -> String {
+        match self.path.as_slice() {
+            [] => Delimiter::Parenthesis.wrap(Vec::<String>::new()),
+            [name] => name.to_nota(),
+            names => Delimiter::Parenthesis.wrap(names.iter().map(Name::to_nota)),
+        }
+    }
+
+    fn to_relation_value(&self) -> RelationValue {
+        RelationValue::new(self.path.clone())
     }
 }
 

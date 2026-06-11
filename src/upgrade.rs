@@ -401,6 +401,7 @@ impl SchemaEditor {
             self.output,
             self.namespace,
             self.streams,
+            Vec::new(),
         )
     }
 }
@@ -551,6 +552,7 @@ impl Schema {
         let output = self.output().clone();
         let namespace = self.namespace().to_vec();
         let streams = self.streams().to_vec();
+        let relations = self.relations().to_vec();
         Self::new(
             identity,
             imports,
@@ -559,6 +561,7 @@ impl Schema {
             output,
             namespace,
             streams,
+            relations,
         )
     }
 }

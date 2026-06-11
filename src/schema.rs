@@ -212,6 +212,7 @@ pub struct Schema {
     output: EnumDeclaration,
     namespace: Vec<Declaration>,
     streams: Vec<StreamDeclaration>,
+    relations: Vec<RelationDeclaration>,
 }
 
 impl Schema {
@@ -223,6 +224,7 @@ impl Schema {
         output: EnumDeclaration,
         namespace: Vec<Declaration>,
         streams: Vec<StreamDeclaration>,
+        relations: Vec<RelationDeclaration>,
     ) -> Self {
         Self {
             identity,
@@ -232,6 +234,7 @@ impl Schema {
             output,
             namespace,
             streams,
+            relations,
         }
     }
 
@@ -275,6 +278,10 @@ impl Schema {
 
     pub fn streams(&self) -> &[StreamDeclaration] {
         &self.streams
+    }
+
+    pub fn relations(&self) -> &[RelationDeclaration] {
+        &self.relations
     }
 
     pub fn type_named(&self, name: &str) -> Option<&TypeDeclaration> {
@@ -384,6 +391,54 @@ impl Schema {
         rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum RelationDeclaration {
+    Equivalence(Vec<RelationValue>),
+}
+
+impl RelationDeclaration {
+    pub fn values(&self) -> &[RelationValue] {
+        match self {
+            Self::Equivalence(values) => values,
+        }
+    }
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct RelationValue {
+    path: Vec<Name>,
+}
+
+impl RelationValue {
+    pub fn new(path: Vec<Name>) -> Self {
+        Self { path }
+    }
+
+    pub fn path(&self) -> &[Name] {
+        &self.path
     }
 }
 

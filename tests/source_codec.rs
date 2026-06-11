@@ -1,7 +1,8 @@
 use std::fs;
 
 use schema_next::{
-    SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, TypeDeclaration,
+    RelationDeclaration, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
+    TypeDeclaration,
 };
 
 fn source_codec_fixture(name: &str) -> String {
@@ -406,6 +407,54 @@ fn schema_source_artifact_round_trips_through_binary_archive() {
 
     assert_eq!(artifact, recovered);
     assert_eq!(recovered.to_schema_text(), source);
+}
+
+#[test]
+fn schema_source_lowers_relation_declarations() {
+    let source = source_codec_fixture("relations");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
+
+    assert_eq!(
+        artifact.to_schema_text(),
+        source,
+        "relation declarations should round-trip through canonical schema source"
+    );
+
+    let bytes = artifact
+        .to_binary_bytes()
+        .expect("schema source artifact archives");
+    let recovered =
+        SchemaSourceArtifact::from_binary_bytes(&bytes).expect("schema source artifact restores");
+    assert_eq!(artifact, recovered);
+
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:domain", "0.1.0"),
+        )
+        .expect("schema source lowers");
+
+    assert_eq!(schema.relations().len(), 2);
+    let RelationDeclaration::Equivalence(values) = &schema.relations()[0];
+    let paths = values
+        .iter()
+        .map(|value| {
+            value
+                .path()
+                .iter()
+                .map(schema_next::Name::as_str)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        vec![
+            vec!["Technology", "Hardware", "Networking"],
+            vec!["Technology", "Software", "Distributed", "Networking"]
+        ],
+        "equivalence values lower as schema-name paths"
+    );
 }
 
 #[test]
