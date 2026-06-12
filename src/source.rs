@@ -9,10 +9,11 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, ImportDeclaration, Name,
-    NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, RelationDeclaration, RelationValue,
-    ResolvedImport, Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration,
-    StreamRelation, StructDeclaration, TypeDeclaration, TypeReference,
+    Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
+    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence,
+    RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine, SchemaError,
+    SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
+    TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -122,6 +123,10 @@ impl SchemaSource {
         self.namespace.stream_declarations()
     }
 
+    pub fn family_declarations(&self) -> Result<Vec<FamilyDeclaration>, SchemaError> {
+        self.namespace.family_declarations()
+    }
+
     pub fn to_schema_text(&self) -> String {
         let mut roots = vec![
             self.imports.to_schema_text(),
@@ -164,9 +169,10 @@ impl SchemaSource {
         namespace.push_public_declarations(self.input.public_inline_declarations(&resolver)?)?;
         namespace.push_public_declarations(self.output.public_inline_declarations(&resolver)?)?;
         let streams = self.namespace.stream_declarations()?;
+        let families = self.namespace.family_declarations()?;
         let input = self.input.to_schema_enum(&namespace)?;
         let output = self.output.to_schema_enum(&namespace)?;
-        Ok(Schema::new(
+        Schema::new(
             identity,
             imports,
             resolved_imports,
@@ -174,8 +180,10 @@ impl SchemaSource {
             output,
             namespace.into_declarations(),
             streams,
+            families,
             self.relations.to_schema_relations(),
-        ))
+        )
+        .families_verified()
     }
 }
 
@@ -427,6 +435,29 @@ impl SourceNamespace {
         }
         Ok(streams)
     }
+
+    fn family_declarations(&self) -> Result<Vec<FamilyDeclaration>, SchemaError> {
+        let mut families: Vec<FamilyDeclaration> = Vec::new();
+        for entry in &self.entries {
+            if let Some(family) = entry.to_family_declaration() {
+                if families.iter().any(|existing| existing.name == family.name) {
+                    return Err(SchemaError::DuplicateFamilyName {
+                        name: family.name.as_str().to_owned(),
+                    });
+                }
+                if families
+                    .iter()
+                    .any(|existing| existing.table == family.table)
+                {
+                    return Err(SchemaError::DuplicateFamilyTable {
+                        table: family.table.as_str().to_owned(),
+                    });
+                }
+                families.push(family);
+            }
+        }
+        Ok(families)
+    }
 }
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
@@ -458,6 +489,10 @@ impl SourceNamespaceEntry {
 
     fn to_stream_declaration(&self) -> Option<StreamDeclaration> {
         self.value.to_stream_declaration(self.name.clone())
+    }
+
+    fn to_family_declaration(&self) -> Option<FamilyDeclaration> {
+        self.value.to_family_declaration(self.name.clone())
     }
 
     fn is_type_declaration(&self) -> bool {
@@ -644,6 +679,7 @@ pub enum SourceDeclarationValue {
     Struct(#[rkyv(omit_bounds)] SourceStructBody),
     Enum(#[rkyv(omit_bounds)] SourceEnumBody),
     Stream(#[rkyv(omit_bounds)] SourceStreamBody),
+    Family(#[rkyv(omit_bounds)] SourceFamilyBody),
 }
 
 impl SourceDeclarationValue {
@@ -653,7 +689,7 @@ impl SourceDeclarationValue {
             Block::Delimited {
                 delimiter: Delimiter::Parenthesis,
                 ..
-            } => match Self::from_stream_block(block)? {
+            } => match Self::from_metadata_block(block)? {
                 Some(value) => Ok(value),
                 None => Ok(Self::Reference(SourceReference::from_block(block)?)),
             },
@@ -675,8 +711,11 @@ impl SourceDeclarationValue {
         }
     }
 
-    fn from_stream_block(block: &Block) -> Result<Option<Self>, SchemaError> {
-        SourceStreamBody::from_block(block).map(|body| body.map(Self::Stream))
+    fn from_metadata_block(block: &Block) -> Result<Option<Self>, SchemaError> {
+        if let Some(stream) = SourceStreamBody::from_block(block)? {
+            return Ok(Some(Self::Stream(stream)));
+        }
+        SourceFamilyBody::from_block(block).map(|body| body.map(Self::Family))
     }
 
     fn to_schema_text(&self) -> String {
@@ -686,6 +725,7 @@ impl SourceDeclarationValue {
             Self::Struct(body) => body.to_schema_text(),
             Self::Enum(body) => body.to_schema_text(),
             Self::Stream(body) => body.to_schema_text(),
+            Self::Family(body) => body.to_schema_text(),
         }
     }
 
@@ -705,7 +745,7 @@ impl SourceDeclarationValue {
             }),
             Self::Struct(body) => body.to_declaration_group(name, resolver),
             Self::Enum(body) => body.to_declaration_group(name, resolver),
-            Self::Stream(_) => Ok(SourceDeclarationGroup::empty()),
+            Self::Stream(_) | Self::Family(_) => Ok(SourceDeclarationGroup::empty()),
         }
     }
 
@@ -716,21 +756,38 @@ impl SourceDeclarationValue {
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self {
             Self::Enum(body) => body.to_public_declaration_group(name, resolver),
-            Self::Reference(_) | Self::Text(_) | Self::Struct(_) | Self::Stream(_) => {
-                self.to_declaration_group(name, resolver)
-            }
+            Self::Reference(_)
+            | Self::Text(_)
+            | Self::Struct(_)
+            | Self::Stream(_)
+            | Self::Family(_) => self.to_declaration_group(name, resolver),
         }
     }
 
     fn to_stream_declaration(&self, name: Name) -> Option<StreamDeclaration> {
         match self {
             Self::Stream(body) => Some(body.to_stream_declaration(name)),
-            Self::Reference(_) | Self::Text(_) | Self::Struct(_) | Self::Enum(_) => None,
+            Self::Reference(_)
+            | Self::Text(_)
+            | Self::Struct(_)
+            | Self::Enum(_)
+            | Self::Family(_) => None,
+        }
+    }
+
+    fn to_family_declaration(&self, name: Name) -> Option<FamilyDeclaration> {
+        match self {
+            Self::Family(body) => Some(body.to_family_declaration(name)),
+            Self::Reference(_)
+            | Self::Text(_)
+            | Self::Struct(_)
+            | Self::Enum(_)
+            | Self::Stream(_) => None,
         }
     }
 
     fn is_type_declaration(&self) -> bool {
-        !matches!(self, Self::Stream(_))
+        !matches!(self, Self::Stream(_) | Self::Family(_))
     }
 }
 
@@ -875,6 +932,132 @@ impl SourceStreamFields {
         field.ok_or_else(|| SchemaError::ExpectedSyntaxDeclaration {
             found: format!("stream missing {field_name} field"),
         })
+    }
+}
+
+/// The authored body of a family declaration: `(Family { record
+/// <TypeName> table <table-name> key <Domain|Identified> })` inside the
+/// namespace map, on the stream-declaration precedent. The record name
+/// must resolve to a declared or imported type when the source lowers.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SourceFamilyBody {
+    record: Name,
+    table: TableName,
+    key: FamilyKey,
+}
+
+impl SourceFamilyBody {
+    pub fn record(&self) -> &Name {
+        &self.record
+    }
+
+    pub fn table(&self) -> &TableName {
+        &self.table
+    }
+
+    pub fn key(&self) -> FamilyKey {
+        self.key
+    }
+
+    fn from_block(block: &Block) -> Result<Option<Self>, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "source family body")?;
+        let objects = body.root_objects();
+        let Some(head) = objects.first().and_then(Block::demote_to_string) else {
+            return Ok(None);
+        };
+        if head != "Family" {
+            return Ok(None);
+        }
+        if objects.len() != 2 {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form: "family declaration",
+                expected: "Family plus one brace payload",
+                found: objects.len(),
+            });
+        }
+        let fields = SourceFamilyFields::from_block(&objects[1])?;
+        Ok(Some(fields.into_family_body()?))
+    }
+
+    fn to_schema_text(&self) -> String {
+        Delimiter::Parenthesis.wrap([
+            "Family".to_owned(),
+            SourceDelimitedText::new(
+                Delimiter::Brace,
+                vec![
+                    format!("record {}", self.record.to_nota()),
+                    format!("table {}", self.table.to_nota()),
+                    format!("key {}", self.key.to_structural_nota()),
+                ],
+            )
+            .inline(),
+        ])
+    }
+
+    fn to_family_declaration(&self, name: Name) -> FamilyDeclaration {
+        FamilyDeclaration::new(name, self.record.clone(), self.table.clone(), self.key)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceFamilyFields {
+    record: Option<Name>,
+    table: Option<TableName>,
+    key: Option<FamilyKey>,
+}
+
+impl SourceFamilyFields {
+    fn empty() -> Self {
+        Self {
+            record: None,
+            table: None,
+            key: None,
+        }
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Brace, "family declaration fields")?;
+        if body.root_objects().len() % 2 != 0 {
+            return Err(SchemaError::ExpectedEvenMapEntries {
+                found: body.root_objects().len(),
+            });
+        }
+        let mut fields = Self::empty();
+        for pair in body.root_objects().chunks_exact(2) {
+            let field = SourceAtom::from_block(&pair[0])?;
+            fields.insert(field, &pair[1])?;
+        }
+        Ok(fields)
+    }
+
+    fn insert(&mut self, field: SourceAtom<'_>, value: &Block) -> Result<(), SchemaError> {
+        match field.0 {
+            "record" => self.record = Some(SourceAtom::from_block(value)?.into_name()),
+            "table" => self.table = Some(TableName::new(SourceAtom::from_block(value)?.0)),
+            "key" => {
+                self.key = Some(FamilyKey::from_structural_block(value).map_err(SchemaError::from)?)
+            }
+            other => {
+                return Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: format!("family field {other}"),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn into_family_body(self) -> Result<SourceFamilyBody, SchemaError> {
+        Ok(SourceFamilyBody {
+            record: self.record.ok_or_else(|| Self::missing_field("record"))?,
+            table: self.table.ok_or_else(|| Self::missing_field("table"))?,
+            key: self.key.ok_or_else(|| Self::missing_field("key"))?,
+        })
+    }
+
+    fn missing_field(field_name: &'static str) -> SchemaError {
+        SchemaError::ExpectedSyntaxDeclaration {
+            found: format!("family missing {field_name} field"),
+        }
     }
 }
 

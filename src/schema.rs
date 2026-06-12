@@ -212,6 +212,7 @@ pub struct Schema {
     output: EnumDeclaration,
     namespace: Vec<Declaration>,
     streams: Vec<StreamDeclaration>,
+    families: Vec<FamilyDeclaration>,
     relations: Vec<RelationDeclaration>,
 }
 
@@ -224,6 +225,7 @@ impl Schema {
         output: EnumDeclaration,
         namespace: Vec<Declaration>,
         streams: Vec<StreamDeclaration>,
+        families: Vec<FamilyDeclaration>,
         relations: Vec<RelationDeclaration>,
     ) -> Self {
         Self {
@@ -234,6 +236,7 @@ impl Schema {
             output,
             namespace,
             streams,
+            families,
             relations,
         }
     }
@@ -280,8 +283,37 @@ impl Schema {
         &self.streams
     }
 
+    pub fn families(&self) -> &[FamilyDeclaration] {
+        &self.families
+    }
+
     pub fn relations(&self) -> &[RelationDeclaration] {
         &self.relations
+    }
+
+    /// Confirm every declared family's record type resolves to a
+    /// namespace declaration, a root enum, or a declared import. Both
+    /// lowering paths call this after assembly, so an unresolvable
+    /// record name is a typed error rather than a silent dead family.
+    pub(crate) fn families_verified(self) -> Result<Self, SchemaError> {
+        for family in &self.families {
+            if !self.family_record_resolves(&family.record) {
+                return Err(SchemaError::FamilyRecordNotFound {
+                    family: family.name.as_str().to_owned(),
+                    record: family.record.as_str().to_owned(),
+                });
+            }
+        }
+        Ok(self)
+    }
+
+    fn family_record_resolves(&self, record: &Name) -> bool {
+        self.type_named(record.as_str()).is_some()
+            || self.root_named(record.as_str()).is_some()
+            || self
+                .imports
+                .iter()
+                .any(|import| &import.local_name == record)
     }
 
     pub fn type_named(&self, name: &str) -> Option<&TypeDeclaration> {
@@ -839,6 +871,103 @@ impl StreamDeclaration {
             opened,
             event,
             close,
+        }
+    }
+}
+
+/// The current storage coordinate of a record family. A table name is
+/// not a schema symbol: renaming the table moves only this coordinate,
+/// never the family's semantic identity.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct TableName(String);
+
+impl TableName {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl NotaDecode for TableName {
+    fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
+        NotaBlock::new(block).parse_string().map(Self::new)
+    }
+}
+
+impl NotaEncode for TableName {
+    fn to_nota(&self) -> String {
+        if AtomClassification::classify(self.as_str()) == AtomClassification::SymbolCandidate {
+            self.as_str().to_owned()
+        } else {
+            NotaString::new(self.as_str()).format()
+        }
+    }
+}
+
+impl fmt::Display for TableName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// How a stored record family is keyed: by a domain-supplied record
+/// key, or by an engine-assigned record identifier. The two variants
+/// mirror the two registration shapes a SEMA engine offers (a keyed
+/// table descriptor versus an identified table descriptor).
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    nota_next::StructuralMacroNode,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum FamilyKey {
+    #[shape(keyword = "Domain")]
+    Domain,
+    #[shape(keyword = "Identified")]
+    Identified,
+}
+
+/// A stored record family: schema metadata in the namespace map, on
+/// the stream-declaration precedent. The family name is the stable
+/// identity; the record type names the declaration whose closure is
+/// the family's content identity; the table name is only the current
+/// storage coordinate; the key kind selects the engine registration
+/// shape.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct FamilyDeclaration {
+    pub name: Name,
+    pub record: Name,
+    pub table: TableName,
+    pub key: FamilyKey,
+}
+
+impl FamilyDeclaration {
+    pub fn new(name: Name, record: Name, table: TableName, key: FamilyKey) -> Self {
+        Self {
+            name,
+            record,
+            table,
+            key,
         }
     }
 }
