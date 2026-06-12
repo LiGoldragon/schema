@@ -160,8 +160,14 @@ import contributes its stable identity (the local alias plus the
 kinds are domain-separated through distinct blake3 `derive_key` contexts, so a
 whole-schema hash and a family hash can never collide. Both hashes are over
 semantic values, never `.schema` text: formatting-only source differences
-(whitespace, comments) produce identical hashes. Content identity lands beside
-`SchemaIdentity`'s hand-authored version string; it does not replace it.
+(whitespace, comments) produce identical hashes. Coverage boundaries: relation
+declarations point AT declarations rather than being reachable from them, so a
+relation edit moves only the whole-schema hash, never a family hash; and the
+whole-schema hash covers the full semantic value including `SchemaIdentity`
+(component name + authored version string) and resolved imports, so it is not
+a pure-structure address — the family hashes are. Content identity lands
+beside `SchemaIdentity`'s hand-authored version string; it does not replace
+it.
 
 Schema names emit through their own `Name` codec, not through the ordinary
 `String` codec. A symbol-safe name is written bare (`Entry`,

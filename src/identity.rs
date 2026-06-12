@@ -6,6 +6,17 @@
 //! exist — the whole-schema value and a per-family declaration closure —
 //! and each is domain-separated through its own blake3 `derive_key`
 //! context so the two kinds can never collide.
+//!
+//! Coverage boundaries the version-control layer must know: a family
+//! closure covers what is reachable FROM the declaration — struct
+//! fields, variant payloads, alias/newtype targets, collection inner
+//! references, and stream relations. Relation declarations point AT
+//! declarations rather than being reachable from them, so a relation
+//! edit moves only the whole-schema hash, never a family hash. The
+//! whole-schema hash covers the full semantic value including
+//! `SchemaIdentity` (component name + authored version string) and
+//! resolved imports, so it is not a pure-structure address; the family
+//! hashes are.
 
 use std::collections::BTreeMap;
 use std::fmt;
