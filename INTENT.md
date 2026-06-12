@@ -84,3 +84,12 @@ owns structural macro-node codec machinery; schema-next owns schema positions
 and handlers. Built-in schema macros load through a serialized macro-library
 artifact, with hand-authored source kept as a freshness-checked bootstrap
 source.
+
+*The macro library reads through typed structural macro nodes; hand parsing
+above the raw parser is a violation.* Per Spirit v0n6 (Clarification):
+[Everything reading NOTA-shaped structure above the raw structural parser
+must go through typed structural macro nodes; surviving hand-parsing sites
+such as the schema-next macro library are design violations to fix, not
+acceptable code. If structural macro nodes cannot express a needed shape,
+that signals the NOTA design was not implemented properly and must be
+surfaced to the psyche rather than worked around.]

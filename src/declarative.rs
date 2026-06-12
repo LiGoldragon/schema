@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nota_next::{AtomClassification, Block, Delimiter, Document, NotaEncode, NotaSource};
+use nota_next::{
+    AtomClassification, Block, Delimiter, Document, MacroCandidate, NotaEncode, NotaSource,
+    PositionPredicate, StructuralMacroError, StructuralMacroNode, StructuralVariant,
+};
 
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
@@ -40,13 +43,27 @@ impl MacroLibrary {
         Self::from_source(include_str!("../schemas/builtin-macros.schema"))
     }
 
+    /// Read the hand-authored bootstrap notation. The document body is a
+    /// vector of typed source entries; every root object decodes through the
+    /// structural macro node codec, never through positional hand parsing.
     pub fn from_source(source: &str) -> Result<Self, SchemaError> {
         let document = Document::parse(source)?;
-        let mut source_entries = Vec::new();
-        for object in document.root_objects() {
-            source_entries.push(MacroLibrarySourceEntry::from_block(object)?);
-        }
-        Ok(Self::new(source_entries))
+        let entries = Vec::<MacroLibrarySourceEntry>::from_structural_candidate(
+            MacroCandidate::new(
+                MacroLibrarySourceEntry::structural_position(),
+                document.root_objects().iter().collect(),
+            ),
+        )?;
+        Ok(Self::new(entries))
+    }
+
+    /// Write the same bootstrap notation back out, one entry per line.
+    pub fn to_source(&self) -> String {
+        self.source_entries
+            .iter()
+            .map(StructuralMacroNode::to_structural_nota)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     pub fn source_entries(&self) -> &[MacroLibrarySourceEntry] {
@@ -204,15 +221,6 @@ impl SchemaMacro {
         }
     }
 
-    fn from_record(record: MacroLibrarySourceEntryRecord<'_>) -> Result<Self, SchemaError> {
-        Ok(Self {
-            macro_name: record.name()?,
-            macro_position: record.position()?,
-            macro_pattern: record.pattern()?,
-            macro_template: record.template()?,
-        })
-    }
-
     pub fn name(&self) -> &Name {
         &self.macro_name
     }
@@ -240,6 +248,54 @@ impl SchemaMacro {
             pattern: self.macro_pattern,
             template: self.macro_template,
         }
+    }
+}
+
+/// The bootstrap body of one macro definition: name, position, pattern, and
+/// template as four ordered objects after the `SchemaMacro` head. Each field
+/// decodes through its own typed node; the slice pattern carries the arity.
+impl StructuralMacroNode for SchemaMacro {
+    type Error = SchemaError;
+
+    fn structural_position() -> PositionPredicate {
+        PositionPredicate::named("macro definition body")
+    }
+
+    fn structural_variants() -> Vec<StructuralVariant> {
+        Vec::new()
+    }
+
+    fn from_structural_candidate(
+        candidate: MacroCandidate<'_>,
+    ) -> Result<Self, StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [name, position, pattern, template] => Ok(Self {
+                macro_name: name
+                    .schema_name()
+                    .map_err(StructuralMacroError::MatchedNode)?,
+                macro_position: MacroPosition::from_structural_block(position)
+                    .map_err(|error| StructuralMacroError::MatchedNode(SchemaError::from(error)))?,
+                macro_pattern: MacroPattern::from_structural_block(pattern)
+                    .map_err(|error| StructuralMacroError::MatchedNode(SchemaError::from(error)))?,
+                macro_template: MacroTemplate::from_structural_block(template)
+                    .map_err(|error| StructuralMacroError::MatchedNode(SchemaError::from(error)))?,
+            }),
+            blocks => Err(StructuralMacroError::MatchedNode(
+                SchemaError::ExpectedMacroDefinition {
+                    found: format!("macro definition body with {} objects", blocks.len()),
+                },
+            )),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        format!(
+            "{} {} {} {}",
+            self.macro_name.to_nota(),
+            self.macro_position.to_structural_nota(),
+            self.macro_pattern.to_structural_nota(),
+            self.macro_template.to_structural_nota(),
+        )
     }
 }
 
@@ -290,6 +346,41 @@ impl MacroPattern {
         let mut names = Vec::new();
         self.object.push_capture_names(&mut names);
         names
+    }
+}
+
+/// The pattern position of a bootstrap macro definition. The pattern object
+/// is a structural mirror of one NOTA object with `$name` / `$*name` capture
+/// atoms, so the leaf codec accepts any delimiter shape and encodes the same
+/// sigil notation back out.
+impl StructuralMacroNode for MacroPattern {
+    type Error = SchemaError;
+
+    fn structural_position() -> PositionPredicate {
+        PositionPredicate::named("macro pattern")
+    }
+
+    fn structural_variants() -> Vec<StructuralVariant> {
+        Vec::new()
+    }
+
+    fn from_structural_block(block: &Block) -> Result<Self, StructuralMacroError<Self::Error>> {
+        Self::from_block(block).map_err(StructuralMacroError::MatchedNode)
+    }
+
+    fn from_structural_candidate(
+        candidate: MacroCandidate<'_>,
+    ) -> Result<Self, StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        self.object.to_source_notation()
     }
 }
 
@@ -409,6 +500,22 @@ impl MacroPatternObject {
             Self::Capture(_) | Self::Atom(_) | Self::Delimited(_) => None,
         }
     }
+
+    fn to_source_notation(&self) -> String {
+        match self {
+            Self::Capture(name) => format!("${name}"),
+            Self::RestCapture(name) => format!("$*{name}"),
+            Self::Atom(text) => text.clone(),
+            Self::Delimited(data) => DelimitedNotation::new(data.delimiter().into_nota())
+                .wrap_children(
+                    &data
+                        .children()
+                        .iter()
+                        .map(Self::to_source_notation)
+                        .collect::<Vec<_>>(),
+                ),
+        }
+    }
 }
 
 #[derive(
@@ -456,48 +563,214 @@ impl MacroPatternDelimited {
     }
 }
 
+/// The expansion template of a macro definition, typed by output kind. The
+/// head names what the macro produces, so registry consumers know the output
+/// before any expansion runs, and an unknown head is rejected at decode time.
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
     nota_next::NotaDecode,
     nota_next::NotaEncode,
+    nota_next::StructuralMacroNode,
     Clone,
     Debug,
     Eq,
     PartialEq,
 )]
-pub struct MacroTemplate {
-    object: MacroTemplateObject,
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum MacroTemplate {
+    #[shape(head = "Type", arity = 2)]
+    Type(#[rkyv(omit_bounds)] TypeTemplate),
+    #[shape(head = "Fields", body)]
+    Fields(#[rkyv(omit_bounds)] Vec<MacroTemplateObject>),
+    #[shape(head = "Variants", body)]
+    Variants(#[rkyv(omit_bounds)] Vec<MacroTemplateObject>),
+    #[shape(head = "Reference", arity = 2)]
+    Reference(#[rkyv(omit_bounds)] MacroTemplateObject),
 }
 
 impl MacroTemplate {
-    pub fn new(object: MacroTemplateObject) -> Self {
-        Self { object }
-    }
-
-    pub fn object(&self) -> &MacroTemplateObject {
-        &self.object
-    }
-
-    fn from_block(object: &Block) -> Result<Self, SchemaError> {
-        Ok(Self {
-            object: MacroTemplateObject::from_block(object)?,
-        })
-    }
-
-    fn expand(&self, bindings: &MacroBindings) -> Result<ExpandedTemplate, SchemaError> {
-        let mut objects = self.object.expand_objects(bindings)?;
-        let object = objects
-            .pop()
-            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
-                found: String::new(),
-            })?;
-        let source = object.compact_notation();
-        if !objects.is_empty() {
-            return Err(SchemaError::UnknownMacroExpansionTemplate { found: source });
+    fn expand_output(
+        &self,
+        macro_name: &str,
+        bindings: &MacroBindings,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<MacroOutput, SchemaError> {
+        match self {
+            Self::Type(template) => template
+                .expand_declaration(macro_name, bindings, registry, context)
+                .map(MacroOutput::Type),
+            Self::Fields(objects) => {
+                let mut expanded = Vec::new();
+                for object in objects {
+                    expanded.extend(object.expand_objects(bindings)?);
+                }
+                context.remember_expanded_template(
+                    macro_name,
+                    ExpandedNotation::headed("Fields", &expanded).text(),
+                );
+                MacroExpansionFields::from_objects(
+                    expanded.iter().map(ObjectView::Expanded).collect(),
+                )
+                .lower(registry, context)
+                .map(MacroOutput::Fields)
+            }
+            Self::Variants(objects) => {
+                let mut expanded = Vec::new();
+                for object in objects {
+                    expanded.extend(object.expand_objects(bindings)?);
+                }
+                context.remember_expanded_template(
+                    macro_name,
+                    ExpandedNotation::headed("Variants", &expanded).text(),
+                );
+                MacroExpansionVariants::from_objects(
+                    expanded.iter().map(ObjectView::Expanded).collect(),
+                )
+                .lower(registry, context)
+                .map(MacroOutput::Variants)
+            }
+            Self::Reference(object) => {
+                let expanded = object.expand_single(bindings, "Reference template")?;
+                context.remember_expanded_template(
+                    macro_name,
+                    ExpandedNotation::headed("Reference", std::slice::from_ref(&expanded)).text(),
+                );
+                MacroExpansionReference::new(ObjectView::Expanded(&expanded))
+                    .lower(registry, context)
+                    .map(MacroOutput::Reference)
+            }
         }
-        Ok(ExpandedTemplate { object, source })
+    }
+}
+
+/// The payload of a `(Type ...)` template: the declaration kind is part of
+/// the template's structure, so struct, enum, and newtype expansion dispatch
+/// on this typed node instead of an extracted head string.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    nota_next::StructuralMacroNode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum TypeTemplate {
+    #[shape(head = "Struct", arity = 3)]
+    Struct(
+        #[rkyv(omit_bounds)] MacroTemplateObject,
+        #[rkyv(omit_bounds)] MacroTemplateObject,
+    ),
+    #[shape(head = "Enum", arity = 3)]
+    Enum(
+        #[rkyv(omit_bounds)] MacroTemplateObject,
+        #[rkyv(omit_bounds)] MacroTemplateObject,
+    ),
+    #[shape(head = "Newtype", arity = 3)]
+    Newtype(
+        #[rkyv(omit_bounds)] MacroTemplateObject,
+        #[rkyv(omit_bounds)] MacroTemplateObject,
+    ),
+}
+
+impl TypeTemplate {
+    fn expand_declaration(
+        &self,
+        macro_name: &str,
+        bindings: &MacroBindings,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<TypeDeclaration, SchemaError> {
+        match self {
+            Self::Struct(name, body) => {
+                let name = name.expand_schema_name(bindings, "Struct name")?;
+                let body = body.expand_single(bindings, "Struct body")?;
+                context.remember_expanded_template(
+                    macro_name,
+                    format!("(Type (Struct {} {}))", name.as_str(), body.compact_notation()),
+                );
+                let body_view = ObjectView::Expanded(&body);
+                MacroExpansionStructBody::new(name, body_view.root_objects())
+                    .lower_type(registry, context)
+            }
+            Self::Enum(name, body) => {
+                let name = name.expand_schema_name(bindings, "Enum name")?;
+                let body = body.expand_single(bindings, "Enum body")?;
+                context.remember_expanded_template(
+                    macro_name,
+                    format!("(Type (Enum {} {}))", name.as_str(), body.compact_notation()),
+                );
+                let body_view = ObjectView::Expanded(&body);
+                let variants = MacroExpansionVariants::from_objects(body_view.root_objects())
+                    .lower(registry, context)?;
+                Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
+            }
+            Self::Newtype(name, reference) => {
+                let name = name.expand_schema_name(bindings, "Newtype name")?;
+                let reference = reference.expand_single(bindings, "Newtype reference")?;
+                context.remember_expanded_template(
+                    macro_name,
+                    format!(
+                        "(Type (Newtype {} {}))",
+                        name.as_str(),
+                        reference.compact_notation()
+                    ),
+                );
+                let reference =
+                    ObjectView::Expanded(&reference).type_reference(registry, context)?;
+                Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
+                    name, reference,
+                )))
+            }
+        }
+    }
+}
+
+/// Diagnostic notation of an expanded template: the template head plus the
+/// expanded payload objects, kept only as a `MacroContext` trace string.
+#[derive(Clone, Debug)]
+struct ExpandedNotation {
+    text: String,
+}
+
+impl ExpandedNotation {
+    fn headed(head: &str, expanded: &[ExpandedObject]) -> Self {
+        let mut parts = vec![head.to_owned()];
+        parts.extend(expanded.iter().map(ExpandedObject::compact_notation));
+        Self {
+            text: DelimitedNotation::new(Delimiter::Parenthesis).wrap_children(&parts),
+        }
+    }
+
+    fn text(&self) -> String {
+        self.text.clone()
     }
 }
 
@@ -584,6 +857,81 @@ impl MacroTemplateObject {
                 }])
             }
         }
+    }
+
+    fn expand_single(
+        &self,
+        bindings: &MacroBindings,
+        position: &'static str,
+    ) -> Result<ExpandedObject, SchemaError> {
+        let mut objects = self.expand_objects(bindings)?;
+        if objects.len() != 1 {
+            return Err(SchemaError::ExpectedTemplateObjectCount {
+                position,
+                expected: 1,
+                found: objects.len(),
+            });
+        }
+        Ok(objects.pop().expect("length checked"))
+    }
+
+    fn expand_schema_name(
+        &self,
+        bindings: &MacroBindings,
+        position: &'static str,
+    ) -> Result<Name, SchemaError> {
+        self.expand_single(bindings, position)?.schema_name()
+    }
+
+    fn to_source_notation(&self) -> String {
+        match self {
+            Self::Capture(name) => format!("${name}"),
+            Self::RestCapture(name) => format!("$*{name}"),
+            Self::Atom(text) => text.clone(),
+            Self::Delimited(data) => DelimitedNotation::new(data.delimiter().into_nota())
+                .wrap_children(
+                    &data
+                        .children()
+                        .iter()
+                        .map(Self::to_source_notation)
+                        .collect::<Vec<_>>(),
+                ),
+        }
+    }
+}
+
+/// A leaf object inside a bootstrap template: a capture atom, a literal atom,
+/// or a delimited tree of further template objects. Any structural shape is
+/// legal here, so the leaf codec mirrors the object instead of dispatching on
+/// variant shapes.
+impl StructuralMacroNode for MacroTemplateObject {
+    type Error = SchemaError;
+
+    fn structural_position() -> PositionPredicate {
+        PositionPredicate::named("macro template object")
+    }
+
+    fn structural_variants() -> Vec<StructuralVariant> {
+        Vec::new()
+    }
+
+    fn from_structural_block(block: &Block) -> Result<Self, StructuralMacroError<Self::Error>> {
+        Self::from_block(block).map_err(StructuralMacroError::MatchedNode)
+    }
+
+    fn from_structural_candidate(
+        candidate: MacroCandidate<'_>,
+    ) -> Result<Self, StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        self.to_source_notation()
     }
 }
 
@@ -674,30 +1022,28 @@ impl MacroDelimiter {
     }
 }
 
+/// One entry of the hand-authored bootstrap source. The `SchemaMacro` head is
+/// a structural variant shape, and the headed tail decodes as the definition
+/// body — the same typed read path the serialized artifact uses, with no
+/// positional wrapper and no variant-name string comparison.
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
     nota_next::NotaDecode,
     nota_next::NotaEncode,
+    nota_next::StructuralMacroNode,
     Clone,
     Debug,
     Eq,
     PartialEq,
 )]
 pub enum MacroLibrarySourceEntry {
+    #[shape(head = "SchemaMacro", body)]
     SchemaMacro(SchemaMacro),
 }
 
 impl MacroLibrarySourceEntry {
-    pub fn from_block(object: &Block) -> Result<Self, SchemaError> {
-        let record = MacroLibrarySourceEntryRecord::new(object)?;
-        match record.variant_name()?.as_str() {
-            "SchemaMacro" => Ok(Self::SchemaMacro(SchemaMacro::from_record(record)?)),
-            _ => Err(record.expected_source_entry_error()),
-        }
-    }
-
     pub fn definition(&self) -> &SchemaMacro {
         match self {
             Self::SchemaMacro(definition) => definition,
@@ -725,55 +1071,6 @@ struct ExecutableMacroDefinition {
     position: MacroPosition,
     pattern: MacroPattern,
     template: MacroTemplate,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct MacroLibrarySourceEntryRecord<'schema> {
-    object: &'schema Block,
-}
-
-impl<'schema> MacroLibrarySourceEntryRecord<'schema> {
-    fn new(object: &'schema Block) -> Result<Self, SchemaError> {
-        let record = Self { object };
-        if !object.is_parenthesis() || object.holds_root_objects() != 5 {
-            return Err(SchemaError::ExpectedMacroDefinition {
-                found: NotationBlock::new(object).compact_notation(),
-            });
-        }
-        Ok(record)
-    }
-
-    fn child(&self, index: usize) -> &'schema Block {
-        self.object
-            .root_object_at(index)
-            .expect("macro definition shape checked")
-    }
-
-    fn variant_name(&self) -> Result<Name, SchemaError> {
-        self.child(0).schema_name()
-    }
-
-    fn name(&self) -> Result<Name, SchemaError> {
-        self.child(1).schema_name()
-    }
-
-    fn position(&self) -> Result<MacroPosition, SchemaError> {
-        MacroPosition::from_name(&self.child(2).schema_name()?)
-    }
-
-    fn pattern(&self) -> Result<MacroPattern, SchemaError> {
-        MacroPattern::from_block(self.child(3))
-    }
-
-    fn template(&self) -> Result<MacroTemplate, SchemaError> {
-        MacroTemplate::from_block(self.child(4))
-    }
-
-    fn expected_source_entry_error(&self) -> SchemaError {
-        SchemaError::ExpectedMacroDefinition {
-            found: NotationBlock::new(self.object).compact_notation(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -986,29 +1283,9 @@ impl SchemaMacroHandler for DeclarativeSchemaMacro {
         context.remember_macro(self.name());
         context.remember_position(position);
         bindings.remember(self.name(), context);
-        let expanded = self.definition.template.expand(&bindings)?;
-        context.remember_expanded_template(self.name(), expanded.source());
-        expanded.lower_to_output(registry, context)
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ExpandedTemplate {
-    object: ExpandedObject,
-    source: String,
-}
-
-impl ExpandedTemplate {
-    fn source(&self) -> &str {
-        &self.source
-    }
-
-    fn lower_to_output(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<MacroOutput, SchemaError> {
-        MacroExpansionTemplate::new(ObjectView::Expanded(&self.object)).lower(registry, context)
+        self.definition
+            .template
+            .expand_output(self.name(), &bindings, registry, context)
     }
 }
 
@@ -1019,13 +1296,6 @@ enum ObjectView<'object> {
 }
 
 impl<'object> ObjectView<'object> {
-    fn compact_notation(&self) -> String {
-        match self {
-            Self::Block(block) => NotationBlock::new(block).compact_notation(),
-            Self::Expanded(object) => object.compact_notation(),
-        }
-    }
-
     fn demote_to_string(&self) -> Option<&'object str> {
         match self {
             Self::Block(block) => block.demote_to_string(),
@@ -1042,6 +1312,14 @@ impl<'object> ObjectView<'object> {
 
     fn is_parenthesis(&self) -> bool {
         self.delimited_children(Delimiter::Parenthesis).is_some()
+    }
+
+    fn parenthesized_children(
+        &self,
+        expected: &'static str,
+    ) -> Result<Vec<Self>, SchemaError> {
+        self.delimited_children(Delimiter::Parenthesis)
+            .ok_or(SchemaError::ExpectedDelimiter { expected })
     }
 
     fn holds_root_objects(&self) -> usize {
@@ -1380,158 +1658,6 @@ impl<'object> ExpandedReference<'object> {
             });
         };
         ObjectView::Expanded(name).schema_name()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct MacroExpansionTemplate<'template> {
-    object: ObjectView<'template>,
-}
-
-impl<'template> MacroExpansionTemplate<'template> {
-    fn new(object: ObjectView<'template>) -> Self {
-        Self { object }
-    }
-
-    fn lower(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<MacroOutput, SchemaError> {
-        let children = self.parenthesized_children("macro expansion template")?;
-        let head = children
-            .first()
-            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
-                found: self.object.compact_notation(),
-            })?
-            .schema_name()?;
-        match head.as_str() {
-            "Type" => MacroExpansionType::new(self.child(&children, 1, "Type")?)
-                .lower(registry, context)
-                .map(MacroOutput::Type),
-            "Fields" => MacroExpansionFields::from_objects(children[1..].to_vec())
-                .lower(registry, context)
-                .map(MacroOutput::Fields),
-            "Variants" => MacroExpansionVariants::from_objects(children[1..].to_vec())
-                .lower(registry, context)
-                .map(MacroOutput::Variants),
-            "Reference" => MacroExpansionReference::new(children[1..].to_vec())
-                .lower(registry, context)
-                .map(MacroOutput::Reference),
-            found => Err(SchemaError::UnknownMacroExpansionTemplate {
-                found: found.to_owned(),
-            }),
-        }
-    }
-
-    fn child(
-        &self,
-        children: &[ObjectView<'template>],
-        index: usize,
-        template_name: &'static str,
-    ) -> Result<ObjectView<'template>, SchemaError> {
-        children
-            .get(index)
-            .copied()
-            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
-                found: template_name.to_owned(),
-            })
-    }
-
-    fn parenthesized_children(
-        &self,
-        expected: &'static str,
-    ) -> Result<Vec<ObjectView<'template>>, SchemaError> {
-        self.object
-            .delimited_children(Delimiter::Parenthesis)
-            .ok_or(SchemaError::ExpectedDelimiter { expected })
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct MacroExpansionType<'template> {
-    object: ObjectView<'template>,
-}
-
-impl<'template> MacroExpansionType<'template> {
-    fn new(object: ObjectView<'template>) -> Self {
-        Self { object }
-    }
-
-    fn lower(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        let children = MacroExpansionTemplate::new(self.object)
-            .parenthesized_children("macro expansion type")?;
-        let kind = children
-            .first()
-            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
-                found: "Type".to_owned(),
-            })?
-            .schema_name()?;
-        match kind.as_str() {
-            "Struct" => self.lower_struct(&children, registry, context),
-            "Enum" => self.lower_enum(&children, registry, context),
-            "Newtype" => self.lower_newtype(&children, registry, context),
-            found => Err(SchemaError::UnknownMacroExpansionTemplate {
-                found: found.to_owned(),
-            }),
-        }
-    }
-
-    fn lower_struct(
-        &self,
-        children: &[ObjectView<'template>],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        let name = self.child(children, 1, "Struct")?.schema_name()?;
-        let body = self.child(children, 2, "Struct")?;
-        MacroExpansionStructBody::new(name, body.root_objects()).lower_type(registry, context)
-    }
-
-    fn lower_enum(
-        &self,
-        children: &[ObjectView<'template>],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        let name = self.child(children, 1, "Enum")?.schema_name()?;
-        let body = self.child(children, 2, "Enum")?;
-        let variants =
-            MacroExpansionVariants::from_objects(body.root_objects()).lower(registry, context)?;
-        Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)))
-    }
-
-    fn lower_newtype(
-        &self,
-        children: &[ObjectView<'template>],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        let name = self.child(children, 1, "Newtype")?.schema_name()?;
-        let reference = self
-            .child(children, 2, "Newtype")?
-            .type_reference(registry, context)?;
-        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
-            name, reference,
-        )))
-    }
-
-    fn child(
-        &self,
-        children: &[ObjectView<'template>],
-        index: usize,
-        template_name: &'static str,
-    ) -> Result<ObjectView<'template>, SchemaError> {
-        children
-            .get(index)
-            .copied()
-            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
-                found: template_name.to_owned(),
-            })
     }
 }
 
@@ -1957,14 +2083,14 @@ impl<'template> StreamRelationObject<'template> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct MacroExpansionReference<'template> {
-    objects: Vec<ObjectView<'template>>,
+    object: ObjectView<'template>,
 }
 
 impl<'template> MacroExpansionReference<'template> {
-    fn new(objects: Vec<ObjectView<'template>>) -> Self {
-        Self { objects }
+    fn new(object: ObjectView<'template>) -> Self {
+        Self { object }
     }
 
     fn lower(
@@ -1972,12 +2098,7 @@ impl<'template> MacroExpansionReference<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
-        if self.objects.len() != 1 {
-            return Err(SchemaError::UnknownMacroExpansionTemplate {
-                found: "Reference".to_owned(),
-            });
-        }
-        Self::lower_object(self.objects[0], registry, context)
+        Self::lower_object(self.object, registry, context)
     }
 
     fn lower_object(
@@ -1988,13 +2109,10 @@ impl<'template> MacroExpansionReference<'template> {
         if !object.is_parenthesis() {
             return object.type_reference(registry, context);
         }
-        let children = MacroExpansionTemplate::new(object)
-            .parenthesized_children("macro expansion reference")?;
+        let children = object.parenthesized_children("macro expansion reference")?;
         let head = children
             .first()
-            .ok_or_else(|| SchemaError::UnknownMacroExpansionTemplate {
-                found: "Reference".to_owned(),
-            })?
+            .ok_or(SchemaError::EmptyTypeReference)?
             .schema_name()?;
         match head.as_str() {
             "Vector" if children.len() == 2 => Ok(TypeReference::Vector(Box::new(

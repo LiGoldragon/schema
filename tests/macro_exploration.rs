@@ -899,3 +899,130 @@ fn macro_object_pair_versus_block_dispatch_shapes() {
     let pair = MacroObject::Pair(schema_next::MacroPair { name, definition });
     assert!(macro_obj.matches(pair, MacroPosition::NamespaceDeclaration));
 }
+
+// ---------------------------------------------------------------------
+// Typed macro-library codec — the bootstrap source and the expansion
+// templates decode through structural macro nodes only. No positional
+// record wrapper, no head-string dispatch.
+// ---------------------------------------------------------------------
+
+#[test]
+fn macro_library_bootstrap_source_round_trips_through_typed_nodes() {
+    let library = MacroLibrary::builtin_source().expect("builtin macro source parses");
+
+    // decode -> encode -> decode fixpoint over the hand-authored notation.
+    let source = library.to_source();
+    let reparsed = MacroLibrary::from_source(&source).expect("encoded bootstrap source reparses");
+    assert_eq!(reparsed, library);
+
+    // The artifact projection round-trips through the same typed value.
+    let nota = library.to_nota_source();
+    let from_nota = MacroLibrary::from_nota_source(&nota).expect("artifact projection reparses");
+    assert_eq!(from_nota, library);
+}
+
+#[test]
+fn macro_library_source_rejects_malformed_definitions_with_typed_errors() {
+    let unknown_head = MacroLibrary::from_source("(Bogus Foo NamespaceDeclaration ($X) (Fields $X))")
+        .expect_err("unknown entry head is rejected");
+    assert!(matches!(
+        unknown_head,
+        SchemaError::UnsupportedMacroNodeStructure { .. }
+    ));
+
+    let short_body = MacroLibrary::from_source("(SchemaMacro Foo NamespaceDeclaration ($X))")
+        .expect_err("four-object definition is rejected");
+    assert!(matches!(
+        short_body,
+        SchemaError::MalformedSchemaNode { .. }
+    ));
+
+    let unknown_position = MacroLibrary::from_source("(SchemaMacro Foo SomewhereElse ($X) (Fields $X))")
+        .expect_err("unknown position keyword is rejected");
+    assert!(matches!(
+        unknown_position,
+        SchemaError::MalformedSchemaNode { .. }
+    ));
+}
+
+#[test]
+fn expansion_template_enum_decodes_each_template_kind() {
+    use nota_next::StructuralMacroNode;
+    use schema_next::{MacroTemplate, TypeTemplate};
+
+    let struct_template = MacroTemplate::from_structural_nota("(Type (Struct $Name [$*Fields]))")
+        .expect("Type Struct template decodes");
+    assert!(matches!(
+        struct_template,
+        MacroTemplate::Type(TypeTemplate::Struct(_, _))
+    ));
+    assert_eq!(
+        struct_template.to_structural_nota(),
+        "(Type (Struct $Name [$*Fields]))"
+    );
+
+    let enum_template = MacroTemplate::from_structural_nota("(Type (Enum $Name ($*Variants)))")
+        .expect("Type Enum template decodes");
+    assert!(matches!(
+        enum_template,
+        MacroTemplate::Type(TypeTemplate::Enum(_, _))
+    ));
+    assert_eq!(
+        enum_template.to_structural_nota(),
+        "(Type (Enum $Name ($*Variants)))"
+    );
+
+    let newtype_template = MacroTemplate::from_structural_nota("(Type (Newtype $Name $Reference))")
+        .expect("Type Newtype template decodes");
+    assert!(matches!(
+        newtype_template,
+        MacroTemplate::Type(TypeTemplate::Newtype(_, _))
+    ));
+
+    let fields_template =
+        MacroTemplate::from_structural_nota("(Fields $*Fields)").expect("Fields template decodes");
+    let MacroTemplate::Fields(field_objects) = &fields_template else {
+        panic!("expected Fields template");
+    };
+    assert_eq!(field_objects.len(), 1);
+    assert_eq!(fields_template.to_structural_nota(), "(Fields $*Fields)");
+
+    let variants_template = MacroTemplate::from_structural_nota("(Variants Decision Correction)")
+        .expect("Variants template decodes");
+    let MacroTemplate::Variants(variant_objects) = &variants_template else {
+        panic!("expected Variants template");
+    };
+    assert_eq!(variant_objects.len(), 2);
+    assert_eq!(
+        variants_template.to_structural_nota(),
+        "(Variants Decision Correction)"
+    );
+
+    let reference_template = MacroTemplate::from_structural_nota("(Reference (Vector $Type))")
+        .expect("Reference template decodes");
+    assert!(matches!(reference_template, MacroTemplate::Reference(_)));
+    assert_eq!(
+        reference_template.to_structural_nota(),
+        "(Reference (Vector $Type))"
+    );
+}
+
+#[test]
+fn expansion_template_enum_rejects_unknown_heads_with_typed_errors() {
+    use nota_next::StructuralMacroNode;
+    use schema_next::MacroTemplate;
+
+    let unknown_head = MacroTemplate::from_structural_nota("(Bogus $X)")
+        .expect_err("unknown template head does not decode");
+    assert!(matches!(
+        SchemaError::from(unknown_head),
+        SchemaError::UnsupportedMacroNodeStructure { .. }
+    ));
+
+    let unknown_type_kind = MacroTemplate::from_structural_nota("(Type (Bogus $Name $Body))")
+        .expect_err("unknown type-template kind does not decode");
+    assert!(matches!(
+        SchemaError::from(unknown_type_kind),
+        SchemaError::MalformedSchemaNode { .. }
+    ));
+}

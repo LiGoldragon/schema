@@ -217,6 +217,30 @@ the source notation `(SchemaMacro Name Position Pattern Template)` is modeled
 as a tagged source-entry variant carrying a definition payload, not as a bare
 string sentinel or as a second artifact-only enum.
 
+Both readings of that library are typed codecs over the same value. The
+artifact projection decodes through the derived `NotaDecode` path, and the
+bootstrap notation decodes through the derived `StructuralMacroNode` path:
+`MacroLibrarySourceEntry` carries `#[shape(head = "SchemaMacro", body)]`, the
+headed tail decodes as the `SchemaMacro` definition body, and inside that body
+the position atom is a keyword structural node on `MacroPosition`, the pattern
+and template decode through their own typed nodes, and the name is a schema
+symbol. There is no positional record wrapper and no variant-name string
+comparison; a malformed definition fails with the structural no-match
+diagnostics. `MacroLibrary::to_source` writes the same bootstrap notation back
+out, so decode -> encode -> decode is a fixpoint over both projections.
+
+`MacroTemplate` is the typed expansion-template enum: `Type(TypeTemplate)`,
+`Fields(Vec<MacroTemplateObject>)`, `Variants(Vec<MacroTemplateObject>)`, and
+`Reference(MacroTemplateObject)`, with `TypeTemplate` carrying the `Struct` /
+`Enum` / `Newtype` kinds. The template's output kind is part of its decoded
+structure, so an unknown head is rejected when the library is read, and
+expansion dispatches on the enum instead of matching extracted head strings.
+The pattern and template payload objects (`MacroPatternObject`,
+`MacroTemplateObject`) are leaf structural nodes: they mirror one NOTA object
+of any delimiter shape with `$name` / `$*name` capture atoms, below the
+variant-shape dispatch layer, the same way `SourceVariantName` is a leaf node
+for the authored source codec.
+
 The near target is to lower the core macro schema to schema data, emit its
 Rust type, and replace the hand-written `MacroLibrary` noun with the
 schema-emitted macro table type directly. The macro table is already real
@@ -225,10 +249,10 @@ making its Rust noun schema-emitted.
 
 Declarative macro expansion preserves structural NOTA objects while lowering.
 Pattern captures store the matched `Block` values, rest captures store ordered
-`Block` vectors, and templates expand into an owned object tree before
-`MacroExpansionTemplate` lowers the result. Compact notation remains only as a
-diagnostic string for `MacroContext`; the live expansion path does not emit a
-template string and parse it back through `Document::parse`.
+`Block` vectors, and template payloads expand into owned object trees before
+the typed `MacroTemplate` variant lowers the result. Compact notation remains
+only as a diagnostic string for `MacroContext`; the live expansion path does
+not emit a template string and parse it back through `Document::parse`.
 
 The current structural expansion object can lower template-owned atoms and
 delimiter nodes plus captured source blocks. Registry dispatch for arbitrary

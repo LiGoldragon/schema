@@ -10,12 +10,16 @@ use crate::{
     TypeDeclaration, TypeReference,
 };
 
+/// Each position is a keyword structural variant, so a bootstrap macro
+/// definition decodes its position atom through the typed macro-node codec
+/// instead of a hand-written name match.
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
     nota_next::NotaDecode,
     nota_next::NotaEncode,
+    nota_next::StructuralMacroNode,
     Clone,
     Copy,
     Debug,
@@ -23,13 +27,21 @@ use crate::{
     PartialEq,
 )]
 pub enum MacroPosition {
+    #[shape(keyword = "RootImports")]
     RootImports,
+    #[shape(keyword = "RootInput")]
     RootInput,
+    #[shape(keyword = "RootOutput")]
     RootOutput,
+    #[shape(keyword = "RootNamespace")]
     RootNamespace,
+    #[shape(keyword = "NamespaceDeclaration")]
     NamespaceDeclaration,
+    #[shape(keyword = "StructFields")]
     StructFields,
+    #[shape(keyword = "EnumVariants")]
     EnumVariants,
+    #[shape(keyword = "TypeReference")]
     TypeReference,
 }
 
@@ -44,22 +56,6 @@ impl MacroPosition {
             Self::StructFields => "StructFields",
             Self::EnumVariants => "EnumVariants",
             Self::TypeReference => "TypeReference",
-        }
-    }
-
-    pub(crate) fn from_name(name: &Name) -> Result<Self, SchemaError> {
-        match name.as_str() {
-            "RootImports" => Ok(Self::RootImports),
-            "RootInput" => Ok(Self::RootInput),
-            "RootOutput" => Ok(Self::RootOutput),
-            "RootNamespace" => Ok(Self::RootNamespace),
-            "NamespaceDeclaration" => Ok(Self::NamespaceDeclaration),
-            "StructFields" => Ok(Self::StructFields),
-            "EnumVariants" => Ok(Self::EnumVariants),
-            "TypeReference" => Ok(Self::TypeReference),
-            found => Err(SchemaError::UnknownMacroPosition {
-                found: found.to_owned(),
-            }),
         }
     }
 

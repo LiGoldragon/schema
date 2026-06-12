@@ -91,9 +91,6 @@ pub enum SchemaError {
     ExpectedMacroDefinition {
         found: String,
     },
-    UnknownMacroPosition {
-        found: String,
-    },
     InvalidMacroCapture {
         found: String,
     },
@@ -103,8 +100,10 @@ pub enum SchemaError {
     ConflictingMacroBinding {
         name: String,
     },
-    UnknownMacroExpansionTemplate {
-        found: String,
+    ExpectedTemplateObjectCount {
+        position: &'static str,
+        expected: usize,
+        found: usize,
     },
     EmptyTypeReference,
     UnknownTypeReferenceForm {

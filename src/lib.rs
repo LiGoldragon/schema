@@ -11,7 +11,7 @@ mod upgrade;
 pub use declarative::{
     MacroDelimiter, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroPattern,
     MacroPatternDelimited, MacroPatternObject, MacroTemplate, MacroTemplateDelimited,
-    MacroTemplateObject, SchemaMacro,
+    MacroTemplateObject, SchemaMacro, TypeTemplate,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
 pub use macros::{
