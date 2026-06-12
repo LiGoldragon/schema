@@ -48,12 +48,11 @@ impl MacroLibrary {
     /// structural macro node codec, never through positional hand parsing.
     pub fn from_source(source: &str) -> Result<Self, SchemaError> {
         let document = Document::parse(source)?;
-        let entries = Vec::<MacroLibrarySourceEntry>::from_structural_candidate(
-            MacroCandidate::new(
+        let entries =
+            Vec::<MacroLibrarySourceEntry>::from_structural_candidate(MacroCandidate::new(
                 MacroLibrarySourceEntry::structural_position(),
                 document.root_objects().iter().collect(),
-            ),
-        )?;
+            ))?;
         Ok(Self::new(entries))
     }
 
@@ -714,7 +713,11 @@ impl TypeTemplate {
                 let body = body.expand_single(bindings, "Struct body")?;
                 context.remember_expanded_template(
                     macro_name,
-                    format!("(Type (Struct {} {}))", name.as_str(), body.compact_notation()),
+                    format!(
+                        "(Type (Struct {} {}))",
+                        name.as_str(),
+                        body.compact_notation()
+                    ),
                 );
                 let body_view = ObjectView::Expanded(&body);
                 MacroExpansionStructBody::new(name, body_view.root_objects())
@@ -725,7 +728,11 @@ impl TypeTemplate {
                 let body = body.expand_single(bindings, "Enum body")?;
                 context.remember_expanded_template(
                     macro_name,
-                    format!("(Type (Enum {} {}))", name.as_str(), body.compact_notation()),
+                    format!(
+                        "(Type (Enum {} {}))",
+                        name.as_str(),
+                        body.compact_notation()
+                    ),
                 );
                 let body_view = ObjectView::Expanded(&body);
                 let variants = MacroExpansionVariants::from_objects(body_view.root_objects())
@@ -1314,10 +1321,7 @@ impl<'object> ObjectView<'object> {
         self.delimited_children(Delimiter::Parenthesis).is_some()
     }
 
-    fn parenthesized_children(
-        &self,
-        expected: &'static str,
-    ) -> Result<Vec<Self>, SchemaError> {
+    fn parenthesized_children(&self, expected: &'static str) -> Result<Vec<Self>, SchemaError> {
         self.delimited_children(Delimiter::Parenthesis)
             .ok_or(SchemaError::ExpectedDelimiter { expected })
     }

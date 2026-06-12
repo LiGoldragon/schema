@@ -33,7 +33,7 @@ impl SchemaSource {
     }
 
     pub fn from_document(document: &Document) -> Result<Self, SchemaError> {
-        if !matches!(document.holds_root_objects(), 3 | 4 | 5) {
+        if !matches!(document.holds_root_objects(), 3..=5) {
             return Err(SchemaError::ExpectedRootObjectCount {
                 expected: "3 root values (input output namespace), optional leading imports, optional trailing relations",
                 found: document.holds_root_objects(),

@@ -923,8 +923,9 @@ fn macro_library_bootstrap_source_round_trips_through_typed_nodes() {
 
 #[test]
 fn macro_library_source_rejects_malformed_definitions_with_typed_errors() {
-    let unknown_head = MacroLibrary::from_source("(Bogus Foo NamespaceDeclaration ($X) (Fields $X))")
-        .expect_err("unknown entry head is rejected");
+    let unknown_head =
+        MacroLibrary::from_source("(Bogus Foo NamespaceDeclaration ($X) (Fields $X))")
+            .expect_err("unknown entry head is rejected");
     assert!(matches!(
         unknown_head,
         SchemaError::UnsupportedMacroNodeStructure { .. }
@@ -937,8 +938,9 @@ fn macro_library_source_rejects_malformed_definitions_with_typed_errors() {
         SchemaError::MalformedSchemaNode { .. }
     ));
 
-    let unknown_position = MacroLibrary::from_source("(SchemaMacro Foo SomewhereElse ($X) (Fields $X))")
-        .expect_err("unknown position keyword is rejected");
+    let unknown_position =
+        MacroLibrary::from_source("(SchemaMacro Foo SomewhereElse ($X) (Fields $X))")
+            .expect_err("unknown position keyword is rejected");
     assert!(matches!(
         unknown_position,
         SchemaError::MalformedSchemaNode { .. }
