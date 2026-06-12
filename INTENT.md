@@ -93,3 +93,22 @@ such as the schema-next macro library are design violations to fix, not
 acceptable code. If structural macro nodes cannot express a needed shape,
 that signals the NOTA design was not implemented properly and must be
 surfaced to the psyche rather than worked around.]
+
+*The schema is content-addressable; its hash is its identity.* Per Spirit wrjl
+(Decision): [The schema-layout description is fully content-addressable — its
+hash is its identity. Any edit to the schema changes the address, which is the
+version.] Content identity is computed on the semantic schema-in-Rust value:
+`Schema::content_hash` is blake3 over the canonical rkyv bytes of `Schema`,
+and `Schema::family_closure(name).content_hash()` is blake3 over the canonical
+rkyv bytes of a `FamilyClosure` — the named declaration plus everything
+transitively reachable from it, sorted canonically by name. Formatting-only
+`.schema` source edits (whitespace, comments) do not move either address; the
+hash is the version identity the version-control layer consumes, landing
+beside the hand-authored `SchemaIdentity` version string, not replacing it.
+
+*One cryptographic basis: blake3.* Per Spirit x0ja (Constraint): [One
+consistent cryptographic basis spans the entire version-control and backup
+system: blake3 for all content addressing ... No component diverges in hash
+function.] All schema content addressing is blake3; the whole-schema and
+family-closure hash kinds are domain-separated through distinct blake3
+`derive_key` contexts so the two can never collide.

@@ -145,6 +145,24 @@ round-tripping the produced `Schema` through rkyv:
 The semantic-schema text fixture surface stays removed: there is no checked
 `.asschema` file and no hand-kept golden semantic-schema text.
 
+`Schema` also carries its content identity. `Schema::content_hash` is the
+blake3 hash of the schema's canonical rkyv bytes wrapped in `ContentHash`; any
+edit to the semantic schema moves the address, and that address is the version
+the version-control layer consumes. `Schema::family_closure` builds a
+`FamilyClosure` for one named declaration or root enum: the root name plus
+every declaration transitively reachable through type references — struct
+fields, enum variant payloads, newtype/alias references,
+`Vec`/`Map`/`Optional`/`ScopeOf` element references, stream-relation stream
+declarations — each group sorted canonically by name. A reachable cross-crate
+import contributes its stable identity (the local alias plus the
+`crate:module:Type` import declaration), not the dependency's declarations.
+`FamilyClosure::content_hash` hashes the closure's rkyv bytes. The two hash
+kinds are domain-separated through distinct blake3 `derive_key` contexts, so a
+whole-schema hash and a family hash can never collide. Both hashes are over
+semantic values, never `.schema` text: formatting-only source differences
+(whitespace, comments) produce identical hashes. Content identity lands beside
+`SchemaIdentity`'s hand-authored version string; it does not replace it.
+
 Schema names emit through their own `Name` codec, not through the ordinary
 `String` codec. A symbol-safe name is written bare (`Entry`,
 `schema:spirit:Entry`) so declarations and references read as schema symbols;

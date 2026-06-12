@@ -177,6 +177,13 @@ pub enum SchemaError {
         expected: String,
         found: String,
     },
+    FamilyRootNotFound {
+        name: String,
+    },
+    FamilyReferenceNotFound {
+        family: String,
+        name: String,
+    },
 }
 
 impl From<nota_next::NotaError> for SchemaError {
