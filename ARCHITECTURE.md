@@ -88,6 +88,19 @@ opened Snapshot event Event close Close })`; it lowers to semantic
 while preventing stream lifecycle records from masquerading as ordinary payload
 types.
 
+Family declarations follow the same metadata precedent. The source form is
+`FamilyName (Family { record RecordType table table-name key Domain })`; it
+lowers to semantic `FamilyDeclaration` data on `Schema::families()` and is
+excluded from `Schema::namespace()`. The family name is the stable identity of
+a stored record family; the record name must resolve to a declared namespace
+type, root enum, or import (`SchemaError::FamilyRecordNotFound` otherwise, on
+both lowering paths); the `TableName` is only the current storage coordinate;
+and the key kind is the closed `FamilyKey` structural keyword choice
+`Domain | Identified`, mirroring a SEMA engine's keyed versus identified table
+registration. Duplicate family names and duplicate table names are typed
+errors. The family's version address comes from the existing content-identity
+surface: `Schema::family_closure(record)` over the declared record type.
+
 ## Raw Core Schema Reading
 
 `RawSchemaFile` is the bottom layer used to inspect a core schema before

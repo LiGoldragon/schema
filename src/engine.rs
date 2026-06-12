@@ -185,6 +185,16 @@ pub enum SchemaError {
         family: String,
         name: String,
     },
+    FamilyRecordNotFound {
+        family: String,
+        record: String,
+    },
+    DuplicateFamilyName {
+        name: String,
+    },
+    DuplicateFamilyTable {
+        table: String,
+    },
 }
 
 impl From<nota_next::NotaError> for SchemaError {
@@ -429,13 +439,15 @@ impl SchemaEngine {
             .root_object_at(namespace_index)
             .expect("checked root count");
         let namespace = self.lower_namespace(namespace_block, context)?;
-        let streams = if NamespaceStreamProbe::new(namespace_block).contains_stream()? {
-            SchemaSource::from_document(document)?.stream_declarations()?
-        } else {
-            Vec::new()
-        };
+        let (streams, families) =
+            if NamespaceMetadataProbe::new(namespace_block).contains_metadata()? {
+                let source = SchemaSource::from_document(document)?;
+                (source.stream_declarations()?, source.family_declarations()?)
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
-        Ok(Schema::new(
+        Schema::new(
             identity,
             imports,
             resolved_imports,
@@ -443,8 +455,10 @@ impl SchemaEngine {
             output,
             namespace,
             streams,
+            families,
             Vec::new(),
-        ))
+        )
+        .families_verified()
     }
 
     pub fn lower_source_with_resolver(
@@ -853,7 +867,7 @@ impl<'schema> NamespaceBlock<'schema> {
     ) -> Result<(), SchemaError> {
         if object
             .pair()
-            .is_some_and(|pair| StreamDefinitionProbe::new(pair.definition).matches())
+            .is_some_and(|pair| MetadataDefinitionProbe::new(pair.definition).matches())
         {
             return Ok(());
         }
@@ -874,12 +888,16 @@ impl<'schema> NamespaceBlock<'schema> {
     }
 }
 
+/// Whether a namespace entry's value is a schema-metadata definition —
+/// a stream or family declaration — rather than a type declaration.
+/// Metadata entries are excluded from namespace type lowering and are
+/// collected through the typed `SchemaSource` reading instead.
 #[derive(Clone, Copy, Debug)]
-struct StreamDefinitionProbe<'schema> {
+struct MetadataDefinitionProbe<'schema> {
     definition: &'schema Block,
 }
 
-impl<'schema> StreamDefinitionProbe<'schema> {
+impl<'schema> MetadataDefinitionProbe<'schema> {
     fn new(definition: &'schema Block) -> Self {
         Self { definition }
     }
@@ -896,25 +914,25 @@ impl<'schema> StreamDefinitionProbe<'schema> {
         root_objects
             .first()
             .and_then(Block::demote_to_string)
-            .is_some_and(|head| head == "Stream")
+            .is_some_and(|head| matches!(head, "Stream" | "Family"))
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-struct NamespaceStreamProbe<'schema> {
+struct NamespaceMetadataProbe<'schema> {
     namespace_block: &'schema Block,
 }
 
-impl<'schema> NamespaceStreamProbe<'schema> {
+impl<'schema> NamespaceMetadataProbe<'schema> {
     fn new(namespace_block: &'schema Block) -> Self {
         Self { namespace_block }
     }
 
-    fn contains_stream(&self) -> Result<bool, SchemaError> {
+    fn contains_metadata(&self) -> Result<bool, SchemaError> {
         let body = NotaBody::from_delimited(
             self.namespace_block,
             Delimiter::Brace,
-            "namespace stream probe",
+            "namespace metadata probe",
         )?;
         if body.root_objects().len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
@@ -924,7 +942,7 @@ impl<'schema> NamespaceStreamProbe<'schema> {
         Ok(body
             .root_objects()
             .chunks_exact(2)
-            .any(|pair| StreamDefinitionProbe::new(&pair[1]).matches()))
+            .any(|pair| MetadataDefinitionProbe::new(&pair[1]).matches()))
     }
 }
 

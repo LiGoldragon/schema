@@ -317,6 +317,7 @@ struct SchemaEditor {
     output: crate::EnumDeclaration,
     namespace: Vec<Declaration>,
     streams: Vec<crate::StreamDeclaration>,
+    families: Vec<crate::FamilyDeclaration>,
 }
 
 impl SchemaEditor {
@@ -329,6 +330,7 @@ impl SchemaEditor {
             output: schema.output().clone(),
             namespace: schema.namespace().to_vec(),
             streams: schema.streams().to_vec(),
+            families: schema.families().to_vec(),
         }
     }
 
@@ -401,6 +403,7 @@ impl SchemaEditor {
             self.output,
             self.namespace,
             self.streams,
+            self.families,
             Vec::new(),
         )
     }
@@ -552,6 +555,7 @@ impl Schema {
         let output = self.output().clone();
         let namespace = self.namespace().to_vec();
         let streams = self.streams().to_vec();
+        let families = self.families().to_vec();
         let relations = self.relations().to_vec();
         Self::new(
             identity,
@@ -561,6 +565,7 @@ impl Schema {
             output,
             namespace,
             streams,
+            families,
             relations,
         )
     }

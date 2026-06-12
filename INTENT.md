@@ -103,3 +103,18 @@ system: blake3 for all content addressing ... No component diverges in hash
 function.] All schema content addressing is blake3; the whole-schema and
 family-closure hash kinds are domain-separated through distinct blake3
 `derive_key` contexts so the two can never collide.
+
+*Stored record families are schema-declared metadata.* Per Spirit wrjl
+(Decision): [The version-checking pipeline (built into component handling)
+detects schema-address mismatches between current code and stored data, walks
+the diff between addresses, and derives the migration operations ... from the
+diff.] The schema names what is stored before any version-control machinery
+reads it: a family declaration is authored in the namespace map on the
+stream-declaration precedent —
+`EntryFamily (Family { record Entry table entries key Domain })` — and lowers
+to semantic `FamilyDeclaration` data on `Schema::families()`, excluded from
+namespace type declarations. The family name is the stable identity, the
+record type must resolve to a declared type (its `family_closure` hash is the
+family's version address), the table name is only the current storage
+coordinate, and the key kind is the closed `Domain | Identified` choice
+mirroring the SEMA engine's keyed versus identified table registration.
