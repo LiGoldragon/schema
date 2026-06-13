@@ -29,9 +29,10 @@ the resolved import.
 
 *NOTA owns raw structure; Schema owns type-name vocabulary.* Square brackets
 are raw vector structure, not `Vec` type syntax. Schema type-reference objects
-include `(Vec T)`, `(Map (K V))`, and `(Optional T)`, lowering to `Vector`,
-`Map`, and `Optional` in semantic schema. Parentheses are composite-reference
-and macro-call form.
+include `(Vec T)`, `(Map K V)`, `(Scope T)`, and `(Optional T)`, lowering to
+`Vector`, `Map`, `ScopeOf`, and `Optional` in semantic schema through the
+derived `StructuralMacroNode` grammar (one canonical head per variant, no
+aliases). Parentheses are composite-reference and macro-call form.
 
 *Semantic schema namespace entries are visibility-tagged.* The semantic shape
 is public/private declaration data over `Name` plus `TypeDeclaration`; top-level

@@ -3,7 +3,7 @@
 //! A struct field or enum-variant payload can now wrap its referenced
 //! type in a collection or option. The surface forms are Schema
 //! type-reference objects:
-//! `(Vec T)`, `(Map (K V))`, and `(Optional T)`. They lower to
+//! `(Vec T)`, `(Map K V)`, and `(Optional T)`. They lower to
 //! `TypeReference::Vector / Map / Optional`. Bare-symbol fields keep
 //! the declared-name shape, while reserved scalar names lower to
 //! scalar references instead of pretending to be user namespace types.
@@ -72,7 +72,7 @@ fn scalar_field_names_lower_to_reserved_references() {
 #[test]
 fn scalar_references_nest_inside_collections() {
     let schema = lower(&roots(
-        "Query { optionalInteger (Optional Integer) stringVector (Vec String) booleanByString (Map (String Boolean)) optionalPath (Optional Path) }",
+        "Query { optionalInteger (Optional Integer) stringVector (Vec String) booleanByString (Map String Boolean) optionalPath (Optional Path) }",
     ));
     let fields = struct_fields(&schema, "Query");
     assert_eq!(
@@ -115,7 +115,7 @@ fn scalar_names_are_reserved_at_namespace_declaration_position() {
 #[test]
 fn key_value_field_lowers_to_map_reference() {
     let schema = lower(&roots(
-        "NodeName String NodeProposal String Cluster (Map (NodeName NodeProposal))",
+        "NodeName String NodeProposal String Cluster (Map NodeName NodeProposal)",
     ));
     assert_eq!(
         single_reference(&schema, "Cluster"),
@@ -188,7 +188,7 @@ fn collection_field_and_plain_field_coexist_in_one_struct() {
 fn nested_collections_lower_recursively() {
     // A map whose value is itself a vector of an optional leaf.
     let schema = lower(&roots(
-        "Leaf String Key String Nest (Map (Key (Vec (Optional Leaf))))",
+        "Leaf String Key String Nest (Map Key (Vec (Optional Leaf)))",
     ));
     assert_eq!(
         single_reference(&schema, "Nest"),
@@ -206,7 +206,7 @@ fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
     let schema = lower(
-        "[] [(Projected (Map (NodeName NodeConfig)))] { NodeName { string String } NodeConfig { string String } }",
+        "[] [(Projected (Map NodeName NodeConfig))] { NodeName { string String } NodeConfig { string String } }",
     );
     let payload = schema.output().variants[0]
         .payload

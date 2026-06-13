@@ -30,7 +30,7 @@ by the default registry, freshness-checked against `schemas/builtin-macros.schem
 The low-level syntax layer preserves the NOTA/schema split: square brackets are
 raw vector structure and enum bodies, not `Vec` type syntax. Composite type
 references are typed Schema objects such as `(Vec Topic)`,
-`(Map (Topic RecordIdentifier))`, and `(Optional Topic)`. Authored namespace
+`(Map Topic RecordIdentifier)`, and `(Optional Topic)`. Authored namespace
 braces are strict key/value maps: `Topic String`, `Topics (Vec Topic)`,
 `Entry { topic Topic Topics * }`, and `Kind [Decision Correction]`. Struct
 declarations lower to the semantic key/value map form: field name -> type

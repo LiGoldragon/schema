@@ -10,9 +10,9 @@ use nota_next::{
 
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
-    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, ReferenceHead,
-    SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration,
-    TypeReference, macros::SchemaBlockExt,
+    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
+    SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration, TypeReference,
+    macros::SchemaBlockExt,
 };
 
 #[derive(
@@ -776,6 +776,18 @@ impl ExpandedNotation {
         }
     }
 
+    /// Wrap already-headed parenthesised children — the head sits at
+    /// `expanded[0]` — back into a parenthesised NOTA form for re-decode.
+    fn parenthesised(expanded: &[ExpandedObject]) -> Self {
+        let parts = expanded
+            .iter()
+            .map(ExpandedObject::compact_notation)
+            .collect::<Vec<_>>();
+        Self {
+            text: DelimitedNotation::new(Delimiter::Parenthesis).wrap_children(&parts),
+        }
+    }
+
     fn text(&self) -> String {
         self.text.clone()
     }
@@ -1310,6 +1322,15 @@ impl<'object> ObjectView<'object> {
         }
     }
 
+    /// Re-emit this view as canonical NOTA so a reference position can be
+    /// decoded through `TypeReference`'s `StructuralMacroNode` derive.
+    fn compact_notation(&self) -> String {
+        match self {
+            Self::Block(block) => NotationBlock::new(block).compact_notation(),
+            Self::Expanded(object) => object.compact_notation(),
+        }
+    }
+
     fn schema_name(&self) -> Result<Name, SchemaError> {
         match self {
             Self::Block(block) => block.schema_name(),
@@ -1319,11 +1340,6 @@ impl<'object> ObjectView<'object> {
 
     fn is_parenthesis(&self) -> bool {
         self.delimited_children(Delimiter::Parenthesis).is_some()
-    }
-
-    fn parenthesized_children(&self, expected: &'static str) -> Result<Vec<Self>, SchemaError> {
-        self.delimited_children(Delimiter::Parenthesis)
-            .ok_or(SchemaError::ExpectedDelimiter { expected })
     }
 
     fn holds_root_objects(&self) -> usize {
@@ -1531,81 +1547,33 @@ impl<'object> ExpandedReference<'object> {
         Self { children }
     }
 
+    /// Lower a parenthesised expanded reference. The canonical reference
+    /// grammar is `TypeReference`'s `StructuralMacroNode` derive, so re-emit the
+    /// fully-substituted children to NOTA and decode through the derive. The
+    /// derive recognises the same one-head-per-variant grammar — `(Vec T)`,
+    /// `(Optional T)`, `(Scope T)`, `(Map K V)`, `(Bytes N)` — as every other
+    /// site; a head it does not recognise is not a grammar form here.
     fn type_reference(
         &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
+        _registry: &MacroRegistry,
+        _context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
-        if self.children.len() == 2 {
-            if let Some(head) = self.children[0].demote_to_string() {
-                match ReferenceHead::classify(head) {
-                    Some(ReferenceHead::Vector) => {
-                        return Ok(TypeReference::Vector(Box::new(
-                            self.children[1].type_reference(registry, context)?,
-                        )));
-                    }
-                    Some(ReferenceHead::Optional) => {
-                        return Ok(TypeReference::Optional(Box::new(
-                            self.children[1].type_reference(registry, context)?,
-                        )));
-                    }
-                    Some(ReferenceHead::ScopeOf) => {
-                        return Ok(TypeReference::ScopeOf(Box::new(
-                            self.children[1].type_reference(registry, context)?,
-                        )));
-                    }
-                    Some(ReferenceHead::Map) => {
-                        return self.grouped_map_payload(&self.children[1], registry, context);
-                    }
-                    Some(ReferenceHead::Bytes) => {
-                        if let Some(width) = self.children[1]
-                            .demote_to_string()
-                            .and_then(|text| text.parse::<u64>().ok())
-                        {
-                            return Ok(TypeReference::FixedBytes(width));
-                        }
-                    }
-                    None => {}
-                }
+        let notation = ExpandedNotation::parenthesised(self.children).text();
+        match TypeReference::from_structural_nota(&notation) {
+            Ok(reference) => Ok(reference),
+            Err(StructuralMacroError::Dispatch(_)) => {
+                Err(SchemaError::UnknownTypeReferenceForm {
+                    head: self
+                        .children
+                        .first()
+                        .and_then(ExpandedObject::demote_to_string)
+                        .unwrap_or("<missing>")
+                        .to_owned(),
+                    argument_count: self.children.len().saturating_sub(1),
+                })
             }
+            Err(error) => Err(SchemaError::from(error)),
         }
-        Err(SchemaError::UnknownTypeReferenceForm {
-            head: self
-                .children
-                .first()
-                .and_then(ExpandedObject::demote_to_string)
-                .unwrap_or("<missing>")
-                .to_owned(),
-            argument_count: self.children.len().saturating_sub(1),
-        })
-    }
-
-    fn grouped_map_payload(
-        &self,
-        payload: &'object ExpandedObject,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
-        let ExpandedObject::Delimited {
-            delimiter: Delimiter::Parenthesis,
-            children,
-        } = payload
-        else {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: 1,
-            });
-        };
-        if children.len() != 2 {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: children.len(),
-            });
-        }
-        Ok(TypeReference::Map(
-            Box::new(children[0].type_reference(registry, context)?),
-            Box::new(children[1].type_reference(registry, context)?),
-        ))
     }
 
     fn inline_struct(
@@ -1803,7 +1771,7 @@ impl<'template> MacroExpansionFields<'template> {
 /// field name from an already-declared type (`topic`) and creates a
 /// `Plain` reference. Native NOTA type-reference objects can also sit
 /// directly in a field position: `(Vec Topic)`,
-/// `(Map (Topic RecordIdentifier))`, and `(Optional Topic)` lower to
+/// `(Map Topic RecordIdentifier)`, and `(Optional Topic)` lower to
 /// vector, map, and optional references with names derived from the
 /// reference shape. A parenthesised pair whose first object is a
 /// lower-case field symbol remains the explicit escape hatch for
@@ -2113,41 +2081,18 @@ impl<'template> MacroExpansionReference<'template> {
         if !object.is_parenthesis() {
             return object.type_reference(registry, context);
         }
-        let children = object.parenthesized_children("macro expansion reference")?;
-        let head = children
-            .first()
-            .ok_or(SchemaError::EmptyTypeReference)?
-            .schema_name()?;
-        // Classify the head through the one canonical head-set so the macro
-        // expansion layer recognises every grammar alias and `Bytes`, matching
-        // the other reference-lowering sites. The arities here are the
-        // template layer's flat forms: unary `(Vec T)` carries one child,
-        // `(Map K V)` carries two flat children, and `(Bytes N)` carries a
-        // width atom. Heads that are not a grammar form, or grammar forms with
-        // an unexpected arity, fall through to the declared-name path.
-        match ReferenceHead::classify(head.as_str()) {
-            Some(ReferenceHead::Vector) if children.len() == 2 => Ok(TypeReference::Vector(
-                Box::new(Self::lower_object(children[1], registry, context)?),
-            )),
-            Some(ReferenceHead::Optional) if children.len() == 2 => Ok(TypeReference::Optional(
-                Box::new(Self::lower_object(children[1], registry, context)?),
-            )),
-            Some(ReferenceHead::ScopeOf) if children.len() == 2 => Ok(TypeReference::ScopeOf(
-                Box::new(Self::lower_object(children[1], registry, context)?),
-            )),
-            Some(ReferenceHead::Map) if children.len() == 3 => Ok(TypeReference::Map(
-                Box::new(Self::lower_object(children[1], registry, context)?),
-                Box::new(Self::lower_object(children[2], registry, context)?),
-            )),
-            Some(ReferenceHead::Bytes) if children.len() == 2 => children[1]
-                .demote_to_string()
-                .and_then(|text| text.parse::<u64>().ok())
-                .map(TypeReference::FixedBytes)
-                .ok_or_else(|| SchemaError::UnknownTypeReferenceForm {
-                    head: "Bytes".to_owned(),
-                    argument_count: children.len().saturating_sub(1),
-                }),
-            _ => object.type_reference(registry, context),
+        // The canonical reference grammar is `TypeReference`'s
+        // `StructuralMacroNode` derive. Re-emit the fully-substituted expanded
+        // object to NOTA and decode it through the derive so the macro
+        // expansion layer recognises the same one-head-per-variant grammar as
+        // every other site. A head the derive does not recognise is not a
+        // grammar form: it falls through to the declared-name macro-invocation
+        // path.
+        let notation = object.compact_notation();
+        match TypeReference::from_structural_nota(&notation) {
+            Ok(reference) => Ok(reference),
+            Err(StructuralMacroError::Dispatch(_)) => object.type_reference(registry, context),
+            Err(error) => Err(SchemaError::from(error)),
         }
     }
 }

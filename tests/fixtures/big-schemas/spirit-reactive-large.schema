@@ -43,7 +43,7 @@
   WatchRequest { topics Topics kinds (Vec Kind) agentName AgentName }
   RecordReceipt { recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest }
   CorrectionReceipt { recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest }
-  RecordSet { records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) }
+  RecordSet { records (Vec Entry) byTopic (Map Topic RecordIdentifier) }
   SubscriptionReceipt { subscriptionToken SubscriptionToken commitSequence CommitSequence }
   Rejection { rejectionReason RejectionReason description Description }
   IndexReceipt { commitSequence CommitSequence databaseDigest DatabaseDigest }

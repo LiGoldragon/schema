@@ -2,7 +2,7 @@ use std::fmt;
 
 use nota_next::{
     AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaDecode, NotaDecodeError,
-    NotaEncode, NotaString,
+    NotaEncode, NotaString, StructuralMacroError, StructuralMacroNode,
 };
 
 use crate::{
@@ -75,6 +75,50 @@ impl NotaEncode for Name {
 impl fmt::Display for Name {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
+    }
+}
+
+/// A `Name` decodes from a bare symbol atom and re-emits through its NOTA
+/// codec, so the `TypeReference` derive can recurse into a `Plain` leaf as a
+/// `#[shape(pascal_atom)]` field. The derive's pascal-case gate runs first, so
+/// only a PascalCase atom reaches this decode in the reference grammar; the
+/// symbol-case acceptance keeps the node usable wherever a qualified name is
+/// already known to sit at the position.
+impl nota_next::StructuralMacroNode for Name {
+    type Error = SchemaError;
+
+    fn structural_position() -> nota_next::PositionPredicate {
+        nota_next::PositionPredicate::named("type name")
+    }
+
+    fn structural_variants() -> Vec<nota_next::StructuralVariant> {
+        vec![
+            nota_next::BlockShape::symbol(Some(nota_next::CaptureName::new("name")))
+                .into_structural_variant("Name", "symbol atom"),
+        ]
+    }
+
+    fn from_structural_block(
+        block: &Block,
+    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        block
+            .schema_name()
+            .map_err(nota_next::StructuralMacroError::MatchedNode)
+    }
+
+    fn from_structural_candidate(
+        candidate: nota_next::MacroCandidate<'_>,
+    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(nota_next::StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        self.to_nota()
     }
 }
 
@@ -977,152 +1021,74 @@ impl FamilyDeclaration {
 ///
 /// `String`, `Integer`, `Boolean`, and `Path` are reserved scalar leaves.
 /// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
-/// `Map`, `Optional`, and `ScopeOf` carry inner references. These are Schema
-/// type-reference objects read over nota-next's parsed structure:
-/// `(Vec T)` lowers to `Vector<T>`,
-/// `(Map (K V))` lowers to `Map<K, V>`, and `(Optional T)` lowers to
-/// `Optional<T>`. `(ScopeOf T)` lowers to the typed prefix-scope language for
-/// `T`. Parentheses with other heads remain available for user-declared
-/// type-reference macros.
+/// `Map`, `Optional`, and `ScopeOf` carry inner references.
 ///
-/// The canonical reference-grammar head-set — and its alias spellings — lives
-/// in exactly one place, [`ReferenceHead`]. Every reference-lowering site
-/// (parenthesised blocks, macro-template expansion, expanded objects, and the
-/// source codec's raw records) classifies its head through that one method
-/// rather than hand-copying the alias match, so the five lowering sites cannot
-/// drift apart.
-///
-/// Note: `TypeReference` keeps a hand-written NOTA codec ([`NotaDecode`] /
-/// [`NotaEncode`] below), which round-trips the canonical tags (`Plain`,
-/// `Vector`, `FixedBytes`, …) without aliases. Folding that codec into the
-/// nota-next structural-macro derive is a separate design decision and is
-/// deliberately left as a hand-written codec pending it.
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+/// The NOTA reference grammar is the [`StructuralMacroNode`] derive below: the
+/// `#[shape(...)]` attribute on each variant is the single source of truth for
+/// that variant's canonical head, and the derive *generates* the decode
+/// dispatch and the encoder. There is exactly one head per variant —
+/// `(Vec T)`, `(Optional T)`, `(Scope T)`, `(Map K V)`, `(Bytes N)`, the bare
+/// `Bytes` leaf, the bare scalar leaves, and a bare PascalCase atom for
+/// `Plain`. The earlier alias spellings (`Vector`, `Option`, `ScopeOf`,
+/// `KeyValue`) are gone, per the no-aliases decision: each loses its safe bare
+/// form and is no longer recognised. Round-trip is the witness — a
+/// `TypeReference` NOTA form decodes to the node and re-encodes identically
+/// through the derive.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::StructuralMacroNode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 #[rkyv(
     bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
     serialize_bounds(__S: rkyv::ser::Writer),
     deserialize_bounds(__D::Error: rkyv::rancor::Source)
 )]
 pub enum TypeReference {
+    #[shape(keyword = "String")]
     String,
+    #[shape(keyword = "Integer")]
     Integer,
+    #[shape(keyword = "Boolean")]
     Boolean,
+    #[shape(keyword = "Path")]
     Path,
+    #[shape(keyword = "Bytes")]
     Bytes,
+    #[shape(head = "Bytes", atom)]
     FixedBytes(u64),
-    Plain(Name),
+    #[shape(head = "Vec", arity = 2)]
     Vector(#[rkyv(omit_bounds)] Box<TypeReference>),
+    #[shape(head = "Map", arity = 3)]
     Map(
         #[rkyv(omit_bounds)] Box<TypeReference>,
         #[rkyv(omit_bounds)] Box<TypeReference>,
     ),
+    #[shape(head = "Optional", arity = 2)]
     Optional(#[rkyv(omit_bounds)] Box<TypeReference>),
+    #[shape(head = "Scope", arity = 2)]
     ScopeOf(#[rkyv(omit_bounds)] Box<TypeReference>),
-}
-
-/// The canonical head of a parenthesised reference form, recognised from any
-/// of its alias spellings. This is the single source of truth for the
-/// reference grammar's recognised heads: each lowering site classifies its
-/// head through [`ReferenceHead::classify`] and matches on the resulting
-/// variant instead of hand-copying the alias set. A variant carries the
-/// shape the lowering site must then read (a single inner reference, a
-/// key/value map payload, or a fixed-byte width), but reading the children
-/// stays with the site, since each site reads a different parsed
-/// representation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReferenceHead {
-    /// `(Vec T)` / `(Vector T)` — a homogeneous sequence of `T`.
-    Vector,
-    /// `(Optional T)` / `(Option T)` — an absent-or-present `T`.
-    Optional,
-    /// `(ScopeOf T)` / `(Scope T)` — the typed prefix-scope language for `T`.
-    ScopeOf,
-    /// `(Map (K V))` / `(KeyValue (K V))` — a key/value mapping.
-    Map,
-    /// `(Bytes N)` — a fixed-width byte array of `N` bytes.
-    Bytes,
-}
-
-impl ReferenceHead {
-    /// Classify a parenthesised reference head, accepting every canonical
-    /// spelling and its aliases. Returns `None` for any head that is not a
-    /// grammar form, leaving the site to treat it as a declared-name macro
-    /// invocation or an error per its own rules.
-    pub fn classify(head: &str) -> Option<Self> {
-        match head {
-            "Vec" | "Vector" => Some(Self::Vector),
-            "Optional" | "Option" => Some(Self::Optional),
-            "ScopeOf" | "Scope" => Some(Self::ScopeOf),
-            "Map" | "KeyValue" => Some(Self::Map),
-            "Bytes" => Some(Self::Bytes),
-            _ => None,
-        }
-    }
+    #[shape(pascal_atom)]
+    Plain(Name),
 }
 
 impl NotaDecode for TypeReference {
     fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
-        if let Some(name) = block.demote_to_string() {
-            return match name {
-                "String" => Ok(Self::String),
-                "Integer" => Ok(Self::Integer),
-                "Boolean" => Ok(Self::Boolean),
-                "Path" => Ok(Self::Path),
-                "Bytes" => Ok(Self::Bytes),
-                other => Err(NotaDecodeError::UnknownVariant {
-                    enum_name: "TypeReference",
-                    variant: other.to_owned(),
-                }),
-            };
-        }
-        let children =
-            NotaBlock::new(block).expect_children(Delimiter::Parenthesis, "TypeReference", 2)?;
-        let variant = children[0]
-            .demote_to_string()
-            .ok_or(NotaDecodeError::ExpectedAtom {
-                type_name: "TypeReference variant",
-            })?;
-        match variant {
-            "Plain" => Ok(Self::Plain(Name::from_nota_block(&children[1])?)),
-            "Vector" => Ok(Self::Vector(Box::new(Self::from_nota_block(&children[1])?))),
-            "Optional" => Ok(Self::Optional(Box::new(Self::from_nota_block(
-                &children[1],
-            )?))),
-            "ScopeOf" => Ok(Self::ScopeOf(Box::new(Self::from_nota_block(
-                &children[1],
-            )?))),
-            "Map" => Self::from_nota_map_payload(&children[1]),
-            "FixedBytes" => Ok(Self::FixedBytes(
-                children[1]
-                    .demote_to_string()
-                    .and_then(|text| text.parse::<u64>().ok())
-                    .ok_or(NotaDecodeError::ExpectedAtom {
-                        type_name: "FixedBytes width",
-                    })?,
-            )),
-            other => Err(NotaDecodeError::UnknownVariant {
-                enum_name: "TypeReference",
-                variant: other.to_owned(),
-            }),
-        }
+        Self::from_structural_block(block).map_err(|error| NotaDecodeError::UnknownVariant {
+            enum_name: "TypeReference",
+            variant: error.to_string(),
+        })
     }
 }
 
 impl NotaEncode for TypeReference {
     fn to_nota(&self) -> String {
-        match self {
-            Self::String => "String".to_owned(),
-            Self::Integer => "Integer".to_owned(),
-            Self::Boolean => "Boolean".to_owned(),
-            Self::Path => "Path".to_owned(),
-            Self::Bytes => "Bytes".to_owned(),
-            Self::FixedBytes(width) => format!("(FixedBytes {width})"),
-            Self::Plain(name) => format!("(Plain {})", name.to_nota()),
-            Self::Vector(reference) => format!("(Vector {})", reference.to_nota()),
-            Self::Map(key, value) => format!("(Map ({} {}))", key.to_nota(), value.to_nota()),
-            Self::Optional(reference) => format!("(Optional {})", reference.to_nota()),
-            Self::ScopeOf(reference) => format!("(ScopeOf {})", reference.to_nota()),
-        }
+        self.to_structural_nota()
     }
 }
 
@@ -1192,29 +1158,16 @@ impl TypeReference {
         matches!(self, Self::Plain(_))
     }
 
-    fn from_nota_map_payload(block: &Block) -> Result<Self, NotaDecodeError> {
-        let children = NotaBlock::new(block).expect_children(
-            Delimiter::Parenthesis,
-            "TypeReference::Map payload",
-            2,
-        )?;
-        Ok(Self::Map(
-            Box::new(Self::from_nota_block(&children[0])?),
-            Box::new(Self::from_nota_block(&children[1])?),
-        ))
-    }
-
     /// Lower an already-parsed NOTA block at a reference position into
     /// a `TypeReference`.
     ///
-    /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. Schema type-reference objects lower at this
-    /// position: `(Vec T)` -> `Vector`, `(Map (K V))` -> `Map`,
-    /// `(Optional T)` -> `Optional`, and `(ScopeOf T)` -> `ScopeOf`.
-    /// The inner positions recurse, so
-    /// `(Vec (Optional Topic))` and `(Map (NodeName (Vec Service)))`
-    /// nest. nota-next did the structural parse; this is pure semantic
-    /// lowering over its `Block`s, not a hand-rolled text parser.
+    /// A bare PascalCase symbol (`Topic`) lowers to `Plain`. Schema
+    /// type-reference objects lower at this position through the
+    /// `StructuralMacroNode` derive: `(Vec T)` -> `Vector`, `(Map K V)` ->
+    /// `Map`, `(Optional T)` -> `Optional`, and `(Scope T)` -> `ScopeOf`.
+    /// The inner positions recurse, so `(Vec (Optional Topic))` and
+    /// `(Map NodeName (Vec Service))` nest. A head the derive does not
+    /// recognise falls through to the declared-name macro-invocation path.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let mut context = MacroContext::default();
         Self::from_block_with_registry(block, &MacroRegistry::with_schema_defaults(), &mut context)
@@ -1309,97 +1262,25 @@ impl TypeReference {
         name.schema_name()
     }
 
+    /// Lower a parenthesised reference. The canonical reference grammar —
+    /// `(Vec T)`, `(Optional T)`, `(Scope T)`, `(Map K V)`, `(Bytes N)` — is
+    /// the [`StructuralMacroNode`] derive, so the derived decode dispatches the
+    /// head and recurses through nested grammar forms. A head the derive does
+    /// not recognise is not a grammar form: it falls through to the
+    /// declared-name macro-invocation path against the registry.
     fn from_parenthesis_objects(
         block: &Block,
-        objects: &[Block],
+        _objects: &[Block],
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
-        if objects.len() == 2 {
-            if let Some(head) = objects[0].demote_to_string() {
-                match ReferenceHead::classify(head) {
-                    Some(ReferenceHead::Vector) => {
-                        return Ok(Self::Vector(Box::new(Self::from_block_with_registry(
-                            &objects[1],
-                            registry,
-                            context,
-                        )?)));
-                    }
-                    Some(ReferenceHead::Optional) => {
-                        return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
-                            &objects[1],
-                            registry,
-                            context,
-                        )?)));
-                    }
-                    Some(ReferenceHead::ScopeOf) => {
-                        return Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
-                            &objects[1],
-                            registry,
-                            context,
-                        )?)));
-                    }
-                    Some(ReferenceHead::Map) => {
-                        return Self::from_grouped_map_payload(&objects[1], registry, context);
-                    }
-                    Some(ReferenceHead::Bytes) => {
-                        return Self::from_fixed_bytes_width(&objects[1]);
-                    }
-                    None => {}
-                }
+        match Self::from_structural_block(block) {
+            Ok(reference) => Ok(reference),
+            Err(StructuralMacroError::Dispatch(_)) => {
+                Self::from_macro_invocation(block, registry, context)
             }
+            Err(error) => Err(SchemaError::from(error)),
         }
-        Self::from_macro_invocation(block, registry, context)
-    }
-
-    /// Lower the numeric width of a fixed-size byte reference `(Bytes N)`
-    /// into `TypeReference::FixedBytes(N)` — the grammar's one numeric
-    /// type-argument.
-    fn from_fixed_bytes_width(block: &Block) -> Result<Self, SchemaError> {
-        let width = block
-            .demote_to_string()
-            .and_then(|text| text.parse::<u64>().ok())
-            .ok_or_else(|| SchemaError::UnknownTypeReferenceForm {
-                head: "Bytes".to_owned(),
-                argument_count: 1,
-            })?;
-        Ok(Self::FixedBytes(width))
-    }
-
-    fn from_grouped_map_payload(
-        block: &Block,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        let Block::Delimited {
-            delimiter: Delimiter::Parenthesis,
-            root_objects,
-            ..
-        } = block
-        else {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: 1,
-            });
-        };
-        if root_objects.len() != 2 {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: root_objects.len(),
-            });
-        }
-        Ok(Self::Map(
-            Box::new(Self::from_block_with_registry(
-                &root_objects[0],
-                registry,
-                context,
-            )?),
-            Box::new(Self::from_block_with_registry(
-                &root_objects[1],
-                registry,
-                context,
-            )?),
-        ))
     }
 
     fn from_macro_invocation(

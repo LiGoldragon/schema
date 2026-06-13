@@ -68,5 +68,5 @@
   Query { topics Topics kinds (Vec Kind) limit (Optional Integer) }
   RecordIdentifier { integer Integer }
   SubscriptionToken { integer Integer }
-  RecordSet { records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) }
+  RecordSet { records (Vec Entry) byTopic (Map Topic RecordIdentifier) }
 }

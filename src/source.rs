@@ -10,8 +10,8 @@ use nota_next::{
 
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ReferenceHead,
-    RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine, SchemaError,
+    ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration, RelationValue,
+    ResolvedImport, Schema, SchemaEngine, SchemaError,
     SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
     TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
@@ -1778,104 +1778,31 @@ pub enum SourceReference {
 }
 
 impl SourceReference {
+    /// Decode a source-position reference. A bare atom is a declared name
+    /// (`Plain`), which keeps qualified `crate:module:Type` and kebab spellings
+    /// the derive's PascalCase leaf would reject. A parenthesised form is the
+    /// canonical reference grammar — `(Vec T)`, `(Optional T)`, `(Scope T)`,
+    /// `(Map K V)`, `(Bytes N)` — decoded through `TypeReference`'s
+    /// `StructuralMacroNode` derive, the one place that grammar lives, then
+    /// projected back onto `SourceReference`.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        Self::from_raw(&RawNotaDatatype::from_block(block)?)
-    }
-
-    fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        match raw {
-            RawNotaDatatype::Atom(name) => Ok(Self::Plain(Name::new(name))),
-            RawNotaDatatype::Record(sequence) => Self::from_record(sequence),
-            RawNotaDatatype::Vector(_)
-            | RawNotaDatatype::KeyValue(_)
-            | RawNotaDatatype::PipeBrace(_)
-            | RawNotaDatatype::PipeParenthesis(_)
-            | RawNotaDatatype::Text(_) => Err(SchemaError::ExpectedSyntaxReference {
-                found: SourceRawNotation::new(raw).description(),
+        match block {
+            Block::Atom(atom) => Ok(Self::Plain(Name::new(atom.text()))),
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            } => Ok(Self::from(TypeReference::from_structural_block(block)?)),
+            other => Err(SchemaError::ExpectedSyntaxReference {
+                found: SourceBlockNotation::new(other).description(),
             }),
         }
     }
 
-    fn from_record(sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
-        let items = sequence.items();
-        if items.len() != 2 {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form: "typed reference record",
-                expected: "tag plus one grouped payload object",
-                found: items.len(),
-            });
-        }
-        let Some(head) = items[0].as_atom() else {
-            return Err(SchemaError::ExpectedSymbol {
-                found: SourceRawNotation::new(&items[0]).description(),
-            });
-        };
-        match ReferenceHead::classify(head) {
-            Some(ReferenceHead::Vector) => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
-            Some(ReferenceHead::Optional) => {
-                Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?)))
-            }
-            Some(ReferenceHead::ScopeOf) => Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
-            Some(ReferenceHead::Map) => Self::from_map_record(&items[1]),
-            Some(ReferenceHead::Bytes) => Self::from_fixed_bytes_record(&items[1]),
-            None => Err(SchemaError::ExpectedSyntaxReference {
-                found: SourceSequenceNotation::new(sequence).description(),
-            }),
-        }
-    }
-
-    /// Parse the numeric width of a fixed-size byte reference `(Bytes N)`.
-    /// This is the grammar's only numeric type-argument; the width lowers to
-    /// a `[u8; N]` array at the emitter.
-    fn from_fixed_bytes_record(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        let width = raw
-            .as_atom()
-            .and_then(|text| text.parse::<u64>().ok())
-            .ok_or_else(|| SchemaError::ExpectedSyntaxReference {
-                found: SourceRawNotation::new(raw).description(),
-            })?;
-        Ok(Self::FixedBytes(width))
-    }
-
-    fn from_map_record(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        let Some(sequence) = raw.as_record() else {
-            return Err(SchemaError::ExpectedSyntaxReference {
-                found: SourceRawNotation::new(raw).description(),
-            });
-        };
-        if sequence.items().len() != 2 {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form: "map reference payload",
-                expected: "key type plus value type",
-                found: sequence.items().len(),
-            });
-        }
-        Ok(Self::Map(
-            Box::new(Self::from_raw(&sequence.items()[0])?),
-            Box::new(Self::from_raw(&sequence.items()[1])?),
-        ))
-    }
-
+    /// Re-emit the source text through the canonical reference grammar — the
+    /// `TypeReference` derive — so the source codec and the derive can never
+    /// disagree on a head spelling or the flat `(Map K V)` shape.
     fn to_schema_text(&self) -> String {
-        match self {
-            Self::Plain(name) => name.to_nota(),
-            Self::FixedBytes(width) => {
-                Delimiter::Parenthesis.wrap(["Bytes".to_owned(), width.to_string()])
-            }
-            Self::Vector(reference) => {
-                Delimiter::Parenthesis.wrap(["Vec".to_owned(), reference.to_schema_text()])
-            }
-            Self::Optional(reference) => {
-                Delimiter::Parenthesis.wrap(["Optional".to_owned(), reference.to_schema_text()])
-            }
-            Self::ScopeOf(reference) => {
-                Delimiter::Parenthesis.wrap(["ScopeOf".to_owned(), reference.to_schema_text()])
-            }
-            Self::Map(key, value) => Delimiter::Parenthesis.wrap([
-                "Map".to_owned(),
-                Delimiter::Parenthesis.wrap([key.to_schema_text(), value.to_schema_text()]),
-            ]),
-        }
+        self.to_type_reference().to_structural_nota()
     }
 
     fn to_type_reference(&self) -> TypeReference {
@@ -1895,6 +1822,29 @@ impl SourceReference {
                 Box::new(key.to_type_reference()),
                 Box::new(value.to_type_reference()),
             ),
+        }
+    }
+}
+
+/// Project a decoded `TypeReference` back onto a `SourceReference`. The source
+/// model has no scalar-leaf variants — a scalar is a declared name — so each
+/// scalar maps to the `Plain` name it round-trips through `from_name`.
+impl From<TypeReference> for SourceReference {
+    fn from(reference: TypeReference) -> Self {
+        match reference {
+            TypeReference::String => Self::Plain(Name::new("String")),
+            TypeReference::Integer => Self::Plain(Name::new("Integer")),
+            TypeReference::Boolean => Self::Plain(Name::new("Boolean")),
+            TypeReference::Path => Self::Plain(Name::new("Path")),
+            TypeReference::Bytes => Self::Plain(Name::new("Bytes")),
+            TypeReference::FixedBytes(width) => Self::FixedBytes(width),
+            TypeReference::Plain(name) => Self::Plain(name),
+            TypeReference::Vector(inner) => Self::Vector(Box::new(Self::from(*inner))),
+            TypeReference::Optional(inner) => Self::Optional(Box::new(Self::from(*inner))),
+            TypeReference::ScopeOf(inner) => Self::ScopeOf(Box::new(Self::from(*inner))),
+            TypeReference::Map(key, value) => {
+                Self::Map(Box::new(Self::from(*key)), Box::new(Self::from(*value)))
+            }
         }
     }
 }
@@ -2206,36 +2156,3 @@ impl<'source> SourceBlockNotation<'source> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct SourceRawNotation<'source>(&'source RawNotaDatatype);
-
-impl<'source> SourceRawNotation<'source> {
-    fn new(raw: &'source RawNotaDatatype) -> Self {
-        Self(raw)
-    }
-
-    fn description(&self) -> String {
-        match self.0 {
-            RawNotaDatatype::Atom(text) => format!("atom {text}"),
-            RawNotaDatatype::Text(_) => "text".to_owned(),
-            RawNotaDatatype::Record(_) => "parenthesis record".to_owned(),
-            RawNotaDatatype::Vector(_) => "square-bracket vector".to_owned(),
-            RawNotaDatatype::KeyValue(_) => "brace key-value map".to_owned(),
-            RawNotaDatatype::PipeParenthesis(_) => "pipe-parenthesis declaration".to_owned(),
-            RawNotaDatatype::PipeBrace(_) => "pipe-brace declaration".to_owned(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SourceSequenceNotation<'source>(&'source RawNotaSequence);
-
-impl<'source> SourceSequenceNotation<'source> {
-    fn new(sequence: &'source RawNotaSequence) -> Self {
-        Self(sequence)
-    }
-
-    fn description(&self) -> String {
-        format!("parenthesis record with {} objects", self.0.items().len())
-    }
-}

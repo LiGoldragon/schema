@@ -28,5 +28,5 @@
   Entry { topics Topics description Description agentName AgentName databaseMarker DatabaseMarker }
   Query { topics Topics limit (Optional Integer) }
   RecordReceipt { recordIdentifier RecordIdentifier databaseMarker DatabaseMarker commitSequence CommitSequence }
-  RecordSet { records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) }
+  RecordSet { records (Vec Entry) byTopic (Map Topic RecordIdentifier) }
 }

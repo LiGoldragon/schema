@@ -154,7 +154,7 @@ Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Schema` through rkyv:
 `Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,
 `TypeDeclaration::{Alias, Struct, Enum, Newtype}` and
-`TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`.
+`TypeReference::{String, Integer, Boolean, Path, Bytes, FixedBytes, Plain, Vector, Optional, ScopeOf, Map}`.
 The semantic-schema text fixture surface stays removed: there is no checked
 `.asschema` file and no hand-kept golden semantic-schema text.
 
@@ -330,7 +330,7 @@ one logical declaration object.
   declarations available to later entries.
 
 Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
-`(Map (Key Value))` still lower at reference positions to `TypeReference`
+`(Map Key Value)` still lower at reference positions to `TypeReference`
 data. If a composite appears unnamed as a struct field, the field/type name can
 be derived from the composite shape when it does not collide.
 
@@ -490,25 +490,29 @@ module boundaries.
   `crate:module:Type`; resolution records the dependency Rust path so
   `schema-rust-next` can emit a `pub use` alias and keep one type identity
   across the crate boundary.
-- `TypeReference` at a reference position is an enum:
-  `String`, `Integer`, `Boolean`, `Path`, `Plain(Name)`, `Vector(Box<TypeReference>)`,
-  `Map(Box, Box)`, and `Optional(Box<TypeReference>)`. `String`, `Integer`,
-  `Boolean`, and `Path` are reserved scalar leaves, so they are not user namespace
-  declarations and cannot be shadowed by schema types. `Plain(Name)` now means
-  "a declared type by name." `TypeReference::from_block` lowers a bare scalar
-  symbol to its scalar variant, a different bare PascalCase symbol to `Plain`,
-  `(Vec T)` to `Vector`, `(Map (K V))` to `Map`, and `(Optional T)` to
-  `Optional`. These names are Schema type-reference vocabulary over
-  nota-next's already-parsed structures, not raw NOTA keywords. The inner
-  positions recurse, so `(Vec (Optional Topic))` and
-  `(Map (String (Vec Service)))` nest. Parentheses with another head are
-  dispatched to the user macro registry. An unknown head or wrong native
-  argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
-  is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
-  text parser.
+- `TypeReference` at a reference position is a derived `StructuralMacroNode`
+  enum: `String`, `Integer`, `Boolean`, `Path`, `Bytes`, `FixedBytes(u64)`,
+  `Plain(Name)`, `Vector(Box<TypeReference>)`, `Map(Box, Box)`,
+  `Optional(Box<TypeReference>)`, and `ScopeOf(Box<TypeReference>)`. The
+  `#[shape(...)]` attribute on each variant is the one source of truth for its
+  canonical head, and the derive *generates* the decode dispatch and the
+  encoder. `String`, `Integer`, `Boolean`, `Path`, and the bare `Bytes` are
+  reserved scalar leaves, so they are not user namespace declarations and cannot
+  be shadowed by schema types. `Plain(Name)` means "a declared type by name."
+  There is exactly one head per variant — a bare scalar atom lowers to its
+  scalar variant, a different bare PascalCase atom to `Plain`, `(Vec T)` to
+  `Vector`, `(Optional T)` to `Optional`, `(Scope T)` to `ScopeOf`,
+  `(Map K V)` to `Map`, and `(Bytes N)` to `FixedBytes(N)`. The earlier alias
+  spellings (`Vector`, `Option`, `KeyValue`, `ScopeOf`) are gone, per the
+  no-aliases decision (Spirit qz6j). Round-trip is the witness: a form decodes
+  to the node and re-encodes byte-identically through the derive. The inner
+  positions recurse, so `(Vec (Optional Topic))` and `(Map String (Vec Service))`
+  nest. A parenthesised head the derive does not recognise is dispatched to the
+  user macro registry; an unknown head or wrong native argument count is a typed
+  `SchemaError::UnknownTypeReferenceForm`.
 - Collection references reach every reference position. Struct fields are
   written as strict pairs such as `serviceVector (Vec Service)`,
-  `byTopic (Map (Topic RecordIdentifier))`, and
+  `byTopic (Map Topic RecordIdentifier)`, and
   `optionalCache (Optional Cache)`. Enum-variant payloads, root input/output
   variant payloads, and import sources all lower their type through
   `TypeReference::from_block`.
@@ -532,7 +536,7 @@ strict key/value authored surface without invoking macro lowering:
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
 3. Brace values become struct field maps; square-bracket values become enum
    bodies; atom or parenthesized reference values become aliases.
-4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
+4. `(Vec T)`, `(Map K V)`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
 5. The root map key is the declaration name. There is no second declaration
    name inside the value.
