@@ -2,7 +2,7 @@ use std::fmt;
 
 use nota_next::{
     AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaDecode, NotaDecodeError,
-    NotaEncode, NotaString,
+    NotaEncode, NotaString, StructuralMacroNode,
 };
 
 use crate::{
@@ -54,6 +54,19 @@ impl Name {
     pub fn qualifies_as_symbol_name(&self) -> bool {
         AtomClassification::classify(self.as_str()) == AtomClassification::SymbolCandidate
     }
+
+    /// Whether this name is a PascalCase symbol — a symbol-shaped atom whose
+    /// local part begins with an ASCII uppercase letter. This is the head
+    /// gate for the generic-application form: only a PascalCase head can name
+    /// a parameterized type at a reference position.
+    pub fn qualifies_as_pascal_case(&self) -> bool {
+        self.qualifies_as_symbol_name()
+            && self
+                .local_part()
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_uppercase())
+    }
 }
 
 impl NotaDecode for Name {
@@ -69,6 +82,50 @@ impl NotaEncode for Name {
         } else {
             NotaString::new(self.as_str()).format()
         }
+    }
+}
+
+/// A `Name` decodes from a bare symbol atom and re-emits through its NOTA
+/// codec, so a structural-macro node can carry it as a head or leaf capture.
+/// In the reference grammar the application form's `pascal_head` gate runs
+/// first, so only a PascalCase atom reaches this decode there; the
+/// symbol-case acceptance keeps the node usable wherever a qualified name is
+/// already known to sit at the position.
+impl nota_next::StructuralMacroNode for Name {
+    type Error = SchemaError;
+
+    fn structural_position() -> nota_next::PositionPredicate {
+        nota_next::PositionPredicate::named("type name")
+    }
+
+    fn structural_variants() -> Vec<nota_next::StructuralVariant> {
+        vec![
+            nota_next::BlockShape::symbol(Some(nota_next::CaptureName::new("name")))
+                .into_structural_variant("Name", "symbol atom"),
+        ]
+    }
+
+    fn from_structural_block(
+        block: &Block,
+    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        block
+            .schema_name()
+            .map_err(nota_next::StructuralMacroError::MatchedNode)
+    }
+
+    fn from_structural_candidate(
+        candidate: nota_next::MacroCandidate<'_>,
+    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(nota_next::StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        self.to_nota()
     }
 }
 
@@ -217,6 +274,11 @@ pub struct Schema {
 }
 
 impl Schema {
+    // The schema's fields are each a distinct typed section of the model;
+    // the constructor takes them as separate typed vectors rather than a
+    // bag struct. (Newer clippy raises `too_many_arguments`; the repo's
+    // pinned 1.85 toolchain does not.)
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         identity: super::SchemaIdentity,
         imports: Vec<ImportDeclaration>,
@@ -972,22 +1034,78 @@ impl FamilyDeclaration {
     }
 }
 
+/// The head of a generic application `(Foo A B …)`.
+///
+/// A head is a typed sum: a generic head may name a locally-declared
+/// parameterized type (`Local`) or a cross-crate imported one (`Imported`).
+/// NOTA decode never resolves imports, so a freshly-decoded application
+/// always carries `Local(Name)`; import resolution rewrites the head to
+/// `Imported` once the closure walk proves the name is an import. The
+/// canonical NOTA projection of either is the bare head name.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum ApplicationHead {
+    Local(Name),
+    Imported(super::ResolvedImport),
+}
+
+impl ApplicationHead {
+    /// The head's local name — the name written at the application site,
+    /// regardless of whether it has been resolved to an import yet.
+    pub fn name(&self) -> &Name {
+        match self {
+            Self::Local(name) => name,
+            Self::Imported(import) => import.local_name(),
+        }
+    }
+}
+
+/// The broad generic-application node `(Foo A B …)`, captured directly by
+/// nota-next's `#[shape(pascal_head, body)]` derive: a PascalCase head atom
+/// followed by a variable-arity tail of type-reference arguments. This is the
+/// structural-macro seam for the application form — the head decodes as a
+/// `Name` (always `Local` at decode time) and the tail decodes as a
+/// `Vec<TypeReference>`. The derive is the single source of truth for matching
+/// and re-emitting the form; this node lowers into [`TypeReference::Application`].
+#[derive(Clone, Debug, Eq, PartialEq, nota_next::StructuralMacroNode)]
+enum ApplicationNode {
+    #[shape(pascal_head, body)]
+    Application(Name, Vec<TypeReference>),
+}
+
 /// A type at a reference position — a struct field's type, an enum
 /// variant's payload, or an import source.
 ///
 /// `String`, `Integer`, `Boolean`, and `Path` are reserved scalar leaves.
 /// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
-/// `Map`, `Optional`, and `ScopeOf` carry inner references. These are Schema
-/// type-reference objects read over nota-next's parsed structure:
-/// `(Vec T)` lowers to `Vector<T>`,
-/// `(Map (K V))` lowers to `Map<K, V>`, and `(Optional T)` lowers to
-/// `Optional<T>`. `(ScopeOf T)` lowers to the typed prefix-scope language for
-/// `T`. Parentheses with other heads remain available for user-declared
-/// type-reference macros.
+/// `Map`, `Optional`, and `ScopeOf` carry inner references, lowered from the
+/// single canonical head spelling each: `(Vector T)`, `(Map (K V))`,
+/// `(Optional T)`, `(ScopeOf T)` — the earlier aliases (`Vec`, `Option`,
+/// `Scope`, `KeyValue`) are gone and no longer parse. `Application` is the
+/// broad generic-application form `(Foo A B …)`: any other PascalCase head
+/// carrying a tail of type-reference arguments, decoded through the
+/// `#[shape(pascal_head, body)]` structural-macro seam. Built-in heads are
+/// dispatched first; the application form is the fallback.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 #[rkyv(
-    bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
-    serialize_bounds(__S: rkyv::ser::Writer),
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
     deserialize_bounds(__D::Error: rkyv::rancor::Source)
 )]
 pub enum TypeReference {
@@ -1005,6 +1123,11 @@ pub enum TypeReference {
     ),
     Optional(#[rkyv(omit_bounds)] Box<TypeReference>),
     ScopeOf(#[rkyv(omit_bounds)] Box<TypeReference>),
+    Application {
+        head: ApplicationHead,
+        #[rkyv(omit_bounds)]
+        arguments: Vec<TypeReference>,
+    },
 }
 
 impl NotaDecode for TypeReference {
@@ -1047,6 +1170,7 @@ impl NotaDecode for TypeReference {
                         type_name: "FixedBytes width",
                     })?,
             )),
+            "Application" => Self::from_nota_application_payload(&children[1]),
             other => Err(NotaDecodeError::UnknownVariant {
                 enum_name: "TypeReference",
                 variant: other.to_owned(),
@@ -1069,6 +1193,93 @@ impl NotaEncode for TypeReference {
             Self::Map(key, value) => format!("(Map ({} {}))", key.to_nota(), value.to_nota()),
             Self::Optional(reference) => format!("(Optional {})", reference.to_nota()),
             Self::ScopeOf(reference) => format!("(ScopeOf {})", reference.to_nota()),
+            Self::Application { head, arguments } => {
+                let arguments = arguments
+                    .iter()
+                    .map(Self::to_nota)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("(Application ({} ({arguments})))", head.name().to_nota())
+            }
+        }
+    }
+}
+
+/// `TypeReference` is itself a structural-macro node so the application
+/// form's variable-arity tail (`Vec<TypeReference>`, via nota-next's blanket
+/// `StructuralMacroNode for Vec<Item>`) can decode each argument back through
+/// the full reference grammar. Decode delegates to [`Self::from_block`] (which
+/// owns the built-in-head fast path and the application seam), and encode is
+/// the source-grammar projection — a bare PascalCase atom for a leaf, a
+/// headed parenthesis for every composite. This is the source-facing grammar
+/// projection, distinct from the canonical-only `NotaEncode`/`NotaDecode`
+/// machine codec above.
+impl nota_next::StructuralMacroNode for TypeReference {
+    type Error = SchemaError;
+
+    fn structural_position() -> nota_next::PositionPredicate {
+        nota_next::PositionPredicate::named("TypeReference")
+    }
+
+    fn structural_variants() -> Vec<nota_next::StructuralVariant> {
+        vec![
+            nota_next::BlockShape::symbol(Some(nota_next::CaptureName::new("reference")))
+                .into_structural_variant("TypeReference", "symbol reference atom"),
+        ]
+    }
+
+    fn from_structural_block(
+        block: &Block,
+    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        Self::from_block(block).map_err(nota_next::StructuralMacroError::MatchedNode)
+    }
+
+    fn from_structural_candidate(
+        candidate: nota_next::MacroCandidate<'_>,
+    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        match candidate.blocks() {
+            [block] => Self::from_structural_block(block),
+            blocks => Err(nota_next::StructuralMacroError::ExpectedSingleRoot {
+                found: blocks.len(),
+            }),
+        }
+    }
+
+    fn to_structural_nota(&self) -> String {
+        match self {
+            Self::String => "String".to_owned(),
+            Self::Integer => "Integer".to_owned(),
+            Self::Boolean => "Boolean".to_owned(),
+            Self::Path => "Path".to_owned(),
+            Self::Bytes => "Bytes".to_owned(),
+            Self::FixedBytes(width) => format!("(Bytes {width})"),
+            Self::Plain(name) => name.to_nota(),
+            Self::Vector(reference) => {
+                format!("(Vector {})", reference.to_structural_nota())
+            }
+            Self::Map(key, value) => format!(
+                "(Map ({} {}))",
+                key.to_structural_nota(),
+                value.to_structural_nota()
+            ),
+            Self::Optional(reference) => {
+                format!("(Optional {})", reference.to_structural_nota())
+            }
+            Self::ScopeOf(reference) => {
+                format!("(ScopeOf {})", reference.to_structural_nota())
+            }
+            Self::Application { head, arguments } => {
+                let tail = arguments
+                    .iter()
+                    .map(Self::to_structural_nota)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if tail.is_empty() {
+                    format!("({})", head.name().to_nota())
+                } else {
+                    format!("({} {tail})", head.name().to_nota())
+                }
+            }
         }
     }
 }
@@ -1111,7 +1322,8 @@ impl TypeReference {
             | Self::Vector(_)
             | Self::Map(..)
             | Self::Optional(_)
-            | Self::ScopeOf(_) => None,
+            | Self::ScopeOf(_)
+            | Self::Application { .. } => None,
         }
     }
 
@@ -1130,7 +1342,8 @@ impl TypeReference {
             | Self::Vector(_)
             | Self::Map(..)
             | Self::Optional(_)
-            | Self::ScopeOf(_) => None,
+            | Self::ScopeOf(_)
+            | Self::Application { .. } => None,
         }
     }
 
@@ -1149,6 +1362,39 @@ impl TypeReference {
             Box::new(Self::from_nota_block(&children[0])?),
             Box::new(Self::from_nota_block(&children[1])?),
         ))
+    }
+
+    /// Decode the grouped payload of the canonical `Application` machine
+    /// projection — `(head (arg0 arg1 …))`. The head always decodes as
+    /// `Local`; import resolution rewrites it to `Imported` later.
+    fn from_nota_application_payload(block: &Block) -> Result<Self, NotaDecodeError> {
+        let children = NotaBlock::new(block).expect_children(
+            Delimiter::Parenthesis,
+            "TypeReference::Application payload",
+            2,
+        )?;
+        let head = Name::from_nota_block(&children[0])?;
+        let argument_blocks = match &children[1] {
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                root_objects,
+                ..
+            } => root_objects.as_slice(),
+            _ => {
+                return Err(NotaDecodeError::ExpectedDelimited {
+                    type_name: "TypeReference::Application arguments",
+                    delimiter: "(",
+                });
+            }
+        };
+        let arguments = argument_blocks
+            .iter()
+            .map(Self::from_nota_block)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::Application {
+            head: ApplicationHead::Local(head),
+            arguments,
+        })
     }
 
     /// Lower an already-parsed NOTA block at a reference position into
@@ -1256,6 +1502,22 @@ impl TypeReference {
         name.schema_name()
     }
 
+    /// Lower a parenthesised reference. Dispatch ORDER is the grammar's
+    /// disambiguation — it is deliberately not compiler-checked (the
+    /// application form would otherwise conflict with every built-in and
+    /// declared head), so the ordering is stated here and pinned by tests:
+    ///
+    /// 1. The canonical built-in heads — `(Vector T)`, `(Optional T)`,
+    ///    `(ScopeOf T)`, `(Map (K V))`, `(Bytes N)` — are the direct fast
+    ///    path. Each has exactly one canonical spelling; the dropped aliases
+    ///    (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse.
+    /// 2. A DECLARED head — a registered user TypeReference macro (e.g.
+    ///    `(Bag $Type)`) — is consulted next; a declared head wins over the
+    ///    broad application form.
+    /// 3. The broad generic-application form `(Foo A B …)` is the
+    ///    structural-macro seam ([`ApplicationNode`] via the
+    ///    `#[shape(pascal_head, body)]` derive) — the fallback for any other
+    ///    PascalCase head whose tail decodes as type-reference arguments.
     fn from_parenthesis_objects(
         block: &Block,
         objects: &[Block],
@@ -1265,28 +1527,28 @@ impl TypeReference {
         if objects.len() == 2 {
             if let Some(head) = objects[0].demote_to_string() {
                 match head {
-                    "Vec" | "Vector" => {
+                    "Vector" => {
                         return Ok(Self::Vector(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,
                         )?)));
                     }
-                    "Optional" | "Option" => {
+                    "Optional" => {
                         return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,
                         )?)));
                     }
-                    "ScopeOf" | "Scope" => {
+                    "ScopeOf" => {
                         return Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,
                         )?)));
                     }
-                    "Map" | "KeyValue" => {
+                    "Map" => {
                         return Self::from_grouped_map_payload(&objects[1], registry, context);
                     }
                     "Bytes" => {
@@ -1296,7 +1558,41 @@ impl TypeReference {
                 }
             }
         }
-        Self::from_macro_invocation(block, registry, context)
+        Self::from_macro_or_application(block, registry, context)
+    }
+
+    /// The seam between a DECLARED head (a registered user macro) and the
+    /// broad generic-application form. A registered TypeReference macro is a
+    /// declared head and wins over the application fallback, so the registry
+    /// is consulted first; only when no macro matches does the broad
+    /// `(Foo A B …)` form decode through the structural-macro seam. This
+    /// ordering is the design's disambiguation and is NOT compiler-checked
+    /// (the application form structurally overlaps every PascalCase head), so
+    /// it is pinned by tests.
+    fn from_macro_or_application(
+        block: &Block,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        match Self::from_macro_invocation(block, registry, context) {
+            Ok(reference) => Ok(reference),
+            Err(SchemaError::MacroDidNotMatch { .. })
+            | Err(SchemaError::UnknownTypeReferenceForm { .. }) => Self::from_application(block),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Decode the broad generic-application form `(Foo A B …)` through the
+    /// `#[shape(pascal_head, body)]` structural-macro seam ([`ApplicationNode`]).
+    /// The head is always `Local` at decode time; import resolution rewrites
+    /// it to `Imported` later.
+    fn from_application(block: &Block) -> Result<Self, SchemaError> {
+        match ApplicationNode::from_structural_block(block)? {
+            ApplicationNode::Application(head, arguments) => Ok(Self::Application {
+                head: ApplicationHead::Local(head),
+                arguments,
+            }),
+        }
     }
 
     /// Lower the numeric width of a fixed-size byte reference `(Bytes N)`

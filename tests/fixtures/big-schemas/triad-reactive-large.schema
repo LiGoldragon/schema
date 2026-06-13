@@ -61,12 +61,12 @@
   MessageFailed { rejectionReason RejectionReason }
   Entry { topics Topics kind Kind description Description magnitude Magnitude actorIdentifier ActorIdentifier }
   Topic { string String }
-  Topics { values (Vec Topic) }
+  Topics { values (Vector Topic) }
   Description { string String }
   Kind [Decision Principle Correction Clarification Constraint Observation Question]
   Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]
-  Query { topics Topics kinds (Vec Kind) limit (Optional Integer) }
+  Query { topics Topics kinds (Vector Kind) limit (Optional Integer) }
   RecordIdentifier { integer Integer }
   SubscriptionToken { integer Integer }
-  RecordSet { records (Vec Entry) byTopic (Map (Topic RecordIdentifier)) }
+  RecordSet { records (Vector Entry) byTopic (Map (Topic RecordIdentifier)) }
 }

@@ -82,7 +82,7 @@ fn strict_key_value_declarations_lower_to_structs_and_enums() {
 fn bare_reference_declarations_lower_to_newtypes() {
     // The bare `Name Type` form declares a distinct newtype, not a transparent
     // alias (record qz6j: aliases offer no correctness and are not used).
-    let source = "[] [] { Topic String Topics (Vec Topic) }";
+    let source = "[] [] { Topic String Topics (Vector Topic) }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("bare reference forms lower");

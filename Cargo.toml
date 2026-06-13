@@ -17,6 +17,14 @@ blake3 = "1"
 nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 
+# DESIGNER-PROTOTYPE SEAM (not for integration): consume the step-1
+# nota-next `#[shape(pascal_head, body)]` derive directly from its feature
+# worktree. Operator must integrate `next/pascal-head-body-shape` into
+# nota-next main, then drop this patch and let the `branch = "main"` git dep
+# carry the derive.
+[patch."https://github.com/LiGoldragon/nota-next.git"]
+nota-next = { path = "../../nota-next/pascal-head-body-shape" }
+
 [lints.rust]
 unsafe_code = "forbid"
 unused      = { level = "warn", priority = -1 }

@@ -1775,6 +1775,11 @@ pub enum SourceReference {
         #[rkyv(omit_bounds)] Box<SourceReference>,
         #[rkyv(omit_bounds)] Box<SourceReference>,
     ),
+    Application {
+        head: Name,
+        #[rkyv(omit_bounds)]
+        arguments: Vec<SourceReference>,
+    },
 }
 
 impl SourceReference {
@@ -1796,30 +1801,47 @@ impl SourceReference {
         }
     }
 
+    /// Lower a parenthesised reference over the source-archive
+    /// [`RawNotaDatatype`] tree. Like the `Block` and `ExpandedObject` paths,
+    /// the canonical built-in heads are the fast path and the generic
+    /// application form `(Foo A B …)` is the fallback; the dropped aliases
+    /// (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse. `RawNotaDatatype`
+    /// is schema-next's own archive representation, not a nota-next `Block`,
+    /// so it keeps its own dispatch in lockstep with the other paths.
     fn from_record(sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
         let items = sequence.items();
-        if items.len() != 2 {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form: "typed reference record",
-                expected: "tag plus one grouped payload object",
-                found: items.len(),
-            });
-        }
-        let Some(head) = items[0].as_atom() else {
+        let Some(head) = items.first().and_then(RawNotaDatatype::as_atom) else {
             return Err(SchemaError::ExpectedSymbol {
-                found: SourceRawNotation::new(&items[0]).description(),
+                found: items
+                    .first()
+                    .map(|item| SourceRawNotation::new(item).description())
+                    .unwrap_or_else(|| SourceSequenceNotation::new(sequence).description()),
             });
         };
-        match head {
-            "Vec" | "Vector" => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
-            "Optional" | "Option" => Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
-            "ScopeOf" | "Scope" => Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
-            "Map" | "KeyValue" => Self::from_map_record(&items[1]),
-            "Bytes" => Self::from_fixed_bytes_record(&items[1]),
-            _ => Err(SchemaError::ExpectedSyntaxReference {
-                found: SourceSequenceNotation::new(sequence).description(),
-            }),
+        if items.len() == 2 {
+            match head {
+                "Vector" => return Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
+                "Optional" => return Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
+                "ScopeOf" => return Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
+                "Map" => return Self::from_map_record(&items[1]),
+                "Bytes" => return Self::from_fixed_bytes_record(&items[1]),
+                _ => {}
+            }
         }
+        let head_name = Name::new(head);
+        if !head_name.qualifies_as_pascal_case() {
+            return Err(SchemaError::ExpectedSyntaxReference {
+                found: SourceSequenceNotation::new(sequence).description(),
+            });
+        }
+        let arguments = items[1..]
+            .iter()
+            .map(Self::from_raw)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::Application {
+            head: head_name,
+            arguments,
+        })
     }
 
     /// Parse the numeric width of a fixed-size byte reference `(Bytes N)`.
@@ -1861,7 +1883,7 @@ impl SourceReference {
                 Delimiter::Parenthesis.wrap(["Bytes".to_owned(), width.to_string()])
             }
             Self::Vector(reference) => {
-                Delimiter::Parenthesis.wrap(["Vec".to_owned(), reference.to_schema_text()])
+                Delimiter::Parenthesis.wrap(["Vector".to_owned(), reference.to_schema_text()])
             }
             Self::Optional(reference) => {
                 Delimiter::Parenthesis.wrap(["Optional".to_owned(), reference.to_schema_text()])
@@ -1873,6 +1895,12 @@ impl SourceReference {
                 "Map".to_owned(),
                 Delimiter::Parenthesis.wrap([key.to_schema_text(), value.to_schema_text()]),
             ]),
+            Self::Application { head, arguments } => {
+                let mut items = Vec::with_capacity(arguments.len() + 1);
+                items.push(head.to_nota());
+                items.extend(arguments.iter().map(Self::to_schema_text));
+                Delimiter::Parenthesis.wrap(items)
+            }
         }
     }
 
@@ -1893,6 +1921,10 @@ impl SourceReference {
                 Box::new(key.to_type_reference()),
                 Box::new(value.to_type_reference()),
             ),
+            Self::Application { head, arguments } => TypeReference::Application {
+                head: crate::ApplicationHead::Local(head.clone()),
+                arguments: arguments.iter().map(Self::to_type_reference).collect(),
+            },
         }
     }
 }

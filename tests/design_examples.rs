@@ -525,7 +525,7 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
           RecordIdentifier Integer
           Entry { topic Topic }
           Query { topic Topic }
-          RecordSet (Vec Entry)
+          RecordSet (Vector Entry)
         }
     ";
     let schema = SchemaEngine::default()

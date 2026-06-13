@@ -289,6 +289,18 @@ impl<'schema> ClosureWalk<'schema> {
                 self.visit_reference(key)?;
                 self.visit_reference(value)
             }
+            // A generic application `(Foo A B …)` reaches both its head and
+            // each argument. Visiting the head name pulls a cross-crate
+            // generic head into the closure's imports exactly as a `Plain`
+            // leaf would; resolving the head this way is what would later
+            // rewrite `ApplicationHead::Local` to `Imported`.
+            TypeReference::Application { head, arguments } => {
+                self.visit_name(head.name())?;
+                for argument in arguments {
+                    self.visit_reference(argument)?;
+                }
+                Ok(())
+            }
         }
     }
 

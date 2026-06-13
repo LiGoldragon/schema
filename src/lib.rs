@@ -29,11 +29,11 @@ pub use nota_next::{
 pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile};
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
-    Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration, RelationValue, Schema,
-    SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
-    StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap, SymbolPath,
-    SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
+    ApplicationHead, Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey,
+    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration,
+    RelationValue, Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair,
+    SchemaNodeValue, StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap,
+    SymbolPath, SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody,

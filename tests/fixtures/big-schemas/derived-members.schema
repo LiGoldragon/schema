@@ -8,7 +8,7 @@
   RecordIdentifier Integer
   DatabaseMarker Integer
   Topic String
-  Topics { (Vec Topic) }
+  Topics { (Vector Topic) }
   Kind [Decision Correction]
   Description String
   Magnitude [Low High]
