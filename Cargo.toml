@@ -1,6 +1,6 @@
 [package]
 name         = "schema-next"
-version      = "0.2.0"
+version      = "0.3.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "MIT OR Apache-2.0"
@@ -16,6 +16,7 @@ path = "src/lib.rs"
 blake3 = "1"
 nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
+thiserror = "2"
 
 [lints.rust]
 unsafe_code = "forbid"
