@@ -1,9 +1,11 @@
-//! Generic application references — `(Foo A B …)` at a reference position.
+//! Generic application references — `(Foo A B …)` at a reference position —
+//! and parameterized DECLARATION heads — `(Name Param …)` at a
+//! declaration's type-name position.
 //!
 //! `TypeReference::Application { head, arguments }` is the broad
 //! generic-application form, captured by nota-next's
-//! `#[shape(pascal_head, body)]` structural-macro seam. These tests pin the
-//! four behaviours the design requires:
+//! `#[shape(pascal_head, body)]` structural-macro seam. The first block of
+//! tests pins the application-form behaviours from the earlier slice:
 //!
 //! (a) a multi-arg user generic application lowers to `Application` and
 //!     round-trips byte-stable through both the rkyv codec and the canonical
@@ -15,22 +17,30 @@
 //!     an ordinary application head now;
 //! (d) the closure walk over an imported generic head records that head's
 //!     import.
+//!
+//! The second block pins the parameterized-declaration-head behaviours
+//! (the head analogue of the application form): binders resolve inside the
+//! body instead of failing the closure walk, an `Application` of a declared
+//! parameterized head is arity-checked at lowering, and the declared head
+//! is consulted before the broad application form.
 
 use std::path::PathBuf;
 
 use nota_next::{Document, NotaDecode, NotaEncode};
 use schema_next::{
-    ApplicationHead, ImportResolver, MacroContext, Name, SchemaEngine, SchemaIdentity,
-    TypeDeclaration, TypeReference,
+    ApplicationHead, ImportResolver, MacroContext, Name, SchemaEngine, SchemaError, SchemaIdentity,
+    SchemaSourceArtifact, TypeDeclaration, TypeReference,
 };
 
 fn lower(namespace: &str) -> schema_next::Schema {
-    SchemaEngine::default()
-        .lower_source(
-            &format!("[] [] {{ {namespace} }}"),
-            SchemaIdentity::new("generics:lib", "0.1.0"),
-        )
-        .expect("schema lowers")
+    try_lower(namespace).expect("schema lowers")
+}
+
+fn try_lower(namespace: &str) -> Result<schema_next::Schema, SchemaError> {
+    SchemaEngine::default().lower_source(
+        &format!("[] [] {{ {namespace} }}"),
+        SchemaIdentity::new("generics:lib", "0.1.0"),
+    )
 }
 
 fn single_reference<'schema>(
@@ -187,5 +197,176 @@ fn closure_over_imported_generic_head_records_the_import() {
     assert!(
         imports.contains(&"DatabaseMarker".to_owned()),
         "the imported generic head is recorded in the closure, got {imports:?}",
+    );
+}
+
+// ----------------------------------------------------------------------
+// Parameterized DECLARATION heads `(Name Param …)` — the head analogue of
+// the application form. A declaration's type-name position becomes a
+// parenthesized `(Name Param Param …)` head that introduces type-parameter
+// binders; the binders resolve inside the body, and an `Application` of a
+// declared parameterized head is arity-checked at lowering (decision O8).
+// ----------------------------------------------------------------------
+
+fn declaration_parameters<'schema>(
+    schema: &'schema schema_next::Schema,
+    name: &str,
+) -> &'schema [Name] {
+    schema
+        .namespace()
+        .iter()
+        .find(|declaration| declaration.name().as_str() == name)
+        .expect("declaration present")
+        .parameters()
+}
+
+// (a) A parameterized declaration whose body uses its parameters as Plain
+//     references lowers, and its family closure resolves the binders
+//     instead of failing with FamilyReferenceNotFound.
+
+#[test]
+fn parameterized_declaration_resolves_its_parameters_as_binders() {
+    let schema = lower("(Plane Input Output) { source Input target Output }");
+
+    // The binders are recorded on the declaration, in order.
+    assert_eq!(
+        declaration_parameters(&schema, "Plane"),
+        &[Name::new("Input"), Name::new("Output")],
+    );
+
+    // The closure walk reaches `Input` and `Output` as Plain field
+    // references. Without binder scope this is a FamilyReferenceNotFound;
+    // with it, the walk succeeds and pulls in no extra declarations — a
+    // binder is a type-parameter, not a declared type.
+    let closure = schema
+        .family_closure("Plane")
+        .expect("parameterized declaration closes over its binders, not undeclared names");
+    let names = closure
+        .declarations()
+        .iter()
+        .map(|declaration| declaration.name().as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["Plane"]);
+}
+
+// (b) An Application supplying the WRONG argument count to a resolved
+//     parameterized head is a typed arity error AT LOWERING — not a panic,
+//     not a deferred emitter failure.
+
+#[test]
+fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
+    let error =
+        try_lower("(Plane Input Output) { source Input target Output } Holder (Plane String)")
+            .expect_err("one argument against a two-parameter head must fail at lowering");
+    assert_eq!(
+        error,
+        SchemaError::GenericArityMismatch {
+            head: "Plane".to_owned(),
+            expected: 2,
+            found: 1,
+        },
+    );
+}
+
+// (c) The correct argument count matching the declared arity lowers and
+//     the application reference is present.
+
+#[test]
+fn application_with_correct_argument_count_lowers() {
+    let schema =
+        lower("(Plane Input Output) { source Input target Output } Holder (Plane String Integer)");
+    assert_eq!(
+        single_reference(&schema, "Holder"),
+        &TypeReference::Application {
+            head: ApplicationHead::Local(Name::new("Plane")),
+            arguments: vec![TypeReference::String, TypeReference::Integer],
+        },
+    );
+}
+
+// (d) A declared parameterized head is consulted BEFORE the broad
+//     Application form: applying `(Plane …)` resolves to the declared
+//     `Plane` (so its arity binds), whereas an undeclared head fixes no
+//     arity and any count is accepted as an unresolved generic application.
+
+#[test]
+fn declared_parameterized_head_wins_over_unresolved_application() {
+    // The declared head's arity binds — a wrong count is rejected.
+    assert_eq!(
+        try_lower("(Plane Input Output) { source Input target Output } Holder (Plane String)")
+            .expect_err("declared head is consulted, so its arity binds"),
+        SchemaError::GenericArityMismatch {
+            head: "Plane".to_owned(),
+            expected: 2,
+            found: 1,
+        },
+    );
+
+    // An UNDECLARED head fixes no arity, so the same single-argument
+    // application is an ordinary unresolved generic application — proving
+    // the declared head, not the broad form, governed the case above.
+    let schema = lower("Holder (Foo String)");
+    assert_eq!(
+        single_reference(&schema, "Holder"),
+        &TypeReference::Application {
+            head: ApplicationHead::Local(Name::new("Foo")),
+            arguments: vec![TypeReference::String],
+        },
+    );
+}
+
+// The parameterized head survives the source-codec archive: the entry key
+// projects back to `(Plane Input Output)` text and re-decodes to the same
+// source object, and lowering through the source endpoint records the same
+// binders as the macro-engine path (edit site 2).
+
+#[test]
+fn parameterized_head_round_trips_through_the_source_codec() {
+    let source = "{}\n[]\n[]\n{\n  (Plane Input Output) { source Input target Output }\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
+    let canonical = artifact.to_schema_text();
+    assert!(
+        canonical.contains("(Plane Input Output) { source Input target Output }"),
+        "the parameterized head must project back to source text, got {canonical}",
+    );
+    let recovered =
+        SchemaSourceArtifact::from_schema_text(&canonical).expect("canonical source decodes");
+    assert_eq!(artifact, recovered, "the source archive round-trips");
+
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("generics:lib", "0.1.0"),
+        )
+        .expect("source endpoint lowers the parameterized declaration");
+    assert_eq!(
+        declaration_parameters(&schema, "Plane"),
+        &[Name::new("Input"), Name::new("Output")],
+    );
+}
+
+// Arity validation is shared by both lowering paths: the source-codec
+// endpoint rejects a wrong-arity application at lowering, exactly as the
+// macro-engine path does.
+
+#[test]
+fn source_codec_path_also_validates_application_arity() {
+    let source = "{}\n[]\n[]\n{\n  (Plane Input Output) { source Input target Output }\n  Holder (Plane String)\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
+    let error = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("generics:lib", "0.1.0"),
+        )
+        .expect_err("source-codec lowering must arity-check the application");
+    assert_eq!(
+        error,
+        SchemaError::GenericArityMismatch {
+            head: "Plane".to_owned(),
+            expected: 2,
+            found: 1,
+        },
     );
 }

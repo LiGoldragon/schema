@@ -102,6 +102,7 @@ impl TryFrom<&Name> for ImportSource {
 pub struct ResolvedImport {
     local_name: Name,
     source: ImportSource,
+    parameter_count: Option<u32>,
 }
 
 impl ResolvedImport {
@@ -111,6 +112,15 @@ impl ResolvedImport {
 
     pub fn source(&self) -> &ImportSource {
         &self.source
+    }
+
+    /// The generic arity of the imported type, carried across the crate
+    /// boundary so a consumer applying the imported head can validate its
+    /// argument count at lowering. `Some(0)` is a declared non-generic
+    /// import; `None` is an import that resolved to a root enum (roots are
+    /// not parameterizable), where no arity is fixed.
+    pub fn parameter_count(&self) -> Option<usize> {
+        self.parameter_count.map(|count| count as usize)
     }
 
     /// The Rust module path the imported type lives under in the
@@ -214,9 +224,18 @@ impl ImportResolver {
                 type_name: source.type_name().local_part().to_owned(),
             });
         }
+        // Carry the imported type's generic arity across the crate
+        // boundary. A namespace declaration reports its parameter count
+        // (`Some(0)` when non-generic); a root enum reports `None`, since
+        // roots are not parameterizable and fix no arity at an
+        // application site.
+        let parameter_count = module_schema
+            .declared_parameter_count(source.type_name().local_part())
+            .map(|count| count as u32);
         Ok(ResolvedImport {
             local_name: declaration.local_name.clone(),
             source,
+            parameter_count,
         })
     }
 

@@ -18,7 +18,7 @@
 //! resolved imports, so it is not a pure-structure address; the family
 //! hashes are.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::{
@@ -167,6 +167,13 @@ struct ClosureWalk<'schema> {
     declarations: BTreeMap<String, Declaration>,
     imports: BTreeMap<String, ImportDeclaration>,
     streams: BTreeMap<String, StreamDeclaration>,
+    /// Type-parameter binders in scope for the declaration currently
+    /// being walked. A parameterized declaration head `(Name Param …)`
+    /// introduces these; a `Plain` reference matching a binder resolves
+    /// as a type-parameter rather than a `FamilyReferenceNotFound`. The
+    /// scope is per-declaration, so each `visit_declaration` swaps in its
+    /// own parameters and restores the caller's on the way out.
+    binders: BTreeSet<String>,
 }
 
 impl<'schema> ClosureWalk<'schema> {
@@ -177,6 +184,7 @@ impl<'schema> ClosureWalk<'schema> {
             declarations: BTreeMap::new(),
             imports: BTreeMap::new(),
             streams: BTreeMap::new(),
+            binders: BTreeSet::new(),
         }
     }
 
@@ -224,19 +232,35 @@ impl<'schema> ClosureWalk<'schema> {
             return Ok(());
         }
         let value = declaration.value().clone();
+        // A declaration is closed over its own type parameters, not the
+        // caller's: swap in this declaration's binders for the body walk
+        // and restore the caller's scope afterwards. References to a
+        // binder resolve as a type-parameter, not a declared type.
+        let outer_binders = std::mem::replace(
+            &mut self.binders,
+            declaration
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.as_str().to_owned())
+                .collect(),
+        );
         self.declarations.insert(name, declaration);
-        match value {
+        let result = match value {
             TypeDeclaration::Struct(body) => {
+                let mut walked = Ok(());
                 for field in body.fields.iter() {
-                    self.visit_reference(&field.reference)?;
+                    walked = self.visit_reference(&field.reference);
+                    if walked.is_err() {
+                        break;
+                    }
                 }
+                walked
             }
-            TypeDeclaration::Newtype(body) => {
-                self.visit_reference(&body.reference)?;
-            }
-            TypeDeclaration::Enum(body) => self.visit_enum(&body)?,
-        }
-        Ok(())
+            TypeDeclaration::Newtype(body) => self.visit_reference(&body.reference),
+            TypeDeclaration::Enum(body) => self.visit_enum(&body),
+        };
+        self.binders = outer_binders;
+        result
     }
 
     fn visit_enum(&mut self, declaration: &EnumDeclaration) -> Result<(), SchemaError> {
@@ -305,6 +329,11 @@ impl<'schema> ClosureWalk<'schema> {
     }
 
     fn visit_name(&mut self, name: &Name) -> Result<(), SchemaError> {
+        // A type parameter in scope is a binder, not a declared type: it
+        // resolves here and contributes nothing further to the closure.
+        if self.binders.contains(name.as_str()) {
+            return Ok(());
+        }
         if self.declarations.contains_key(name.as_str()) || self.imports.contains_key(name.as_str())
         {
             return Ok(());

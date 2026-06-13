@@ -8,8 +8,8 @@ use crate::{
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     schema::{
-        Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name, NewtypeDeclaration,
-        Schema, TypeDeclaration, TypeReference,
+        Declaration, DeclarationHead, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
+        NewtypeDeclaration, Schema, TypeDeclaration, TypeReference,
     },
 };
 
@@ -193,6 +193,19 @@ pub enum SchemaError {
     },
     DuplicateFamilyTable {
         table: String,
+    },
+    DuplicateTypeParameter {
+        declaration: String,
+        parameter: String,
+    },
+    ExpectedTypeParameterName {
+        declaration: String,
+        found: String,
+    },
+    GenericArityMismatch {
+        head: String,
+        expected: usize,
+        found: usize,
     },
 }
 
@@ -458,6 +471,7 @@ impl SchemaEngine {
             Vec::new(),
         )
         .families_verified()
+        .and_then(Schema::arities_verified)
     }
 
     pub fn lower_source_with_resolver(
@@ -595,7 +609,7 @@ impl SchemaMacroHandler for KeyValueDeclarationMacro {
         })?;
         KeyValueDeclaration::new(pair)
             .lower(registry, context)
-            .map(MacroOutput::Type)
+            .map(MacroOutput::Declaration)
     }
 }
 
@@ -609,25 +623,33 @@ impl<'schema> KeyValueDeclaration<'schema> {
         Self { pair }
     }
 
+    /// Lower a namespace key/value pair into a public declaration. The
+    /// key position is a [`DeclarationHead`]: a bare name, or a
+    /// parameterized head `(Name Param …)` whose binders become the
+    /// declaration's type parameters. The body lowers the same way for
+    /// either head — the binders only change what the closure walk and
+    /// arity validation later see — so the parameters are attached to the
+    /// finished `Declaration` here.
     fn lower(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        let name = self.pair.name.schema_name()?;
-        match self.pair.definition {
+    ) -> Result<Declaration, SchemaError> {
+        let (name, parameters) = DeclarationHead::from_block(self.pair.name)?.into_parts();
+        let value = match self.pair.definition {
             Block::Delimited {
                 delimiter: nota_next::Delimiter::Brace,
                 root_objects,
                 ..
-            } => self.lower_struct(name, root_objects, registry, context),
+            } => self.lower_struct(name, root_objects, registry, context)?,
             Block::Delimited {
                 delimiter: nota_next::Delimiter::SquareBracket,
                 root_objects,
                 ..
-            } => self.lower_enum(name, root_objects, registry, context),
-            definition => self.lower_newtype(name, definition, registry, context),
-        }
+            } => self.lower_enum(name, root_objects, registry, context)?,
+            definition => self.lower_newtype(name, definition, registry, context)?,
+        };
+        Ok(Declaration::public(value).with_parameters(parameters))
     }
 
     fn lower_struct(
@@ -824,7 +846,7 @@ impl<'schema> NamespaceBlock<'schema> {
     ) -> Result<Vec<Declaration>, SchemaError> {
         let mut declarations = Vec::new();
         for pair in self.key_value_pairs()? {
-            let name = pair.name.schema_name()?;
+            let name = DeclarationHead::from_block(pair.name)?.into_parts().0;
             if TypeReference::is_reserved_scalar_name(&name) {
                 return Err(SchemaError::ReservedScalarTypeName {
                     name: name.as_str().to_owned(),
@@ -872,6 +894,10 @@ impl<'schema> NamespaceBlock<'schema> {
         }
         let inline_start = context.inline_declaration_count();
         match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
+            MacroOutput::Declaration(declaration) => {
+                declarations.extend(context.drain_inline_declarations_from(inline_start));
+                declarations.push(declaration);
+            }
             MacroOutput::Type(declaration) => {
                 declarations.extend(context.drain_inline_declarations_from(inline_start));
                 declarations.push(Declaration::public(declaration));

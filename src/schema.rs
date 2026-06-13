@@ -391,6 +391,113 @@ impl Schema {
             .or_else(|| self.root_named(name).map(SchemaDeclaredType::Root))
     }
 
+    /// The namespace declaration carrying the given name, with its
+    /// declared type parameters attached. Roots are not parameterizable,
+    /// so this is the namespace declaration only.
+    fn namespace_declaration_named(&self, name: &str) -> Option<&Declaration> {
+        self.namespace
+            .iter()
+            .find(|declaration| declaration.name().as_str() == name)
+    }
+
+    /// The declared generic arity of a named namespace type: the number
+    /// of type parameters its declaration head introduced. `None` for a
+    /// name that is not a namespace declaration (a root enum, an import,
+    /// or an unknown name). A non-parameterized declaration reports
+    /// `Some(0)`. The import resolver reads this across the crate
+    /// boundary so a consumer can validate an imported head's arity.
+    pub fn declared_parameter_count(&self, name: &str) -> Option<usize> {
+        self.namespace_declaration_named(name)
+            .map(|declaration| declaration.parameters().len())
+    }
+
+    /// The generic arity an `Application` head must supply when the head
+    /// resolves to a declared parameterized type. A locally-declared head
+    /// reports its declaration's parameter count; a resolved import head
+    /// reports the parameter count carried across the crate boundary.
+    /// `None` means the head is not a declared parameterized type in this
+    /// schema, so no arity is fixed here.
+    fn declared_head_arity(&self, head: &ApplicationHead) -> Option<usize> {
+        match head {
+            ApplicationHead::Local(name) => self
+                .namespace_declaration_named(name.as_str())
+                .map(|declaration| declaration.parameters().len()),
+            ApplicationHead::Imported(import) => import.parameter_count(),
+        }
+    }
+
+    /// Confirm every generic `Application` whose head resolves to a
+    /// declared parameterized type supplies exactly that head's declared
+    /// arity. This runs at lowering (decision O8), so a wrong argument
+    /// count is a typed `GenericArityMismatch` rather than a deferred
+    /// emitter failure. Heads that do not resolve to a declared
+    /// parameterized type are left for the closure walk to judge.
+    pub(crate) fn arities_verified(self) -> Result<Self, SchemaError> {
+        for declaration in &self.namespace {
+            self.verify_declaration_arities(declaration.value())?;
+        }
+        for root in self.input_and_output() {
+            self.verify_enum_arities(root)?;
+        }
+        Ok(self)
+    }
+
+    fn verify_declaration_arities(&self, declaration: &TypeDeclaration) -> Result<(), SchemaError> {
+        match declaration {
+            TypeDeclaration::Struct(body) => {
+                for field in body.fields.iter() {
+                    self.verify_reference_arities(&field.reference)?;
+                }
+                Ok(())
+            }
+            TypeDeclaration::Newtype(body) => self.verify_reference_arities(&body.reference),
+            TypeDeclaration::Enum(body) => self.verify_enum_arities(body),
+        }
+    }
+
+    fn verify_enum_arities(&self, declaration: &EnumDeclaration) -> Result<(), SchemaError> {
+        for variant in &declaration.variants {
+            if let Some(payload) = &variant.payload {
+                self.verify_reference_arities(payload)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn verify_reference_arities(&self, reference: &TypeReference) -> Result<(), SchemaError> {
+        match reference {
+            TypeReference::String
+            | TypeReference::Integer
+            | TypeReference::Boolean
+            | TypeReference::Path
+            | TypeReference::Bytes
+            | TypeReference::FixedBytes(_)
+            | TypeReference::Plain(_) => Ok(()),
+            TypeReference::Vector(inner)
+            | TypeReference::Optional(inner)
+            | TypeReference::ScopeOf(inner) => self.verify_reference_arities(inner),
+            TypeReference::Map(key, value) => {
+                self.verify_reference_arities(key)?;
+                self.verify_reference_arities(value)
+            }
+            TypeReference::Application { head, arguments } => {
+                if let Some(expected) = self.declared_head_arity(head)
+                    && expected != arguments.len()
+                {
+                    return Err(SchemaError::GenericArityMismatch {
+                        head: head.name().as_str().to_owned(),
+                        expected,
+                        found: arguments.len(),
+                    });
+                }
+                for argument in arguments {
+                    self.verify_reference_arities(argument)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub fn type_path(&self, type_name: &str) -> Option<SymbolPath> {
         self.type_named(type_name)
             .map(TypeDeclaration::name)
@@ -583,6 +690,7 @@ pub enum Visibility {
 pub struct Declaration {
     visibility: Visibility,
     name: Name,
+    parameters: Vec<Name>,
     value: TypeDeclaration,
 }
 
@@ -600,12 +708,30 @@ impl Declaration {
         Self {
             visibility,
             name,
+            parameters: Vec::new(),
             value,
         }
     }
 
+    /// Attach declared type parameters to this declaration. The
+    /// parameter names are the binders the parameterized declaration
+    /// head `(Name Param …)` introduces; references to them inside the
+    /// body resolve as type-parameter binders, and their count is the
+    /// declaration's generic arity that an `Application` must match.
+    pub fn with_parameters(mut self, parameters: Vec<Name>) -> Self {
+        self.parameters = parameters;
+        self
+    }
+
     pub fn name(&self) -> &Name {
         &self.name
+    }
+
+    /// The declared type parameters of this declaration, in order. Empty
+    /// for an ordinary (non-parameterized) declaration. The length is the
+    /// declaration's generic arity.
+    pub fn parameters(&self) -> &[Name] {
+        &self.parameters
     }
 
     pub fn visibility(&self) -> Visibility {
@@ -1081,6 +1207,73 @@ impl ApplicationHead {
 enum ApplicationNode {
     #[shape(pascal_head, body)]
     Application(Name, Vec<TypeReference>),
+}
+
+/// A declaration's type-name position: either a bare `Name` (the ordinary
+/// declaration head) or a parameterized head `(Name Param Param …)` that
+/// introduces type-parameter binders. The parameterized form is
+/// structurally the same captured-head + variable-arity tail as the
+/// generic-application form, so it decodes through the *same*
+/// `#[shape(pascal_head, body)]` seam ([`ApplicationNode`]) — each tail
+/// item must be a bare binder name (a `Plain` reference), since a
+/// parameter is a binder, not an applied type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclarationHead {
+    name: Name,
+    parameters: Vec<Name>,
+}
+
+impl DeclarationHead {
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn parameters(&self) -> &[Name] {
+        &self.parameters
+    }
+
+    pub fn into_parts(self) -> (Name, Vec<Name>) {
+        (self.name, self.parameters)
+    }
+
+    /// Decode the declaration-name position from its block. A bare symbol
+    /// atom is an ordinary head with no parameters; a parenthesized
+    /// `(Name Param …)` reuses the application seam and lifts each binder
+    /// out of the decoded tail.
+    pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        match block {
+            Block::Delimited {
+                delimiter: Delimiter::Parenthesis,
+                ..
+            } => Self::from_parameterized(block),
+            _ => Ok(Self {
+                name: block.schema_name()?,
+                parameters: Vec::new(),
+            }),
+        }
+    }
+
+    fn from_parameterized(block: &Block) -> Result<Self, SchemaError> {
+        let ApplicationNode::Application(name, tail) =
+            ApplicationNode::from_structural_block(block)?;
+        let mut parameters = Vec::with_capacity(tail.len());
+        for argument in tail {
+            let TypeReference::Plain(parameter) = argument else {
+                return Err(SchemaError::ExpectedTypeParameterName {
+                    declaration: name.as_str().to_owned(),
+                    found: argument.to_structural_nota(),
+                });
+            };
+            if parameters.iter().any(|existing| existing == &parameter) {
+                return Err(SchemaError::DuplicateTypeParameter {
+                    declaration: name.as_str().to_owned(),
+                    parameter: parameter.as_str().to_owned(),
+                });
+            }
+            parameters.push(parameter);
+        }
+        Ok(Self { name, parameters })
+    }
 }
 
 /// A type at a reference position — a struct field's type, an enum

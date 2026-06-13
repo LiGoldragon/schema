@@ -337,7 +337,9 @@ fn design_example_macro_node_definitions_separate_structural_from_tagged_invocat
 /// namespace declarations the cases are key/value pair nodes: a symbol
 /// key with a brace value is a struct macro, a symbol key with a
 /// bracket value is an enum macro, and a symbol key with a reference
-/// value is a newtype macro.
+/// value is a newtype macro. The parameterized declaration form
+/// `(Name Param …)` adds a mirror case for each body shape, so a
+/// declaration head can introduce type-parameter binders.
 #[test]
 fn design_example_macro_node_definition_lists_structural_cases() {
     let registry = MacroRegistry::with_schema_defaults();
@@ -350,7 +352,10 @@ fn design_example_macro_node_definition_lists_structural_cases() {
         vec![
             "struct declaration",
             "enum declaration",
-            "newtype declaration"
+            "newtype declaration",
+            "parameterized struct declaration",
+            "parameterized enum declaration",
+            "parameterized newtype declaration",
         ]
     );
 

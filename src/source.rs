@@ -9,10 +9,10 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence,
-    RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine, SchemaError,
-    SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
+    Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey,
+    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype,
+    RawNotaSequence, RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine,
+    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
     TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
 };
@@ -184,6 +184,7 @@ impl SchemaSource {
             self.relations.to_schema_relations(),
         )
         .families_verified()
+        .and_then(Schema::arities_verified)
     }
 }
 
@@ -398,8 +399,13 @@ impl SourceNamespace {
         }
         let mut entries = Vec::new();
         for pair in body.root_objects().chunks_exact(2) {
+            // The entry key is a declaration head: a bare name, or a
+            // parameterized `(Name Param …)` head introducing binders.
+            // The value lowers the same way for either head.
+            let (name, parameters) = DeclarationHead::from_block(&pair[0])?.into_parts();
             entries.push(SourceNamespaceEntry {
-                name: SourceAtom::from_block(&pair[0])?.into_name(),
+                name,
+                parameters,
                 value: SourceDeclarationValue::from_block(&pair[1])?,
             });
         }
@@ -463,6 +469,7 @@ impl SourceNamespace {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceNamespaceEntry {
     name: Name,
+    parameters: Vec<Name>,
     value: SourceDeclarationValue,
 }
 
@@ -471,12 +478,34 @@ impl SourceNamespaceEntry {
         &self.name
     }
 
+    /// The declared type parameters from a parameterized entry head
+    /// `(Name Param …)`. Empty for a bare-name entry.
+    pub fn parameters(&self) -> &[Name] {
+        &self.parameters
+    }
+
     pub fn value(&self) -> &SourceDeclarationValue {
         &self.value
     }
 
     fn to_schema_text(&self) -> String {
-        format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
+        format!(
+            "{} {}",
+            self.head_schema_text(),
+            self.value.to_schema_text()
+        )
+    }
+
+    /// Project the entry's key position back to source text: a bare name,
+    /// or a parameterized head `(Name Param …)` re-emitting each binder.
+    fn head_schema_text(&self) -> String {
+        if self.parameters.is_empty() {
+            return self.name.to_nota();
+        }
+        let mut items = Vec::with_capacity(self.parameters.len() + 1);
+        items.push(self.name.to_nota());
+        items.extend(self.parameters.iter().map(Name::to_nota));
+        Delimiter::Parenthesis.wrap(items)
     }
 
     fn to_declaration_group(
@@ -485,6 +514,7 @@ impl SourceNamespaceEntry {
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         self.value
             .to_namespace_declaration_group(self.name.clone(), resolver)
+            .map(|group| group.with_parameters(self.parameters.clone()))
     }
 
     fn to_stream_declaration(&self) -> Option<StreamDeclaration> {
@@ -2059,6 +2089,10 @@ struct SourceDeclarationGroup {
     public: Vec<TypeDeclaration>,
     private: Vec<TypeDeclaration>,
     primary: Option<TypeDeclaration>,
+    /// Declared type parameters carried from a parameterized entry head.
+    /// They attach to the group's primary declaration; the inline helper
+    /// declarations (public / private) are not parameterized.
+    parameters: Vec<Name>,
 }
 
 impl SourceDeclarationGroup {
@@ -2067,6 +2101,7 @@ impl SourceDeclarationGroup {
             public: Vec::new(),
             private: Vec::new(),
             primary: None,
+            parameters: Vec::new(),
         }
     }
 
@@ -2075,6 +2110,7 @@ impl SourceDeclarationGroup {
             public: Vec::new(),
             private: Vec::new(),
             primary: Some(primary),
+            parameters: Vec::new(),
         }
     }
 
@@ -2087,7 +2123,16 @@ impl SourceDeclarationGroup {
             public,
             private,
             primary: Some(primary),
+            parameters: Vec::new(),
         }
+    }
+
+    /// Attach declared type parameters to the group's primary
+    /// declaration. The binders belong to the named declaration the entry
+    /// head introduced, not to its inline helpers.
+    fn with_parameters(mut self, parameters: Vec<Name>) -> Self {
+        self.parameters = parameters;
+        self
     }
 
     fn into_public_declarations(self) -> Vec<Declaration> {
@@ -2098,7 +2143,7 @@ impl SourceDeclarationGroup {
             .collect::<Vec<_>>();
         declarations.extend(self.private.into_iter().map(Declaration::private));
         if let Some(primary) = self.primary {
-            declarations.push(Declaration::public(primary));
+            declarations.push(Declaration::public(primary).with_parameters(self.parameters));
         }
         declarations
     }
