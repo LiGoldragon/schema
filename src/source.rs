@@ -10,7 +10,7 @@ use nota_next::{
 
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence,
+    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence, ReferenceHead,
     RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine, SchemaError,
     SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
     TypeDeclaration, TypeReference,
@@ -1810,13 +1810,15 @@ impl SourceReference {
                 found: SourceRawNotation::new(&items[0]).description(),
             });
         };
-        match head {
-            "Vec" | "Vector" => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
-            "Optional" | "Option" => Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
-            "ScopeOf" | "Scope" => Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
-            "Map" | "KeyValue" => Self::from_map_record(&items[1]),
-            "Bytes" => Self::from_fixed_bytes_record(&items[1]),
-            _ => Err(SchemaError::ExpectedSyntaxReference {
+        match ReferenceHead::classify(head) {
+            Some(ReferenceHead::Vector) => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
+            Some(ReferenceHead::Optional) => {
+                Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?)))
+            }
+            Some(ReferenceHead::ScopeOf) => Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
+            Some(ReferenceHead::Map) => Self::from_map_record(&items[1]),
+            Some(ReferenceHead::Bytes) => Self::from_fixed_bytes_record(&items[1]),
+            None => Err(SchemaError::ExpectedSyntaxReference {
                 found: SourceSequenceNotation::new(sequence).description(),
             }),
         }

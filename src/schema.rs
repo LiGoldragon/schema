@@ -984,6 +984,19 @@ impl FamilyDeclaration {
 /// `Optional<T>`. `(ScopeOf T)` lowers to the typed prefix-scope language for
 /// `T`. Parentheses with other heads remain available for user-declared
 /// type-reference macros.
+///
+/// The canonical reference-grammar head-set — and its alias spellings — lives
+/// in exactly one place, [`ReferenceHead`]. Every reference-lowering site
+/// (parenthesised blocks, macro-template expansion, expanded objects, and the
+/// source codec's raw records) classifies its head through that one method
+/// rather than hand-copying the alias match, so the five lowering sites cannot
+/// drift apart.
+///
+/// Note: `TypeReference` keeps a hand-written NOTA codec ([`NotaDecode`] /
+/// [`NotaEncode`] below), which round-trips the canonical tags (`Plain`,
+/// `Vector`, `FixedBytes`, …) without aliases. Folding that codec into the
+/// nota-next structural-macro derive is a separate design decision and is
+/// deliberately left as a hand-written codec pending it.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 #[rkyv(
     bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
@@ -1005,6 +1018,46 @@ pub enum TypeReference {
     ),
     Optional(#[rkyv(omit_bounds)] Box<TypeReference>),
     ScopeOf(#[rkyv(omit_bounds)] Box<TypeReference>),
+}
+
+/// The canonical head of a parenthesised reference form, recognised from any
+/// of its alias spellings. This is the single source of truth for the
+/// reference grammar's recognised heads: each lowering site classifies its
+/// head through [`ReferenceHead::classify`] and matches on the resulting
+/// variant instead of hand-copying the alias set. A variant carries the
+/// shape the lowering site must then read (a single inner reference, a
+/// key/value map payload, or a fixed-byte width), but reading the children
+/// stays with the site, since each site reads a different parsed
+/// representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReferenceHead {
+    /// `(Vec T)` / `(Vector T)` — a homogeneous sequence of `T`.
+    Vector,
+    /// `(Optional T)` / `(Option T)` — an absent-or-present `T`.
+    Optional,
+    /// `(ScopeOf T)` / `(Scope T)` — the typed prefix-scope language for `T`.
+    ScopeOf,
+    /// `(Map (K V))` / `(KeyValue (K V))` — a key/value mapping.
+    Map,
+    /// `(Bytes N)` — a fixed-width byte array of `N` bytes.
+    Bytes,
+}
+
+impl ReferenceHead {
+    /// Classify a parenthesised reference head, accepting every canonical
+    /// spelling and its aliases. Returns `None` for any head that is not a
+    /// grammar form, leaving the site to treat it as a declared-name macro
+    /// invocation or an error per its own rules.
+    pub fn classify(head: &str) -> Option<Self> {
+        match head {
+            "Vec" | "Vector" => Some(Self::Vector),
+            "Optional" | "Option" => Some(Self::Optional),
+            "ScopeOf" | "Scope" => Some(Self::ScopeOf),
+            "Map" | "KeyValue" => Some(Self::Map),
+            "Bytes" => Some(Self::Bytes),
+            _ => None,
+        }
+    }
 }
 
 impl NotaDecode for TypeReference {
@@ -1264,35 +1317,35 @@ impl TypeReference {
     ) -> Result<Self, SchemaError> {
         if objects.len() == 2 {
             if let Some(head) = objects[0].demote_to_string() {
-                match head {
-                    "Vec" | "Vector" => {
+                match ReferenceHead::classify(head) {
+                    Some(ReferenceHead::Vector) => {
                         return Ok(Self::Vector(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,
                         )?)));
                     }
-                    "Optional" | "Option" => {
+                    Some(ReferenceHead::Optional) => {
                         return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,
                         )?)));
                     }
-                    "ScopeOf" | "Scope" => {
+                    Some(ReferenceHead::ScopeOf) => {
                         return Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
                             &objects[1],
                             registry,
                             context,
                         )?)));
                     }
-                    "Map" | "KeyValue" => {
+                    Some(ReferenceHead::Map) => {
                         return Self::from_grouped_map_payload(&objects[1], registry, context);
                     }
-                    "Bytes" => {
+                    Some(ReferenceHead::Bytes) => {
                         return Self::from_fixed_bytes_width(&objects[1]);
                     }
-                    _ => {}
+                    None => {}
                 }
             }
         }

@@ -30,8 +30,8 @@ pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
     Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration, RelationValue, Schema,
-    SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
+    ImportDeclaration, Name, NewtypeDeclaration, ReferenceHead, RelationDeclaration, RelationValue,
+    Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
     StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap, SymbolPath,
     SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
 };
