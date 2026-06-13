@@ -60,11 +60,11 @@ fn assert_schema_data_shape(name: &str, schema: &Schema) {
     );
     assert_eq!(schema.identity().version(), "0.1.0");
     assert!(
-        !schema.input().variants.is_empty(),
+        !root_enum(schema.input()).variants.is_empty(),
         "{name} should lower typed input variants"
     );
     assert!(
-        !schema.output().variants.is_empty(),
+        !root_enum(schema.output()).variants.is_empty(),
         "{name} should lower typed output variants"
     );
     assert!(
@@ -113,7 +113,12 @@ fn assert_has_type(declarations: &[Declaration], name: &str) {
     assert!(found, "missing namespace type {name}");
 }
 
-fn assert_has_variant(declaration: &EnumDeclaration, name: &str) {
+fn root_enum(root: &schema_next::Root) -> &EnumDeclaration {
+    root.as_enum().expect("root is the enum-body form")
+}
+
+fn assert_has_variant(root: &schema_next::Root, name: &str) {
+    let declaration = root_enum(root);
     assert!(
         declaration
             .variants

@@ -208,7 +208,11 @@ fn collection_payload_lowers_in_an_output_variant() {
     let schema = lower(
         "[] [(Projected (Map (NodeName NodeConfig)))] { NodeName { string String } NodeConfig { string String } }",
     );
-    let payload = schema.output().variants[0]
+    let payload = schema
+        .output()
+        .as_enum()
+        .expect("output is the enum-body form")
+        .variants[0]
         .payload
         .as_ref()
         .expect("projected payload");

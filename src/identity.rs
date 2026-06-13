@@ -105,9 +105,18 @@ impl fmt::Debug for ContentHash {
 /// depend on walk order. A reachable cross-crate import contributes its
 /// stable identity (the local alias plus its `crate:module:Type`
 /// source), not the dependency's own declarations.
+///
+/// When the family root is the application form `(Head Arg …)`, the
+/// applied reference is held in `root_application` as well: the reachable
+/// declarations and imports alone do not distinguish two application roots
+/// whose arguments differ only in scalar leaves (`String` versus
+/// `Integer` reach nothing), so the application reference itself is part of
+/// the closure's canonical bytes. An enum root leaves `root_application`
+/// empty.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct FamilyClosure {
     root: Name,
+    root_application: Option<TypeReference>,
     declarations: Vec<Declaration>,
     imports: Vec<ImportDeclaration>,
     streams: Vec<StreamDeclaration>,
@@ -116,6 +125,13 @@ pub struct FamilyClosure {
 impl FamilyClosure {
     pub fn root(&self) -> &Name {
         &self.root
+    }
+
+    /// The applied reference when the family root is the application form;
+    /// `None` for an enum root. It is `Some(TypeReference::Application{..})`
+    /// by construction.
+    pub fn root_application(&self) -> Option<&TypeReference> {
+        self.root_application.as_ref()
     }
 
     pub fn declarations(&self) -> &[Declaration] {
@@ -176,6 +192,31 @@ struct ClosureWalk<'schema> {
     binders: BTreeSet<String>,
 }
 
+/// A family's starting point for the closure walk. A declaration root (a
+/// namespace declaration or an enum-body root, both wrapped as a
+/// `Declaration`) walks through `visit_declaration`; an application root
+/// `(Head Arg …)` walks through `visit_reference` on the reference it
+/// projects to — the *same* `Application` arm a field-position application
+/// takes, so no second hashing path exists. The position name carries the
+/// root's identity when the root is an application (an application has no
+/// declaration name of its own).
+enum FamilyRoot {
+    Declaration(Declaration),
+    Application {
+        name: Name,
+        reference: TypeReference,
+    },
+}
+
+impl FamilyRoot {
+    fn name(&self) -> &Name {
+        match self {
+            Self::Declaration(declaration) => declaration.name(),
+            Self::Application { name, .. } => name,
+        }
+    }
+}
+
 impl<'schema> ClosureWalk<'schema> {
     fn new(schema: &'schema Schema, family: &'schema str) -> Self {
         Self {
@@ -194,29 +235,52 @@ impl<'schema> ClosureWalk<'schema> {
                 .ok_or_else(|| SchemaError::FamilyRootNotFound {
                     name: self.family.to_owned(),
                 })?;
-        self.visit_declaration(root.clone())?;
+        let name = root.name().clone();
+        // An application root holds its applied reference in the closure so
+        // the content hash incorporates the full argument structure; an
+        // enum/namespace root contributes only its reachable declarations.
+        let root_application = match &root {
+            FamilyRoot::Declaration(declaration) => {
+                self.visit_declaration(declaration.clone())?;
+                None
+            }
+            FamilyRoot::Application { reference, .. } => {
+                self.visit_reference(reference)?;
+                Some(reference.clone())
+            }
+        };
         Ok(FamilyClosure {
-            root: root.name().clone(),
+            root: name,
+            root_application,
             declarations: self.declarations.into_values().collect(),
             imports: self.imports.into_values().collect(),
             streams: self.streams.into_values().collect(),
         })
     }
 
-    /// A family root is a namespace declaration or a root enum. A root
-    /// enum enters the closure as a public enum declaration: the
-    /// closure is its own value, and the root's input/output position
-    /// is the version-control layer's concern, not the closure's.
-    fn family_root(&self, family_name: &str) -> Option<Declaration> {
-        self.namespace_declaration(family_name)
-            .cloned()
-            .or_else(|| {
-                self.schema
-                    .root_named(family_name)
-                    .cloned()
-                    .map(TypeDeclaration::Enum)
-                    .map(Declaration::public)
-            })
+    /// A family root is a namespace declaration, an enum-body root, or an
+    /// application-form root. The first two enter the closure as a public
+    /// declaration walked through `visit_declaration`; the application form
+    /// enters as the reference it projects to, walked through the shared
+    /// `Application` arm of `visit_reference`. The root's input/output
+    /// position is the version-control layer's concern, not the closure's.
+    fn family_root(&self, family_name: &str) -> Option<FamilyRoot> {
+        if let Some(declaration) = self.namespace_declaration(family_name) {
+            return Some(FamilyRoot::Declaration(declaration.clone()));
+        }
+        let root = self.schema.root_named(family_name)?;
+        match root.as_application() {
+            Some(application) => Some(FamilyRoot::Application {
+                name: application.name().clone(),
+                reference: TypeReference::from(application),
+            }),
+            None => root
+                .as_enum()
+                .cloned()
+                .map(TypeDeclaration::Enum)
+                .map(Declaration::public)
+                .map(FamilyRoot::Declaration),
+        }
     }
 
     fn namespace_declaration(&self, name: &str) -> Option<&'schema Declaration> {
@@ -341,7 +405,7 @@ impl<'schema> ClosureWalk<'schema> {
         if let Some(declaration) = self.namespace_declaration(name.as_str()) {
             return self.visit_declaration(declaration.clone());
         }
-        if let Some(root) = self.schema.root_named(name.as_str()) {
+        if let Some(root) = self.schema.root_enum_named(name.as_str()) {
             let declaration = Declaration::public(TypeDeclaration::Enum(root.clone()));
             return self.visit_declaration(declaration);
         }

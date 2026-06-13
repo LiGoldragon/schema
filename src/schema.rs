@@ -260,13 +260,118 @@ impl fmt::Display for SymbolPath {
     }
 }
 
+/// A component-root Input/Output position. Today the position forces an
+/// enum body `[Variant …]`, but a root may also be a typed sum applied
+/// at the position directly — `(Work SignalInput SemaWriteOutput …)` — an
+/// application of an imported or locally-declared parameterized head. The
+/// closed sum names the two shapes a root can take; nothing else is a
+/// legal root.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub enum Root {
+    /// The enum-body root `[Variant …]` — the position lowers to a public
+    /// enum declaration whose variants are the root's signatures.
+    Enum(EnumDeclaration),
+    /// The application-form root `(Head Arg …)` — the position is a typed
+    /// sum produced by applying a parameterized head to its arguments. The
+    /// application is boxed: an imported head carries a `ResolvedImport`, so
+    /// an unboxed `RootApplication` would make `Root` (and every `Schema`
+    /// holding two roots) carry that weight even for the common enum root.
+    Application(Box<RootApplication>),
+}
+
+impl Root {
+    /// Build an application root from its parts, boxing the application.
+    pub fn application(application: RootApplication) -> Self {
+        Self::Application(Box::new(application))
+    }
+
+    /// The root's identity name: an enum root carries its declaration name,
+    /// an application root carries its position name (`Input` / `Output`).
+    pub fn name(&self) -> &Name {
+        match self {
+            Self::Enum(declaration) => &declaration.name,
+            Self::Application(application) => application.name(),
+        }
+    }
+
+    /// The enum declaration when this root is the enum-body form; `None`
+    /// for an application root. Callers that genuinely need the variant
+    /// list (symbol-path resolution, variant lookup) read through this.
+    pub fn as_enum(&self) -> Option<&EnumDeclaration> {
+        match self {
+            Self::Enum(declaration) => Some(declaration),
+            Self::Application(_) => None,
+        }
+    }
+
+    /// The application when this root is the application form; `None` for
+    /// an enum root.
+    pub fn as_application(&self) -> Option<&RootApplication> {
+        match self {
+            Self::Application(application) => Some(application.as_ref()),
+            Self::Enum(_) => None,
+        }
+    }
+}
+
+/// A root in the application form `(Head Arg …)`: a parameterized head
+/// applied to a tail of type-reference arguments, standing at a root
+/// Input/Output position. It mirrors [`TypeReference::Application`]'s shape
+/// but carries the position name the root is identified by, since an
+/// application has no declaration name of its own. The content-address
+/// closure reuses the field-position `Application` walk by projecting this
+/// root back into a [`TypeReference::Application`] (see [`TypeReference`]'s
+/// `From<&RootApplication>`).
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct RootApplication {
+    name: Name,
+    head: ApplicationHead,
+    arguments: Vec<TypeReference>,
+}
+
+impl RootApplication {
+    pub fn new(name: Name, head: ApplicationHead, arguments: Vec<TypeReference>) -> Self {
+        Self {
+            name,
+            head,
+            arguments,
+        }
+    }
+
+    /// The position name this application root is identified by
+    /// (`Input` / `Output`).
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn head(&self) -> &ApplicationHead {
+        &self.head
+    }
+
+    pub fn arguments(&self) -> &[TypeReference] {
+        &self.arguments
+    }
+}
+
+impl From<&RootApplication> for TypeReference {
+    /// Project the application root back into a field-position application
+    /// reference, so the existing `Application` closure walk and arity
+    /// validation cover it without a second code path.
+    fn from(application: &RootApplication) -> Self {
+        Self::Application {
+            head: application.head.clone(),
+            arguments: application.arguments.clone(),
+        }
+    }
+}
+
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Schema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
-    input: EnumDeclaration,
-    output: EnumDeclaration,
+    input: Root,
+    output: Root,
     namespace: Vec<Declaration>,
     streams: Vec<StreamDeclaration>,
     families: Vec<FamilyDeclaration>,
@@ -283,8 +388,8 @@ impl Schema {
         identity: super::SchemaIdentity,
         imports: Vec<ImportDeclaration>,
         resolved_imports: Vec<super::ResolvedImport>,
-        input: EnumDeclaration,
-        output: EnumDeclaration,
+        input: Root,
+        output: Root,
         namespace: Vec<Declaration>,
         streams: Vec<StreamDeclaration>,
         families: Vec<FamilyDeclaration>,
@@ -319,22 +424,34 @@ impl Schema {
         &self.resolved_imports
     }
 
-    pub fn input(&self) -> &EnumDeclaration {
+    pub fn input(&self) -> &Root {
         &self.input
     }
 
-    pub fn output(&self) -> &EnumDeclaration {
+    pub fn output(&self) -> &Root {
         &self.output
     }
 
-    pub fn input_and_output(&self) -> [&EnumDeclaration; 2] {
+    pub fn input_and_output(&self) -> [&Root; 2] {
         [self.input(), self.output()]
     }
 
-    pub fn root_named(&self, name: &str) -> Option<&EnumDeclaration> {
+    /// The root carrying the given position name. Either root shape
+    /// answers — an enum root by its declaration name, an application root
+    /// by its position name — so callers that only need the enum body
+    /// chain `.and_then(Root::as_enum)`.
+    pub fn root_named(&self, name: &str) -> Option<&Root> {
         self.input_and_output()
             .into_iter()
-            .find(|declaration| declaration.name.as_str() == name)
+            .find(|root| root.name().as_str() == name)
+    }
+
+    /// The enum body of the root carrying the given position name; `None`
+    /// when no such root exists or the root is an application form. Variant
+    /// lookups (symbol paths, family records resolving to a root enum) go
+    /// through this.
+    pub fn root_enum_named(&self, name: &str) -> Option<&EnumDeclaration> {
+        self.root_named(name).and_then(Root::as_enum)
     }
 
     pub fn namespace(&self) -> &[Declaration] {
@@ -371,7 +488,7 @@ impl Schema {
 
     fn family_record_resolves(&self, record: &Name) -> bool {
         self.type_named(record.as_str()).is_some()
-            || self.root_named(record.as_str()).is_some()
+            || self.root_enum_named(record.as_str()).is_some()
             || self
                 .imports
                 .iter()
@@ -388,7 +505,7 @@ impl Schema {
     pub fn declared_type_named(&self, name: &str) -> Option<SchemaDeclaredType<'_>> {
         self.type_named(name)
             .map(SchemaDeclaredType::Namespace)
-            .or_else(|| self.root_named(name).map(SchemaDeclaredType::Root))
+            .or_else(|| self.root_enum_named(name).map(SchemaDeclaredType::Root))
     }
 
     /// The namespace declaration carrying the given name, with its
@@ -437,9 +554,23 @@ impl Schema {
             self.verify_declaration_arities(declaration.value())?;
         }
         for root in self.input_and_output() {
-            self.verify_enum_arities(root)?;
+            self.verify_root_arities(root)?;
         }
         Ok(self)
+    }
+
+    /// Arity-verify a root in either shape: an enum root verifies each
+    /// variant payload; an application root verifies the application
+    /// reference it projects to, so a wrong argument count against a
+    /// declared parameterized head is the same typed error at the root
+    /// position as at a field position.
+    fn verify_root_arities(&self, root: &Root) -> Result<(), SchemaError> {
+        match root {
+            Root::Enum(declaration) => self.verify_enum_arities(declaration),
+            Root::Application(application) => {
+                self.verify_reference_arities(&TypeReference::from(application.as_ref()))
+            }
+        }
     }
 
     fn verify_declaration_arities(&self, declaration: &TypeDeclaration) -> Result<(), SchemaError> {
@@ -505,7 +636,7 @@ impl Schema {
     }
 
     pub fn root_variant_path(&self, root_name: &str, variant_name: &str) -> Option<SymbolPath> {
-        self.root_named(root_name).and_then(|root| {
+        self.root_enum_named(root_name).and_then(|root| {
             root.variants
                 .iter()
                 .find(|variant| variant.name.as_str() == variant_name)
@@ -552,7 +683,7 @@ impl Schema {
             }
             [root_name, variant_name]
                 if self
-                    .root_named(root_name.as_str())
+                    .root_enum_named(root_name.as_str())
                     .is_some_and(|root| root.has_variant(variant_name)) =>
             {
                 Some(SymbolPathPosition::RootVariant {

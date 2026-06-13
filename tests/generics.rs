@@ -28,8 +28,8 @@ use std::path::PathBuf;
 
 use nota_next::{Document, NotaDecode, NotaEncode};
 use schema_next::{
-    ApplicationHead, ImportResolver, MacroContext, Name, SchemaEngine, SchemaError, SchemaIdentity,
-    SchemaSourceArtifact, TypeDeclaration, TypeReference,
+    ApplicationHead, ImportResolver, MacroContext, Name, Root, SchemaEngine, SchemaError,
+    SchemaIdentity, SchemaSourceArtifact, TypeDeclaration, TypeReference,
 };
 
 fn lower(namespace: &str) -> schema_next::Schema {
@@ -368,5 +368,200 @@ fn source_codec_path_also_validates_application_arity() {
             expected: 2,
             found: 1,
         },
+    );
+}
+
+// ----------------------------------------------------------------------
+// Root-position application `(Head Arg …)` — the component-root Input /
+// Output position as a typed sum. A root is now `Root::Enum` (the enum-body
+// form `[Variant …]`) OR `Root::Application` (an application of an
+// imported/declared parameterized head). The application root is
+// closure-walked identically to a field-position application: its head and
+// arguments route through the SAME `visit_reference` Application arm, so the
+// content-address stays deterministic and incorporates the arguments.
+// ----------------------------------------------------------------------
+
+/// A document whose Input root is the application form `(Work A B C D)` over
+/// a locally-declared four-parameter head, with an empty Output enum. The
+/// four argument types are declared so the closure walk resolves them; the
+/// head's arity (4) matches the application's argument count.
+fn application_root_source(read_output: &str) -> String {
+    format!(
+        "(Work SignalInput SemaWriteOutput {read_output} EffectOutcome) [] {{ \
+         (Work In WriteOut ReadOut Outcome) {{ request In writes WriteOut reads ReadOut outcome Outcome }} \
+         SignalInput {{ payload String }} \
+         SemaWriteOutput {{ written Boolean }} \
+         SemaReadOutput {{ records Integer }} \
+         AltReadOutput {{ rows Integer }} \
+         EffectOutcome {{ ok Boolean }} \
+         }}"
+    )
+}
+
+fn lower_application_root(read_output: &str) -> schema_next::Schema {
+    SchemaEngine::default()
+        .lower_source(
+            &application_root_source(read_output),
+            SchemaIdentity::new("reaction-frame:lib", "0.1.0"),
+        )
+        .expect("application-root schema lowers")
+}
+
+// (a) An Input root in the application form lowers to a root carrying
+//     `TypeReference::Application`; `family_root`/`root_named` return the
+//     application root WITHOUT panicking.
+
+#[test]
+fn root_position_application_lowers_to_root_application() {
+    let schema = lower_application_root("SemaReadOutput");
+
+    // The Input root is the application form; the Output root stays an enum.
+    assert!(
+        matches!(schema.input(), Root::Application(_)),
+        "Input root should be the application form, got {:?}",
+        schema.input(),
+    );
+    let application = schema
+        .input()
+        .as_application()
+        .expect("Input root is the application form");
+    assert_eq!(application.name().as_str(), "Input");
+    assert_eq!(
+        application.head(),
+        &ApplicationHead::Local(Name::new("Work")),
+    );
+    assert_eq!(
+        application.arguments(),
+        &[
+            TypeReference::new("SignalInput"),
+            TypeReference::new("SemaWriteOutput"),
+            TypeReference::new("SemaReadOutput"),
+            TypeReference::new("EffectOutcome"),
+        ],
+    );
+    assert!(
+        matches!(schema.output(), Root::Enum(_)),
+        "the empty Output position stays the enum-body form",
+    );
+
+    // The application root projects back to a field-position application
+    // reference — the exact value the closure walk consumes.
+    assert_eq!(
+        TypeReference::from(application),
+        TypeReference::Application {
+            head: ApplicationHead::Local(Name::new("Work")),
+            arguments: vec![
+                TypeReference::new("SignalInput"),
+                TypeReference::new("SemaWriteOutput"),
+                TypeReference::new("SemaReadOutput"),
+                TypeReference::new("EffectOutcome"),
+            ],
+        },
+    );
+
+    // `root_named` and the closure entry return the application root without
+    // panicking; the closure builds and carries the applied reference.
+    let root = schema.root_named("Input").expect("Input root present");
+    assert!(
+        root.as_application().is_some(),
+        "root_named yields the application root"
+    );
+    let closure = schema
+        .family_closure("Input")
+        .expect("application-root family closure builds");
+    assert_eq!(closure.root().as_str(), "Input");
+    assert!(
+        closure.root_application().is_some(),
+        "the closure carries the applied reference for an application root",
+    );
+    // The walk reached the head declaration and every argument declaration.
+    let names = closure
+        .declarations()
+        .iter()
+        .map(|declaration| declaration.name().as_str().to_owned())
+        .collect::<Vec<_>>();
+    for reached in [
+        "Work",
+        "SignalInput",
+        "SemaWriteOutput",
+        "SemaReadOutput",
+        "EffectOutcome",
+    ] {
+        assert!(
+            names.contains(&reached.to_owned()),
+            "closure reaches {reached}, got {names:?}"
+        );
+    }
+}
+
+// (b) The existing enum-body root form `[Variant …]` STILL lowers to a
+//     `Root::Enum(EnumDeclaration)` — no regression.
+
+#[test]
+fn enum_body_root_still_lowers_to_root_enum() {
+    let schema = SchemaEngine::default()
+        .lower_source(
+            "[(Record Entry)] [(Recorded Receipt)] { Entry { topic String } Receipt { ok Boolean } }",
+            SchemaIdentity::new("enum-root:lib", "0.1.0"),
+        )
+        .expect("enum-body root schema lowers");
+
+    let Root::Enum(input) = schema.input() else {
+        panic!(
+            "Input root should be the enum-body form, got {:?}",
+            schema.input()
+        );
+    };
+    assert_eq!(input.name.as_str(), "Input");
+    assert_eq!(input.variants[0].name.as_str(), "Record");
+    assert!(
+        matches!(schema.output(), Root::Enum(_)),
+        "the Output root is also the enum-body form",
+    );
+    // No application reference for an enum root.
+    let closure = schema
+        .family_closure("Input")
+        .expect("enum-root closure builds");
+    assert!(
+        closure.root_application().is_none(),
+        "an enum root carries no application reference in its closure",
+    );
+}
+
+// (c) The O4 proof: the application-root family's content-address is STABLE
+//     across re-lowering the same source, AND CHANGES when one argument type
+//     is changed — proving the arguments are incorporated into the closure.
+
+#[test]
+fn application_root_closure_hash_is_stable_and_argument_sensitive() {
+    let first = lower_application_root("SemaReadOutput");
+    let again = lower_application_root("SemaReadOutput");
+
+    let first_hash = first
+        .family_closure("Input")
+        .expect("first closure")
+        .content_hash()
+        .expect("first closure hashes");
+    let again_hash = again
+        .family_closure("Input")
+        .expect("re-lowered closure")
+        .content_hash()
+        .expect("re-lowered closure hashes");
+    assert_eq!(
+        first_hash, again_hash,
+        "the application-root closure hash is stable across re-lowering the same source",
+    );
+
+    // Swap the third argument `SemaReadOutput` -> `AltReadOutput`; the
+    // applied reference changes, so the closure address must move.
+    let changed = lower_application_root("AltReadOutput");
+    let changed_hash = changed
+        .family_closure("Input")
+        .expect("changed closure")
+        .content_hash()
+        .expect("changed closure hashes");
+    assert_ne!(
+        first_hash, changed_hash,
+        "changing one application argument moves the closure address",
     );
 }

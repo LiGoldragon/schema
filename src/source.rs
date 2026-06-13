@@ -11,9 +11,9 @@ use nota_next::{
 use crate::{
     Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey,
     FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype,
-    RawNotaSequence, RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine,
-    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
-    TypeDeclaration, TypeReference,
+    RawNotaSequence, RelationDeclaration, RelationValue, ResolvedImport, Root, RootApplication,
+    Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
+    StructDeclaration, TableName, TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -170,8 +170,8 @@ impl SchemaSource {
         namespace.push_public_declarations(self.output.public_inline_declarations(&resolver)?)?;
         let streams = self.namespace.stream_declarations()?;
         let families = self.namespace.family_declarations()?;
-        let input = self.input.to_schema_enum(&namespace)?;
-        let output = self.output.to_schema_enum(&namespace)?;
+        let input = self.input.to_root(&namespace)?;
+        let output = self.output.to_root(&namespace)?;
         Schema::new(
             identity,
             imports,
@@ -339,10 +339,15 @@ impl SourceImport {
     }
 }
 
+/// A root Input/Output position in the source codec. The body is a typed
+/// sum mirroring the semantic [`Root`]: the enum-body form `[Variant …]`
+/// or the application form `(Head Arg …)`. The name is the position name
+/// (`Input` / `Output`) — for an enum root it also names the lowered enum
+/// declaration; for an application root it is only the position identity.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceRootEnum {
     name: Name,
-    body: SourceEnumBody,
+    body: SourceRootBody,
 }
 
 impl SourceRootEnum {
@@ -350,14 +355,14 @@ impl SourceRootEnum {
         &self.name
     }
 
-    pub fn body(&self) -> &SourceEnumBody {
+    pub fn body(&self) -> &SourceRootBody {
         &self.body
     }
 
     fn from_block(name: Name, block: &Block) -> Result<Self, SchemaError> {
         Ok(Self {
             name,
-            body: SourceEnumBody::from_block(block)?,
+            body: SourceRootBody::from_block(block)?,
         })
     }
 
@@ -365,18 +370,119 @@ impl SourceRootEnum {
         &self,
         resolver: &SourceTypeResolver,
     ) -> Result<Vec<Declaration>, SchemaError> {
-        let mut declarations = Vec::new();
-        for declaration in self.body.public_inline_declarations(resolver)? {
-            declarations.push(declaration);
-        }
-        Ok(declarations)
+        self.body.public_inline_declarations(resolver)
     }
 
-    fn to_schema_enum(
+    fn to_root(&self, namespace: &SourceLoweredNamespace) -> Result<Root, SchemaError> {
+        self.body.to_root(self.name.clone(), namespace)
+    }
+}
+
+/// The two shapes a source-codec root body can take, mirroring the
+/// semantic [`Root`] sum. The application form holds a [`SourceReference`]
+/// known to be its `Application` variant; lowering projects it through
+/// `SourceReference::to_type_reference`, the same conversion a
+/// field-position source reference takes.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum SourceRootBody {
+    Enum(#[rkyv(omit_bounds)] SourceEnumBody),
+    Application(#[rkyv(omit_bounds)] SourceReference),
+}
+
+impl SourceRootBody {
+    /// The enum body when this root is the enum-body form; `None` for an
+    /// application root.
+    pub fn as_enum(&self) -> Option<&SourceEnumBody> {
+        match self {
+            Self::Enum(body) => Some(body),
+            Self::Application(_) => None,
+        }
+    }
+
+    /// The applied reference when this root is the application form; `None`
+    /// for an enum root. It is the `SourceReference::Application` variant by
+    /// construction.
+    pub fn as_application(&self) -> Option<&SourceReference> {
+        match self {
+            Self::Application(reference) => Some(reference),
+            Self::Enum(_) => None,
+        }
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        if block.is_parenthesis() {
+            let reference = SourceReference::from_block(block)?;
+            let SourceReference::Application { .. } = &reference else {
+                return Err(SchemaError::ExpectedRootApplication {
+                    position: "root",
+                    found: reference.to_schema_text(),
+                });
+            };
+            return Ok(Self::Application(reference));
+        }
+        Ok(Self::Enum(SourceEnumBody::from_block(block)?))
+    }
+
+    pub fn to_schema_text(&self) -> String {
+        match self {
+            Self::Enum(body) => body.to_schema_text(),
+            Self::Application(reference) => reference.to_schema_text(),
+        }
+    }
+
+    fn public_inline_declarations(
         &self,
-        namespace: &SourceLoweredNamespace,
-    ) -> Result<EnumDeclaration, SchemaError> {
-        self.body.to_schema_enum(self.name.clone(), namespace)
+        resolver: &SourceTypeResolver,
+    ) -> Result<Vec<Declaration>, SchemaError> {
+        match self {
+            Self::Enum(body) => body.public_inline_declarations(resolver),
+            // An application root introduces no inline declarations — its
+            // head and arguments are references to names declared elsewhere.
+            Self::Application(_) => Ok(Vec::new()),
+        }
+    }
+
+    pub fn inline_declaration_names(&self) -> Vec<Name> {
+        match self {
+            Self::Enum(body) => body.inline_declaration_names(),
+            Self::Application(_) => Vec::new(),
+        }
+    }
+
+    pub fn public_inline_field_declaration_names(&self) -> Vec<Name> {
+        match self {
+            Self::Enum(body) => body.public_inline_field_declaration_names(),
+            Self::Application(_) => Vec::new(),
+        }
+    }
+
+    fn to_root(&self, name: Name, namespace: &SourceLoweredNamespace) -> Result<Root, SchemaError> {
+        match self {
+            Self::Enum(body) => body.to_schema_enum(name, namespace).map(Root::Enum),
+            Self::Application(reference) => {
+                let TypeReference::Application { head, arguments } = reference.to_type_reference()
+                else {
+                    return Err(SchemaError::ExpectedRootApplication {
+                        position: "root",
+                        found: reference.to_schema_text(),
+                    });
+                };
+                Ok(Root::application(RootApplication::new(
+                    name, head, arguments,
+                )))
+            }
+        }
     }
 }
 

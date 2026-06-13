@@ -257,8 +257,12 @@ fn schema_is_typed_data_with_named_field_accessors() {
 
     // Typed accessors — Schema is a noun with methods, not a string blob.
     let _: &[schema_next::ImportDeclaration] = schema.imports();
-    let _: &schema_next::EnumDeclaration = schema.input();
-    let _: &schema_next::EnumDeclaration = schema.output();
+    let _: &schema_next::Root = schema.input();
+    let _: &schema_next::Root = schema.output();
+    let _: &schema_next::EnumDeclaration = schema
+        .input()
+        .as_enum()
+        .expect("core input is an enum root");
     let _: &[schema_next::Declaration] = schema.namespace();
 
     // The namespace carries typed `Declaration` values; pick one and

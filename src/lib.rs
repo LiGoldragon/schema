@@ -31,15 +31,16 @@ pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
     ApplicationHead, Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration,
     FamilyKey, FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration,
-    RelationValue, Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair,
-    SchemaNodeValue, StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap,
-    SymbolPath, SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
+    RelationValue, Root, RootApplication, Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData,
+    SchemaNodePair, SchemaNodeValue, StreamDeclaration, StreamRelation, StructDeclaration,
+    StructFieldMap, SymbolPath, SymbolPathPosition, TableName, TypeDeclaration, TypeReference,
+    Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody,
     SourceField, SourceFieldValue, SourceImport, SourceImports, SourceNamespace,
     SourceNamespaceEntry, SourceReference, SourceRelation, SourceRelationValue, SourceRelations,
-    SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
+    SourceRootBody, SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
     SourceVariantSignature, StreamRelationKeyword,
 };
 pub use upgrade::{

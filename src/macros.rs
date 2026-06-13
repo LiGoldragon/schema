@@ -6,8 +6,8 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, Schema, SchemaError,
-    TypeDeclaration, TypeReference,
+    Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, RootApplication,
+    Schema, SchemaError, TypeDeclaration, TypeReference,
 };
 
 /// Each position is a keyword structural variant, so a bootstrap macro
@@ -219,6 +219,9 @@ pub enum MacroOutput {
     Schema(Schema),
     Imports(Vec<ImportDeclaration>),
     RootEnum(EnumDeclaration),
+    /// A root in the application form `(Head Arg …)` — the typed-sum
+    /// alternative to `RootEnum` at an Input/Output position.
+    RootApplication(RootApplication),
     Types(Vec<Declaration>),
     Type(TypeDeclaration),
     /// A fully-formed namespace declaration carrying its visibility and
@@ -580,15 +583,26 @@ impl MacroNodeDefinition {
     }
 
     fn root_enum(position: MacroPosition) -> Self {
+        // A root position accepts two structural forms: the enum body
+        // `[Variant …]` and the application form `(Head Arg …)`. Both are
+        // RootPositional; the handler dispatches on the delimiter.
         Self::with_cases(
             position,
             MacroDispatch::RootPositional,
-            vec![Self::block_case(
-                position,
-                "root enum body",
-                MacroDelimiter::SquareBracket,
-                NotaMacroObjectCount::Any,
-            )],
+            vec![
+                Self::block_case(
+                    position,
+                    "root enum body",
+                    MacroDelimiter::SquareBracket,
+                    NotaMacroObjectCount::Any,
+                ),
+                Self::block_case(
+                    position,
+                    "root application body",
+                    MacroDelimiter::Parenthesis,
+                    NotaMacroObjectCount::Any,
+                ),
+            ],
         )
     }
 

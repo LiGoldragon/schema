@@ -171,7 +171,10 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
         )
         .expect("schema source lowers");
 
-    let input = schema.input();
+    let input = schema
+        .input()
+        .as_enum()
+        .expect("input is the enum-body form");
     assert_eq!(input.variants[0].name.as_str(), "Lookup");
     assert_eq!(
         input.variants[0]
@@ -224,7 +227,11 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
         "second inline root declaration should enter the exported namespace"
     );
     assert_eq!(
-        schema.input().variants[0]
+        schema
+            .input()
+            .as_enum()
+            .expect("input is the enum-body form")
+            .variants[0]
             .payload
             .as_ref()
             .and_then(schema_next::TypeReference::plain_name)
@@ -500,7 +507,11 @@ fn schema_source_lowers_stream_declarations_and_variant_relations() {
         "stream declarations are schema metadata, not namespace data types"
     );
 
-    let watch_relation = schema.input().variants[0]
+    let watch_relation = schema
+        .input()
+        .as_enum()
+        .expect("input is the enum-body form")
+        .variants[0]
         .stream_relation
         .as_ref()
         .expect("Watch opens a stream");
@@ -533,7 +544,13 @@ fn source_enum_variants_are_typed_structural_macro_nodes() {
         "structural enum variant nodes encode back to the same schema source surface"
     );
 
-    let input_variants = artifact.source().input().body().variants();
+    let input_variants = artifact
+        .source()
+        .input()
+        .body()
+        .as_enum()
+        .expect("source input is the enum-body form")
+        .variants();
     assert_eq!(input_variants[0].name().as_str(), "Reserved");
     assert_eq!(input_variants[0].payload(), None);
     assert_eq!(input_variants[1].name().as_str(), "Record");
@@ -559,6 +576,8 @@ fn source_enum_variants_are_typed_structural_macro_nodes() {
         .expect("schema source lowers");
     let variants = schema
         .input()
+        .as_enum()
+        .expect("input is the enum-body form")
         .variants
         .iter()
         .map(|variant| {
