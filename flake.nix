@@ -126,8 +126,8 @@
             grep -R "pub struct MacroRegistry" ${src}/src/macros.rs >/dev/null
             grep -R "SchemaEngine::with_registry" ${src}/tests/lowering.rs >/dev/null
             grep -R "default_engine_lowers_through_registered_structural_forms" ${src}/tests/lowering.rs >/dev/null
-            grep -R "root_named(\"Input\")" ${src}/tests/lowering.rs >/dev/null
-            grep -R "root_named(\"Output\")" ${src}/tests/lowering.rs >/dev/null
+            grep -R "root_enum_named(\"Input\")" ${src}/tests/lowering.rs >/dev/null
+            grep -R "root_enum_named(\"Output\")" ${src}/tests/lowering.rs >/dev/null
             ! grep -R "type_declaration_macro:" ${src}/src/engine.rs
             ! grep -R "surface_macro:" ${src}/src/engine.rs
             ! grep -R "matches_pair" ${src}/src/engine.rs
