@@ -33,7 +33,7 @@ fn entry_schema_source() -> &'static str {
        RecordIdentifier Integer\n\
        Entry { Topic * Description * Kind * }\n\
        Query { Topic * Kind * }\n\
-       RecordSet (Vec Entry)\n\
+       RecordSet (Vector Entry)\n\
        Kind [Decision Principle Correction Clarification Constraint]\n\
      }\n"
 }

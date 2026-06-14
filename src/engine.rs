@@ -1,4 +1,4 @@
-use nota_next::{Block, Delimiter, Document, NotaBody};
+use nota_next::{Block, Delimiter, Document, NotaBody, NotaEncode};
 
 use crate::{
     ImportResolver, SchemaSource,
@@ -8,8 +8,8 @@ use crate::{
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     schema::{
-        Declaration, EnumDeclaration, EnumVariant, ImportDeclaration, Name, NewtypeDeclaration,
-        Schema, TypeDeclaration, TypeReference,
+        Declaration, DeclarationHead, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
+        NewtypeDeclaration, Root, RootApplication, Schema, TypeDeclaration, TypeReference,
     },
 };
 
@@ -193,6 +193,27 @@ pub enum SchemaError {
     },
     DuplicateFamilyTable {
         table: String,
+    },
+    DuplicateTypeParameter {
+        declaration: String,
+        parameter: String,
+    },
+    ExpectedTypeParameterName {
+        declaration: String,
+        found: String,
+    },
+    GenericArityMismatch {
+        head: String,
+        expected: usize,
+        found: usize,
+    },
+    /// A parenthesis at a root Input/Output position did not decode to the
+    /// application form `(Head Arg …)` — a built-in head (`(Vector T)`), a
+    /// collection form, or any other non-application parenthesis is not a
+    /// legal root body.
+    ExpectedRootApplication {
+        position: &'static str,
+        found: String,
     },
 }
 
@@ -458,6 +479,7 @@ impl SchemaEngine {
             Vec::new(),
         )
         .families_verified()
+        .and_then(Schema::arities_verified)
     }
 
     pub fn lower_source_with_resolver(
@@ -494,15 +516,16 @@ impl SchemaEngine {
         object: &Block,
         position: MacroPosition,
         context: &mut MacroContext,
-    ) -> Result<EnumDeclaration, SchemaError> {
+    ) -> Result<Root, SchemaError> {
         match self
             .registry
             .lower(MacroObject::Block(object), position, context)?
         {
-            MacroOutput::RootEnum(declaration) => Ok(declaration),
+            MacroOutput::RootEnum(declaration) => Ok(Root::Enum(declaration)),
+            MacroOutput::RootApplication(application) => Ok(Root::application(application)),
             _ => Err(SchemaError::UnexpectedMacroOutput {
                 macro_name: "RootEnum".to_owned(),
-                expected: "root enum",
+                expected: "root enum or root application",
             }),
         }
     }
@@ -595,7 +618,7 @@ impl SchemaMacroHandler for KeyValueDeclarationMacro {
         })?;
         KeyValueDeclaration::new(pair)
             .lower(registry, context)
-            .map(MacroOutput::Type)
+            .map(MacroOutput::Declaration)
     }
 }
 
@@ -609,25 +632,33 @@ impl<'schema> KeyValueDeclaration<'schema> {
         Self { pair }
     }
 
+    /// Lower a namespace key/value pair into a public declaration. The
+    /// key position is a [`DeclarationHead`]: a bare name, or a
+    /// parameterized head `(Name Param …)` whose binders become the
+    /// declaration's type parameters. The body lowers the same way for
+    /// either head — the binders only change what the closure walk and
+    /// arity validation later see — so the parameters are attached to the
+    /// finished `Declaration` here.
     fn lower(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        let name = self.pair.name.schema_name()?;
-        match self.pair.definition {
+    ) -> Result<Declaration, SchemaError> {
+        let (name, parameters) = DeclarationHead::from_block(self.pair.name)?.into_parts();
+        let value = match self.pair.definition {
             Block::Delimited {
                 delimiter: nota_next::Delimiter::Brace,
                 root_objects,
                 ..
-            } => self.lower_struct(name, root_objects, registry, context),
+            } => self.lower_struct(name, root_objects, registry, context)?,
             Block::Delimited {
                 delimiter: nota_next::Delimiter::SquareBracket,
                 root_objects,
                 ..
-            } => self.lower_enum(name, root_objects, registry, context),
-            definition => self.lower_newtype(name, definition, registry, context),
-        }
+            } => self.lower_enum(name, root_objects, registry, context)?,
+            definition => self.lower_newtype(name, definition, registry, context)?,
+        };
+        Ok(Declaration::public(value).with_parameters(parameters))
     }
 
     fn lower_struct(
@@ -824,7 +855,7 @@ impl<'schema> NamespaceBlock<'schema> {
     ) -> Result<Vec<Declaration>, SchemaError> {
         let mut declarations = Vec::new();
         for pair in self.key_value_pairs()? {
-            let name = pair.name.schema_name()?;
+            let name = DeclarationHead::from_block(pair.name)?.into_parts().0;
             if TypeReference::is_reserved_scalar_name(&name) {
                 return Err(SchemaError::ReservedScalarTypeName {
                     name: name.as_str().to_owned(),
@@ -872,6 +903,10 @@ impl<'schema> NamespaceBlock<'schema> {
         }
         let inline_start = context.inline_declaration_count();
         match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
+            MacroOutput::Declaration(declaration) => {
+                declarations.extend(context.drain_inline_declarations_from(inline_start));
+                declarations.push(declaration);
+            }
             MacroOutput::Type(declaration) => {
                 declarations.extend(context.drain_inline_declarations_from(inline_start));
                 declarations.push(Declaration::public(declaration));
@@ -966,8 +1001,13 @@ impl SchemaMacroHandler for RootEnumMacro {
     }
 
     fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
+        // A root position accepts either the enum-body form `[Variant …]`
+        // or the application form `(Head Arg …)` — both lower through this
+        // handler, dispatched on the delimiter at `lower`.
         self.signature.accepts_position(position)
-            && object.block().is_some_and(Block::is_square_bracket)
+            && object
+                .block()
+                .is_some_and(|block| block.is_square_bracket() || block.is_parenthesis())
     }
 
     fn lower(
@@ -981,10 +1021,57 @@ impl SchemaMacroHandler for RootEnumMacro {
         let object = object.block().ok_or(SchemaError::ExpectedDelimiter {
             expected: self.signature.expected_delimiter(),
         })?;
+        if object.is_parenthesis() {
+            return RootApplicationBlock::new(object, self.enum_name)
+                .lower(registry, context)
+                .map(MacroOutput::RootApplication);
+        }
         let root_enum = RootEnumBlock::from_block(object, self.enum_name)?;
         let name = root_enum.name();
         let variants = root_enum.variants(registry, context)?;
         Ok(MacroOutput::RootEnum(EnumDeclaration::new(name, variants)))
+    }
+}
+
+/// The application-form root `(Head Arg …)` at an Input/Output position. It
+/// lowers through the *same* `TypeReference::from_block_with_registry`
+/// parenthesis decode a field-position application takes, so the head and
+/// arguments resolve identically; the only root-specific addition is the
+/// position name (`Input` / `Output`) the root is identified by, since an
+/// application carries no declaration name of its own. A parenthesis at a
+/// root position that does not decode to an application (a built-in head
+/// like `(Vector T)`, or a collection form) is rejected as a non-root form.
+#[derive(Clone, Copy, Debug)]
+struct RootApplicationBlock<'schema> {
+    block: &'schema Block,
+    position_name: &'static str,
+}
+
+impl<'schema> RootApplicationBlock<'schema> {
+    fn new(block: &'schema Block, position_name: &'static str) -> Self {
+        Self {
+            block,
+            position_name,
+        }
+    }
+
+    fn lower(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<RootApplication, SchemaError> {
+        let reference = TypeReference::from_block_with_registry(self.block, registry, context)?;
+        let TypeReference::Application { head, arguments } = reference else {
+            return Err(SchemaError::ExpectedRootApplication {
+                position: self.position_name,
+                found: reference.to_nota(),
+            });
+        };
+        Ok(RootApplication::new(
+            Name::new(self.position_name),
+            head,
+            arguments,
+        ))
     }
 }
 

@@ -6,8 +6,8 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, Schema, SchemaError,
-    TypeDeclaration, TypeReference,
+    Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, RootApplication,
+    Schema, SchemaError, TypeDeclaration, TypeReference,
 };
 
 /// Each position is a keyword structural variant, so a bootstrap macro
@@ -219,8 +219,16 @@ pub enum MacroOutput {
     Schema(Schema),
     Imports(Vec<ImportDeclaration>),
     RootEnum(EnumDeclaration),
+    /// A root in the application form `(Head Arg …)` — the typed-sum
+    /// alternative to `RootEnum` at an Input/Output position.
+    RootApplication(RootApplication),
     Types(Vec<Declaration>),
     Type(TypeDeclaration),
+    /// A fully-formed namespace declaration carrying its visibility and
+    /// declared type parameters. The parameterized declaration head
+    /// `(Name Param …)` lowers to this so the binders stay attached to
+    /// their declaration rather than being recovered from the bare value.
+    Declaration(Declaration),
     Fields(Vec<FieldDeclaration>),
     Variants(Vec<crate::EnumVariant>),
     Reference(TypeReference),
@@ -394,6 +402,53 @@ impl MacroNodeDefinition {
                     PatternElement::any(Some(CaptureName::new("reference"))),
                     "symbol key followed by type reference value",
                 ),
+                // Parameterized declaration heads `(Name Param …)` carry the
+                // binders in the key position. The key is the same
+                // captured-head + variable-arity-tail shape the application
+                // form uses (`#[shape(pascal_head, body)]`); each body shape
+                // gets its own parameterized case so the dispatch stays
+                // exhaustive over struct / enum / newtype bodies.
+                Self::pair_case(
+                    MacroPosition::NamespaceDeclaration,
+                    "parameterized struct declaration",
+                    PatternElement::delimited(DelimitedShape::new(
+                        MacroDelimiter::Parenthesis,
+                        NotaMacroObjectCount::Any,
+                        Some(CaptureName::new("type_head")),
+                    )),
+                    PatternElement::delimited(DelimitedShape::new(
+                        MacroDelimiter::Brace,
+                        NotaMacroObjectCount::Any,
+                        Some(CaptureName::new("body")),
+                    )),
+                    "parameterized head followed by brace value",
+                ),
+                Self::pair_case(
+                    MacroPosition::NamespaceDeclaration,
+                    "parameterized enum declaration",
+                    PatternElement::delimited(DelimitedShape::new(
+                        MacroDelimiter::Parenthesis,
+                        NotaMacroObjectCount::Any,
+                        Some(CaptureName::new("type_head")),
+                    )),
+                    PatternElement::delimited(DelimitedShape::new(
+                        MacroDelimiter::SquareBracket,
+                        NotaMacroObjectCount::Any,
+                        Some(CaptureName::new("body")),
+                    )),
+                    "parameterized head followed by square bracket value",
+                ),
+                Self::pair_case(
+                    MacroPosition::NamespaceDeclaration,
+                    "parameterized newtype declaration",
+                    PatternElement::delimited(DelimitedShape::new(
+                        MacroDelimiter::Parenthesis,
+                        NotaMacroObjectCount::Any,
+                        Some(CaptureName::new("type_head")),
+                    )),
+                    PatternElement::any(Some(CaptureName::new("reference"))),
+                    "parameterized head followed by type reference value",
+                ),
             ],
         )
     }
@@ -528,15 +583,26 @@ impl MacroNodeDefinition {
     }
 
     fn root_enum(position: MacroPosition) -> Self {
+        // A root position accepts two structural forms: the enum body
+        // `[Variant …]` and the application form `(Head Arg …)`. Both are
+        // RootPositional; the handler dispatches on the delimiter.
         Self::with_cases(
             position,
             MacroDispatch::RootPositional,
-            vec![Self::block_case(
-                position,
-                "root enum body",
-                MacroDelimiter::SquareBracket,
-                NotaMacroObjectCount::Any,
-            )],
+            vec![
+                Self::block_case(
+                    position,
+                    "root enum body",
+                    MacroDelimiter::SquareBracket,
+                    NotaMacroObjectCount::Any,
+                ),
+                Self::block_case(
+                    position,
+                    "root application body",
+                    MacroDelimiter::Parenthesis,
+                    NotaMacroObjectCount::Any,
+                ),
+            ],
         )
     }
 

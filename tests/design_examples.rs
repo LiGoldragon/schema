@@ -11,10 +11,16 @@
 
 use nota_next::{Document, StructureShape};
 use schema_next::{
-    MacroContext, MacroDispatch, MacroLibrary, MacroObject, MacroPair, MacroPosition,
-    MacroRegistry, Name, SchemaEngine, SchemaError, SchemaIdentity, SchemaNode, SchemaNodeData,
-    SchemaNodeValue, TypeDeclaration, TypeReference,
+    EnumDeclaration, MacroContext, MacroDispatch, MacroLibrary, MacroObject, MacroPair,
+    MacroPosition, MacroRegistry, Name, Root, SchemaEngine, SchemaError, SchemaIdentity,
+    SchemaNode, SchemaNodeData, SchemaNodeValue, TypeDeclaration, TypeReference,
 };
+
+/// The enum body of a root known to be the enum-body form — the shape of
+/// every root in these design fixtures.
+fn root_enum(root: &Root) -> &EnumDeclaration {
+    root.as_enum().expect("root is the enum-body form")
+}
 
 /// Illustrates: a schema document is positional. The common no-import
 /// form has exactly 3 root values (input enum body, output enum body,
@@ -337,7 +343,9 @@ fn design_example_macro_node_definitions_separate_structural_from_tagged_invocat
 /// namespace declarations the cases are key/value pair nodes: a symbol
 /// key with a brace value is a struct macro, a symbol key with a
 /// bracket value is an enum macro, and a symbol key with a reference
-/// value is a newtype macro.
+/// value is a newtype macro. The parameterized declaration form
+/// `(Name Param …)` adds a mirror case for each body shape, so a
+/// declaration head can introduce type-parameter binders.
 #[test]
 fn design_example_macro_node_definition_lists_structural_cases() {
     let registry = MacroRegistry::with_schema_defaults();
@@ -350,7 +358,10 @@ fn design_example_macro_node_definition_lists_structural_cases() {
         vec![
             "struct declaration",
             "enum declaration",
-            "newtype declaration"
+            "newtype declaration",
+            "parameterized struct declaration",
+            "parameterized enum declaration",
+            "parameterized newtype declaration",
         ]
     );
 
@@ -415,8 +426,7 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("direct variants lower");
 
-    let variants: Vec<(&str, Option<&str>)> = schema
-        .input()
+    let variants: Vec<(&str, Option<&str>)> = root_enum(schema.input())
         .variants
         .iter()
         .map(|variant| {
@@ -444,7 +454,7 @@ fn design_example_same_name_payload_variant_uses_self_tagged_payload() {
         .expect("self-tagged same-name variants lower");
 
     assert_eq!(
-        schema.input().variants[0]
+        root_enum(schema.input()).variants[0]
             .payload
             .as_ref()
             .expect("record payload")
@@ -454,7 +464,7 @@ fn design_example_same_name_payload_variant_uses_self_tagged_payload() {
         "Record",
     );
     assert_eq!(
-        schema.output().variants[0]
+        root_enum(schema.output()).variants[0]
             .payload
             .as_ref()
             .expect("recorded payload")
@@ -525,15 +535,15 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
           RecordIdentifier Integer
           Entry { topic Topic }
           Query { topic Topic }
-          RecordSet (Vec Entry)
+          RecordSet (Vector Entry)
         }
     ";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("spirit-next:lib", "0.1.0"))
         .expect("schema planes lower");
 
-    assert_eq!(schema.input().name.as_str(), "Input");
-    assert_eq!(schema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name().as_str(), "Input");
+    assert_eq!(schema.output().name().as_str(), "Output");
 
     let names: Vec<&str> = schema
         .namespace()

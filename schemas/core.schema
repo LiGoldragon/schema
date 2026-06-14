@@ -2,19 +2,19 @@
 []
 {
   CoreSchema { BuiltinMacroPositions * BuiltinMacroShapes * BuiltinMacroOutputs * BuiltinMacroDefinitions * }
-  BuiltinMacroPositions { macroPosition (Vec MacroPosition) }
-  BuiltinMacroShapes { macroShape (Vec MacroShape) }
-  BuiltinMacroOutputs { macroOutputKind (Vec MacroOutputKind) }
-  BuiltinMacroDefinitions { sourceEntries (Vec MacroLibrarySourceEntry) }
+  BuiltinMacroPositions { macroPosition (Vector MacroPosition) }
+  BuiltinMacroShapes { macroShape (Vector MacroShape) }
+  BuiltinMacroOutputs { macroOutputKind (Vector MacroOutputKind) }
+  BuiltinMacroDefinitions { sourceEntries (Vector MacroLibrarySourceEntry) }
   MacroLibrarySourceEntry [(SchemaMacro)]
   SchemaMacro { MacroName * MacroPosition * MacroPattern * MacroTemplate * }
   MacroName String
   MacroPattern MacroPatternObject
-  MacroPatternObjects { values (Vec MacroPatternObject) }
+  MacroPatternObjects { values (Vector MacroPatternObject) }
   MacroPatternObject [(Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroPatternDelimited)]
   MacroPatternDelimited { delimiter MacroDelimiter MacroPatternObjects * }
   MacroTemplate MacroTemplateObject
-  MacroTemplateObjects { values (Vec MacroTemplateObject) }
+  MacroTemplateObjects { values (Vector MacroTemplateObject) }
   MacroTemplateObject [(Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroTemplateDelimited)]
   MacroTemplateDelimited { delimiter MacroDelimiter MacroTemplateObjects * }
   MacroCaptureName String

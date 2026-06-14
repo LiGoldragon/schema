@@ -9,10 +9,10 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
-    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
-    SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration, TypeReference,
-    macros::SchemaBlockExt,
+    ApplicationHead, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext,
+    MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration,
+    SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration,
+    TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(
@@ -1531,81 +1531,93 @@ impl<'object> ExpandedReference<'object> {
         Self { children }
     }
 
+    /// Lower a parenthesised reference over the post-expansion
+    /// [`ExpandedObject`] tree. This mirrors the `Block`-path dispatch order
+    /// in `TypeReference::from_parenthesis_objects` over a different input
+    /// type — `ExpandedObject` is schema-next's own template-expansion
+    /// representation, not a nota-next `Block`, so it cannot share the
+    /// `StructuralMacroNode` decode directly; the canonical-head fast path
+    /// and the application fallback are kept in lockstep by hand. The dropped
+    /// aliases (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse.
     fn type_reference(
         &self,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
-        if self.children.len() == 2 {
-            if let Some(head) = self.children[0].demote_to_string() {
-                match head {
-                    "Vec" | "Vector" => {
-                        return Ok(TypeReference::Vector(Box::new(
-                            self.children[1].type_reference(registry, context)?,
-                        )));
-                    }
-                    "Optional" | "Option" => {
-                        return Ok(TypeReference::Optional(Box::new(
-                            self.children[1].type_reference(registry, context)?,
-                        )));
-                    }
-                    "ScopeOf" | "Scope" => {
-                        return Ok(TypeReference::ScopeOf(Box::new(
-                            self.children[1].type_reference(registry, context)?,
-                        )));
-                    }
-                    "Map" | "KeyValue" => {
-                        return self.grouped_map_payload(&self.children[1], registry, context);
-                    }
-                    "Bytes" => {
-                        if let Some(width) = self.children[1]
-                            .demote_to_string()
-                            .and_then(|text| text.parse::<u64>().ok())
-                        {
-                            return Ok(TypeReference::FixedBytes(width));
-                        }
-                    }
-                    _ => {}
+        if let Some(head) = self
+            .children
+            .first()
+            .and_then(ExpandedObject::demote_to_string)
+        {
+            match (head, self.children.len()) {
+                ("Vector", 2) => {
+                    return Ok(TypeReference::Vector(Box::new(
+                        self.children[1].type_reference(registry, context)?,
+                    )));
                 }
+                ("Optional", 2) => {
+                    return Ok(TypeReference::Optional(Box::new(
+                        self.children[1].type_reference(registry, context)?,
+                    )));
+                }
+                ("ScopeOf", 2) => {
+                    return Ok(TypeReference::ScopeOf(Box::new(
+                        self.children[1].type_reference(registry, context)?,
+                    )));
+                }
+                ("Map", 3) => {
+                    return Ok(TypeReference::Map(
+                        Box::new(self.children[1].type_reference(registry, context)?),
+                        Box::new(self.children[2].type_reference(registry, context)?),
+                    ));
+                }
+                ("Bytes", 2) => {
+                    if let Some(width) = self.children[1]
+                        .demote_to_string()
+                        .and_then(|text| text.parse::<u64>().ok())
+                    {
+                        return Ok(TypeReference::FixedBytes(width));
+                    }
+                }
+                ("Vector" | "Optional" | "ScopeOf" | "Map" | "Bytes", found) => {
+                    return Err(SchemaError::UnknownTypeReferenceForm {
+                        head: head.to_owned(),
+                        argument_count: found.saturating_sub(1),
+                    });
+                }
+                _ => {}
             }
         }
-        Err(SchemaError::UnknownTypeReferenceForm {
-            head: self
-                .children
-                .first()
-                .and_then(ExpandedObject::demote_to_string)
-                .unwrap_or("<missing>")
-                .to_owned(),
-            argument_count: self.children.len().saturating_sub(1),
-        })
+        self.application(registry, context)
     }
 
-    fn grouped_map_payload(
+    /// The application fallback for the expanded-object path: a PascalCase
+    /// head followed by zero or more type-reference arguments lowers to
+    /// `TypeReference::Application`. Any head that is not a PascalCase symbol
+    /// is not an application and is reported as an unknown reference form.
+    fn application(
         &self,
-        payload: &'object ExpandedObject,
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
-        let ExpandedObject::Delimited {
-            delimiter: Delimiter::Parenthesis,
-            children,
-        } = payload
-        else {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: 1,
-            });
+        let Some(head) = self.children.first() else {
+            return Err(SchemaError::EmptyTypeReference);
         };
-        if children.len() != 2 {
+        if !head.qualifies_as_pascal_case_symbol() {
             return Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Map".to_owned(),
-                argument_count: children.len(),
+                head: head.demote_to_string().unwrap_or("<missing>").to_owned(),
+                argument_count: self.children.len().saturating_sub(1),
             });
         }
-        Ok(TypeReference::Map(
-            Box::new(children[0].type_reference(registry, context)?),
-            Box::new(children[1].type_reference(registry, context)?),
-        ))
+        let head = head.schema_name()?;
+        let arguments = self.children[1..]
+            .iter()
+            .map(|argument| argument.type_reference(registry, context))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(TypeReference::Application {
+            head: ApplicationHead::Local(head),
+            arguments,
+        })
     }
 
     fn inline_struct(
@@ -1802,8 +1814,8 @@ impl<'template> MacroExpansionFields<'template> {
 /// Strict struct bodies are key/value maps. `Topic *` derives the
 /// field name from an already-declared type (`topic`) and creates a
 /// `Plain` reference. Native NOTA type-reference objects can also sit
-/// directly in a field position: `(Vec Topic)`,
-/// `(Map (Topic RecordIdentifier))`, and `(Optional Topic)` lower to
+/// directly in a field position: `(Vector Topic)`,
+/// `(Map Topic RecordIdentifier)`, and `(Optional Topic)` lower to
 /// vector, map, and optional references with names derived from the
 /// reference shape. A parenthesised pair whose first object is a
 /// lower-case field symbol remains the explicit escape hatch for
@@ -1950,6 +1962,14 @@ impl<'template> MacroExpansionField<'template> {
             )),
             TypeReference::ScopeOf(inner) => {
                 Name::new(format!("{}_scope", self.derived_name_for_reference(inner)))
+            }
+            TypeReference::Application { head, arguments } => {
+                let mut derived = Name::new(head.name().field_name()).as_str().to_owned();
+                for argument in arguments {
+                    derived.push('_');
+                    derived.push_str(self.derived_name_for_reference(argument).as_str());
+                }
+                Name::new(derived)
             }
         }
     }

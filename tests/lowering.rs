@@ -1,8 +1,14 @@
 use schema_next::{
-    MacroContext, MacroLibrary, MacroObject, MacroOutput, MacroPosition, MacroRegistry, Name,
-    SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage, SchemaSourceArtifact,
-    TypeDeclaration, TypeReference, Visibility,
+    EnumDeclaration, MacroContext, MacroLibrary, MacroObject, MacroOutput, MacroPosition,
+    MacroRegistry, Name, Root, SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage,
+    SchemaSourceArtifact, TypeDeclaration, TypeReference, Visibility,
 };
+
+/// The enum body of a root known to be the enum-body form, for the fixtures
+/// in this file whose roots are all `[Variant …]`.
+fn root_enum(root: &Root) -> &EnumDeclaration {
+    root.as_enum().expect("root is the enum-body form")
+}
 
 #[test]
 fn lowers_spirit_schema_into_ordered_schema() {
@@ -17,18 +23,24 @@ fn lowers_spirit_schema_into_ordered_schema() {
         .expect("schema lowers");
 
     assert_eq!(schema.imports().len(), 0);
-    assert_eq!(schema.input().name.as_str(), "Input");
-    assert_eq!(schema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name().as_str(), "Input");
+    assert_eq!(schema.output().name().as_str(), "Output");
     assert_eq!(
-        schema.root_named("Input").expect("input root").variants[0]
+        schema
+            .root_enum_named("Input")
+            .expect("input root")
+            .variants[0]
             .name
             .as_str(),
         "Record"
     );
-    assert_eq!(schema.input().name.as_str(), "Input");
-    assert_eq!(schema.input().variants[0].name.as_str(), "Record");
+    assert_eq!(schema.input().name().as_str(), "Input");
     assert_eq!(
-        schema.input().variants[0]
+        root_enum(schema.input()).variants[0].name.as_str(),
+        "Record"
+    );
+    assert_eq!(
+        root_enum(schema.input()).variants[0]
             .payload
             .as_ref()
             .expect("payload")
@@ -82,7 +94,7 @@ fn strict_key_value_declarations_lower_to_structs_and_enums() {
 fn bare_reference_declarations_lower_to_newtypes() {
     // The bare `Name Type` form declares a distinct newtype, not a transparent
     // alias (record qz6j: aliases offer no correctness and are not used).
-    let source = "[] [] { Topic String Topics (Vec Topic) }";
+    let source = "[] [] { Topic String Topics (Vector Topic) }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("bare reference forms lower");
@@ -116,7 +128,7 @@ fn self_tagged_variant_form_equals_explicit_repetition() {
         .lower_source(&explicit_source, SchemaIdentity::new("example", "0.1.0"))
         .expect("explicit repetition lowers");
 
-    let variant = &compact.input().variants[0];
+    let variant = &root_enum(compact.input()).variants[0];
     assert_eq!(variant.name.as_str(), "Entry");
     assert_eq!(
         variant
@@ -128,7 +140,10 @@ fn self_tagged_variant_form_equals_explicit_repetition() {
             .as_str(),
         "Entry"
     );
-    assert_eq!(variant.payload, explicit.input().variants[0].payload);
+    assert_eq!(
+        variant.payload,
+        root_enum(explicit.input()).variants[0].payload
+    );
 }
 
 #[test]
@@ -255,7 +270,7 @@ fn colon_qualified_names_lower_as_schema_names() {
         .expect("schema lowers");
 
     assert_eq!(
-        schema.input().variants[0]
+        root_enum(schema.input()).variants[0]
             .payload
             .as_ref()
             .expect("record payload")
@@ -339,7 +354,7 @@ fn package_loader_reads_all_schema_modules_in_crate() {
         ]
     );
     assert_eq!(
-        nexus.input().variants[0]
+        root_enum(nexus.input()).variants[0]
             .payload
             .as_ref()
             .expect("nexus input payload")
@@ -363,8 +378,8 @@ fn root_schema_describes_the_schema_root_type() {
         .lower_source(source, SchemaIdentity::new("schema", "0.1.0"))
         .expect("root schema lowers");
 
-    assert_eq!(schema.input().name.as_str(), "Input");
-    assert_eq!(schema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name().as_str(), "Input");
+    assert_eq!(schema.output().name().as_str(), "Output");
 
     let TypeDeclaration::Struct(schema_struct) = schema
         .type_named("Schema")
@@ -665,7 +680,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         )
         .expect("schema lowers through macros");
 
-    let input = schema.root_named("Input").expect("input root");
+    let input = schema.root_enum_named("Input").expect("input root");
     assert_eq!(
         input
             .variants
@@ -675,7 +690,7 @@ fn default_engine_lowers_through_registered_structural_forms() {
         vec!["Record", "Observe"]
     );
 
-    let output = schema.root_named("Output").expect("output root");
+    let output = schema.root_enum_named("Output").expect("output root");
     assert_eq!(
         output
             .variants
@@ -925,9 +940,12 @@ fn root_enum_positions_supply_input_and_output_names() {
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("bare input root lowers because the root position names it");
-    assert_eq!(schema.input().name.as_str(), "Input");
-    assert_eq!(schema.input().variants[0].name.as_str(), "Record");
-    assert_eq!(schema.output().name.as_str(), "Output");
+    assert_eq!(schema.input().name().as_str(), "Input");
+    assert_eq!(
+        root_enum(schema.input()).variants[0].name.as_str(),
+        "Record"
+    );
+    assert_eq!(schema.output().name().as_str(), "Output");
 
     let error = SchemaEngine::default()
         .lower_source(

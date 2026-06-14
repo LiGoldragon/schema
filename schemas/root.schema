@@ -2,15 +2,15 @@
 []
 {
   Schema { Input * Output * Namespace * }
-  Imports { importDeclaration (Vec ImportDeclaration) }
-  Namespace { declaration (Vec Declaration) }
+  Imports { importDeclaration (Vector ImportDeclaration) }
+  Namespace { declaration (Vector Declaration) }
   ImportDeclaration { Name * source TypeReference }
   Declaration [(Public NamedTypeDeclaration) (Private NamedTypeDeclaration)]
   NamedTypeDeclaration { Name * value TypeDeclaration }
   TypeDeclaration [(Struct StructDeclaration) (Enum EnumDeclaration) (Newtype NewtypeDeclaration)]
   StructDeclaration { Name * StructFieldMap * }
   NewtypeDeclaration { Name * reference TypeReference }
-  StructFieldMap { fieldDeclaration (Vec FieldDeclaration) }
+  StructFieldMap { fieldDeclaration (Vector FieldDeclaration) }
   FieldDeclaration { Name * reference TypeReference }
   EnumDeclaration { Name * Variants * }
   Variants { variantDeclaration VariantDeclaration }

@@ -308,7 +308,7 @@ one logical declaration object.
   such as `[(Record { Topic String Description String }) Observe]`. The root
   does not carry labels; position supplies `Input` and `Output`.
 - Namespace braces contain `TypeName Value` pairs. `Topic String` and
-  `Topics (Vec Topic)` are alias declarations; `Entry { topic Topic }` is a
+  `Topics (Vector Topic)` are alias declarations; `Entry { topic Topic }` is a
   struct declaration; `Kind [Decision Correction]` is an enum declaration.
 - A brace declaration with one field lowers as a newtype. `Entry { Topic * }`
   and `Wrapper { value Topic }` both describe one contained `Topic` reference;
@@ -329,8 +329,8 @@ one logical declaration object.
   PascalCase fields inside root inline struct payloads become exported
   declarations available to later entries.
 
-Composite type references such as `(Vec Entry)`, `(Optional Entry)`, and
-`(Map (Key Value))` still lower at reference positions to `TypeReference`
+Composite type references such as `(Vector Entry)`, `(Optional Entry)`, and
+`(Map Key Value)` still lower at reference positions to `TypeReference`
 data. If a composite appears unnamed as a struct field, the field/type name can
 be derived from the composite shape when it does not collide.
 
@@ -459,7 +459,7 @@ module boundaries.
   `Entry { topic Topic Topics * }`. `TypeName *` derives the field name from
   an existing type; explicit `field TypeReference` remains available when the
   field name differs. A namespace key followed by an atom or parenthesized
-  reference defines an alias: `Topic String`, `Topics (Vec Topic)`.
+  reference defines an alias: `Topic String`, `Topics (Vector Topic)`.
 - Square brackets are NOTA vector/bracket structure. At enum-body positions
   they contain homogeneous variant-signature objects: bare symbols for unit
   variants, parenthesized `(Variant)` records for same-named data variants,
@@ -497,18 +497,18 @@ module boundaries.
   declarations and cannot be shadowed by schema types. `Plain(Name)` now means
   "a declared type by name." `TypeReference::from_block` lowers a bare scalar
   symbol to its scalar variant, a different bare PascalCase symbol to `Plain`,
-  `(Vec T)` to `Vector`, `(Map (K V))` to `Map`, and `(Optional T)` to
+  `(Vector T)` to `Vector`, `(Map K V)` to `Map`, and `(Optional T)` to
   `Optional`. These names are Schema type-reference vocabulary over
   nota-next's already-parsed structures, not raw NOTA keywords. The inner
-  positions recurse, so `(Vec (Optional Topic))` and
-  `(Map (String (Vec Service)))` nest. Parentheses with another head are
+  positions recurse, so `(Vector (Optional Topic))` and
+  `(Map String (Vector Service))` nest. Parentheses with another head are
   dispatched to the user macro registry. An unknown head or wrong native
   argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
   is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
   text parser.
 - Collection references reach every reference position. Struct fields are
-  written as strict pairs such as `serviceVector (Vec Service)`,
-  `byTopic (Map (Topic RecordIdentifier))`, and
+  written as strict pairs such as `serviceVector (Vector Service)`,
+  `byTopic (Map Topic RecordIdentifier)`, and
   `optionalCache (Optional Cache)`. Enum-variant payloads, root input/output
   variant payloads, and import sources all lower their type through
   `TypeReference::from_block`.
@@ -532,7 +532,7 @@ strict key/value authored surface without invoking macro lowering:
 2. `SyntaxSchema` reads the raw datatype map into declaration objects.
 3. Brace values become struct field maps; square-bracket values become enum
    bodies; atom or parenthesized reference values become aliases.
-4. `(Vec T)`, `(Map (K V))`, and `(Optional T)` are Schema type-reference
+4. `(Vector T)`, `(Map K V)`, and `(Optional T)` are Schema type-reference
    objects and lower into composite type references.
 5. The root map key is the declaration name. There is no second declaration
    name inside the value.

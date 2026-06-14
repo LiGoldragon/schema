@@ -9,11 +9,11 @@ use nota_next::{
 };
 
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey, FieldDeclaration,
-    ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence,
-    RelationDeclaration, RelationValue, ResolvedImport, Schema, SchemaEngine, SchemaError,
-    SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
-    TypeDeclaration, TypeReference,
+    Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey,
+    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype,
+    RawNotaSequence, RelationDeclaration, RelationValue, ResolvedImport, Root, RootApplication,
+    Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
+    StructDeclaration, TableName, TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -170,8 +170,8 @@ impl SchemaSource {
         namespace.push_public_declarations(self.output.public_inline_declarations(&resolver)?)?;
         let streams = self.namespace.stream_declarations()?;
         let families = self.namespace.family_declarations()?;
-        let input = self.input.to_schema_enum(&namespace)?;
-        let output = self.output.to_schema_enum(&namespace)?;
+        let input = self.input.to_root(&namespace)?;
+        let output = self.output.to_root(&namespace)?;
         Schema::new(
             identity,
             imports,
@@ -184,6 +184,7 @@ impl SchemaSource {
             self.relations.to_schema_relations(),
         )
         .families_verified()
+        .and_then(Schema::arities_verified)
     }
 }
 
@@ -338,10 +339,15 @@ impl SourceImport {
     }
 }
 
+/// A root Input/Output position in the source codec. The body is a typed
+/// sum mirroring the semantic [`Root`]: the enum-body form `[Variant …]`
+/// or the application form `(Head Arg …)`. The name is the position name
+/// (`Input` / `Output`) — for an enum root it also names the lowered enum
+/// declaration; for an application root it is only the position identity.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceRootEnum {
     name: Name,
-    body: SourceEnumBody,
+    body: SourceRootBody,
 }
 
 impl SourceRootEnum {
@@ -349,14 +355,14 @@ impl SourceRootEnum {
         &self.name
     }
 
-    pub fn body(&self) -> &SourceEnumBody {
+    pub fn body(&self) -> &SourceRootBody {
         &self.body
     }
 
     fn from_block(name: Name, block: &Block) -> Result<Self, SchemaError> {
         Ok(Self {
             name,
-            body: SourceEnumBody::from_block(block)?,
+            body: SourceRootBody::from_block(block)?,
         })
     }
 
@@ -364,18 +370,119 @@ impl SourceRootEnum {
         &self,
         resolver: &SourceTypeResolver,
     ) -> Result<Vec<Declaration>, SchemaError> {
-        let mut declarations = Vec::new();
-        for declaration in self.body.public_inline_declarations(resolver)? {
-            declarations.push(declaration);
-        }
-        Ok(declarations)
+        self.body.public_inline_declarations(resolver)
     }
 
-    fn to_schema_enum(
+    fn to_root(&self, namespace: &SourceLoweredNamespace) -> Result<Root, SchemaError> {
+        self.body.to_root(self.name.clone(), namespace)
+    }
+}
+
+/// The two shapes a source-codec root body can take, mirroring the
+/// semantic [`Root`] sum. The application form holds a [`SourceReference`]
+/// known to be its `Application` variant; lowering projects it through
+/// `SourceReference::to_type_reference`, the same conversion a
+/// field-position source reference takes.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum SourceRootBody {
+    Enum(#[rkyv(omit_bounds)] SourceEnumBody),
+    Application(#[rkyv(omit_bounds)] SourceReference),
+}
+
+impl SourceRootBody {
+    /// The enum body when this root is the enum-body form; `None` for an
+    /// application root.
+    pub fn as_enum(&self) -> Option<&SourceEnumBody> {
+        match self {
+            Self::Enum(body) => Some(body),
+            Self::Application(_) => None,
+        }
+    }
+
+    /// The applied reference when this root is the application form; `None`
+    /// for an enum root. It is the `SourceReference::Application` variant by
+    /// construction.
+    pub fn as_application(&self) -> Option<&SourceReference> {
+        match self {
+            Self::Application(reference) => Some(reference),
+            Self::Enum(_) => None,
+        }
+    }
+
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        if block.is_parenthesis() {
+            let reference = SourceReference::from_block(block)?;
+            let SourceReference::Application { .. } = &reference else {
+                return Err(SchemaError::ExpectedRootApplication {
+                    position: "root",
+                    found: reference.to_schema_text(),
+                });
+            };
+            return Ok(Self::Application(reference));
+        }
+        Ok(Self::Enum(SourceEnumBody::from_block(block)?))
+    }
+
+    pub fn to_schema_text(&self) -> String {
+        match self {
+            Self::Enum(body) => body.to_schema_text(),
+            Self::Application(reference) => reference.to_schema_text(),
+        }
+    }
+
+    fn public_inline_declarations(
         &self,
-        namespace: &SourceLoweredNamespace,
-    ) -> Result<EnumDeclaration, SchemaError> {
-        self.body.to_schema_enum(self.name.clone(), namespace)
+        resolver: &SourceTypeResolver,
+    ) -> Result<Vec<Declaration>, SchemaError> {
+        match self {
+            Self::Enum(body) => body.public_inline_declarations(resolver),
+            // An application root introduces no inline declarations — its
+            // head and arguments are references to names declared elsewhere.
+            Self::Application(_) => Ok(Vec::new()),
+        }
+    }
+
+    pub fn inline_declaration_names(&self) -> Vec<Name> {
+        match self {
+            Self::Enum(body) => body.inline_declaration_names(),
+            Self::Application(_) => Vec::new(),
+        }
+    }
+
+    pub fn public_inline_field_declaration_names(&self) -> Vec<Name> {
+        match self {
+            Self::Enum(body) => body.public_inline_field_declaration_names(),
+            Self::Application(_) => Vec::new(),
+        }
+    }
+
+    fn to_root(&self, name: Name, namespace: &SourceLoweredNamespace) -> Result<Root, SchemaError> {
+        match self {
+            Self::Enum(body) => body.to_schema_enum(name, namespace).map(Root::Enum),
+            Self::Application(reference) => {
+                let TypeReference::Application { head, arguments } = reference.to_type_reference()
+                else {
+                    return Err(SchemaError::ExpectedRootApplication {
+                        position: "root",
+                        found: reference.to_schema_text(),
+                    });
+                };
+                Ok(Root::application(RootApplication::new(
+                    name, head, arguments,
+                )))
+            }
+        }
     }
 }
 
@@ -398,8 +505,13 @@ impl SourceNamespace {
         }
         let mut entries = Vec::new();
         for pair in body.root_objects().chunks_exact(2) {
+            // The entry key is a declaration head: a bare name, or a
+            // parameterized `(Name Param …)` head introducing binders.
+            // The value lowers the same way for either head.
+            let (name, parameters) = DeclarationHead::from_block(&pair[0])?.into_parts();
             entries.push(SourceNamespaceEntry {
-                name: SourceAtom::from_block(&pair[0])?.into_name(),
+                name,
+                parameters,
                 value: SourceDeclarationValue::from_block(&pair[1])?,
             });
         }
@@ -463,6 +575,7 @@ impl SourceNamespace {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceNamespaceEntry {
     name: Name,
+    parameters: Vec<Name>,
     value: SourceDeclarationValue,
 }
 
@@ -471,12 +584,34 @@ impl SourceNamespaceEntry {
         &self.name
     }
 
+    /// The declared type parameters from a parameterized entry head
+    /// `(Name Param …)`. Empty for a bare-name entry.
+    pub fn parameters(&self) -> &[Name] {
+        &self.parameters
+    }
+
     pub fn value(&self) -> &SourceDeclarationValue {
         &self.value
     }
 
     fn to_schema_text(&self) -> String {
-        format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
+        format!(
+            "{} {}",
+            self.head_schema_text(),
+            self.value.to_schema_text()
+        )
+    }
+
+    /// Project the entry's key position back to source text: a bare name,
+    /// or a parameterized head `(Name Param …)` re-emitting each binder.
+    fn head_schema_text(&self) -> String {
+        if self.parameters.is_empty() {
+            return self.name.to_nota();
+        }
+        let mut items = Vec::with_capacity(self.parameters.len() + 1);
+        items.push(self.name.to_nota());
+        items.extend(self.parameters.iter().map(Name::to_nota));
+        Delimiter::Parenthesis.wrap(items)
     }
 
     fn to_declaration_group(
@@ -485,6 +620,7 @@ impl SourceNamespaceEntry {
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         self.value
             .to_namespace_declaration_group(self.name.clone(), resolver)
+            .map(|group| group.with_parameters(self.parameters.clone()))
     }
 
     fn to_stream_declaration(&self) -> Option<StreamDeclaration> {
@@ -1775,6 +1911,11 @@ pub enum SourceReference {
         #[rkyv(omit_bounds)] Box<SourceReference>,
         #[rkyv(omit_bounds)] Box<SourceReference>,
     ),
+    Application {
+        head: Name,
+        #[rkyv(omit_bounds)]
+        arguments: Vec<SourceReference>,
+    },
 }
 
 impl SourceReference {
@@ -1796,30 +1937,56 @@ impl SourceReference {
         }
     }
 
+    /// Lower a parenthesised reference over the source-archive
+    /// [`RawNotaDatatype`] tree. Like the `Block` and `ExpandedObject` paths,
+    /// the canonical built-in heads are the fast path and the generic
+    /// application form `(Foo A B ...)` is the fallback; the dropped aliases
+    /// (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse. `RawNotaDatatype`
+    /// is schema-next's own archive representation, not a nota-next `Block`,
+    /// so it keeps its own dispatch in lockstep with the other paths.
     fn from_record(sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
         let items = sequence.items();
-        if items.len() != 2 {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form: "typed reference record",
-                expected: "tag plus one grouped payload object",
-                found: items.len(),
-            });
-        }
-        let Some(head) = items[0].as_atom() else {
+        let Some(head) = items.first().and_then(RawNotaDatatype::as_atom) else {
             return Err(SchemaError::ExpectedSymbol {
-                found: SourceRawNotation::new(&items[0]).description(),
+                found: items
+                    .first()
+                    .map(|item| SourceRawNotation::new(item).description())
+                    .unwrap_or_else(|| SourceSequenceNotation::new(sequence).description()),
             });
         };
-        match head {
-            "Vec" | "Vector" => Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
-            "Optional" | "Option" => Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
-            "ScopeOf" | "Scope" => Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
-            "Map" | "KeyValue" => Self::from_map_record(&items[1]),
-            "Bytes" => Self::from_fixed_bytes_record(&items[1]),
-            _ => Err(SchemaError::ExpectedSyntaxReference {
-                found: SourceSequenceNotation::new(sequence).description(),
-            }),
+        match (head, items.len()) {
+            ("Vector", 2) => return Ok(Self::Vector(Box::new(Self::from_raw(&items[1])?))),
+            ("Optional", 2) => return Ok(Self::Optional(Box::new(Self::from_raw(&items[1])?))),
+            ("ScopeOf", 2) => return Ok(Self::ScopeOf(Box::new(Self::from_raw(&items[1])?))),
+            ("Map", 3) => {
+                return Ok(Self::Map(
+                    Box::new(Self::from_raw(&items[1])?),
+                    Box::new(Self::from_raw(&items[2])?),
+                ));
+            }
+            ("Bytes", 2) => return Self::from_fixed_bytes_record(&items[1]),
+            ("Vector" | "Optional" | "ScopeOf" | "Map" | "Bytes", _) => {
+                return Err(SchemaError::UnknownTypeReferenceForm {
+                    head: head.to_owned(),
+                    argument_count: items.len().saturating_sub(1),
+                });
+            }
+            _ => {}
         }
+        let head_name = Name::new(head);
+        if !head_name.qualifies_as_pascal_case() {
+            return Err(SchemaError::ExpectedSyntaxReference {
+                found: SourceSequenceNotation::new(sequence).description(),
+            });
+        }
+        let arguments = items[1..]
+            .iter()
+            .map(Self::from_raw)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::Application {
+            head: head_name,
+            arguments,
+        })
     }
 
     /// Parse the numeric width of a fixed-size byte reference `(Bytes N)`.
@@ -1835,25 +2002,6 @@ impl SourceReference {
         Ok(Self::FixedBytes(width))
     }
 
-    fn from_map_record(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
-        let Some(sequence) = raw.as_record() else {
-            return Err(SchemaError::ExpectedSyntaxReference {
-                found: SourceRawNotation::new(raw).description(),
-            });
-        };
-        if sequence.items().len() != 2 {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form: "map reference payload",
-                expected: "key type plus value type",
-                found: sequence.items().len(),
-            });
-        }
-        Ok(Self::Map(
-            Box::new(Self::from_raw(&sequence.items()[0])?),
-            Box::new(Self::from_raw(&sequence.items()[1])?),
-        ))
-    }
-
     fn to_schema_text(&self) -> String {
         match self {
             Self::Plain(name) => name.to_nota(),
@@ -1861,7 +2009,7 @@ impl SourceReference {
                 Delimiter::Parenthesis.wrap(["Bytes".to_owned(), width.to_string()])
             }
             Self::Vector(reference) => {
-                Delimiter::Parenthesis.wrap(["Vec".to_owned(), reference.to_schema_text()])
+                Delimiter::Parenthesis.wrap(["Vector".to_owned(), reference.to_schema_text()])
             }
             Self::Optional(reference) => {
                 Delimiter::Parenthesis.wrap(["Optional".to_owned(), reference.to_schema_text()])
@@ -1871,8 +2019,15 @@ impl SourceReference {
             }
             Self::Map(key, value) => Delimiter::Parenthesis.wrap([
                 "Map".to_owned(),
-                Delimiter::Parenthesis.wrap([key.to_schema_text(), value.to_schema_text()]),
+                key.to_schema_text(),
+                value.to_schema_text(),
             ]),
+            Self::Application { head, arguments } => {
+                let mut items = Vec::with_capacity(arguments.len() + 1);
+                items.push(head.to_nota());
+                items.extend(arguments.iter().map(Self::to_schema_text));
+                Delimiter::Parenthesis.wrap(items)
+            }
         }
     }
 
@@ -1893,6 +2048,10 @@ impl SourceReference {
                 Box::new(key.to_type_reference()),
                 Box::new(value.to_type_reference()),
             ),
+            Self::Application { head, arguments } => TypeReference::Application {
+                head: crate::ApplicationHead::Local(head.clone()),
+                arguments: arguments.iter().map(Self::to_type_reference).collect(),
+            },
         }
     }
 }
@@ -2027,6 +2186,10 @@ struct SourceDeclarationGroup {
     public: Vec<TypeDeclaration>,
     private: Vec<TypeDeclaration>,
     primary: Option<TypeDeclaration>,
+    /// Declared type parameters carried from a parameterized entry head.
+    /// They attach to the group's primary declaration; the inline helper
+    /// declarations (public / private) are not parameterized.
+    parameters: Vec<Name>,
 }
 
 impl SourceDeclarationGroup {
@@ -2035,6 +2198,7 @@ impl SourceDeclarationGroup {
             public: Vec::new(),
             private: Vec::new(),
             primary: None,
+            parameters: Vec::new(),
         }
     }
 
@@ -2043,6 +2207,7 @@ impl SourceDeclarationGroup {
             public: Vec::new(),
             private: Vec::new(),
             primary: Some(primary),
+            parameters: Vec::new(),
         }
     }
 
@@ -2055,7 +2220,16 @@ impl SourceDeclarationGroup {
             public,
             private,
             primary: Some(primary),
+            parameters: Vec::new(),
         }
+    }
+
+    /// Attach declared type parameters to the group's primary
+    /// declaration. The binders belong to the named declaration the entry
+    /// head introduced, not to its inline helpers.
+    fn with_parameters(mut self, parameters: Vec<Name>) -> Self {
+        self.parameters = parameters;
+        self
     }
 
     fn into_public_declarations(self) -> Vec<Declaration> {
@@ -2066,7 +2240,7 @@ impl SourceDeclarationGroup {
             .collect::<Vec<_>>();
         declarations.extend(self.private.into_iter().map(Declaration::private));
         if let Some(primary) = self.primary {
-            declarations.push(Declaration::public(primary));
+            declarations.push(Declaration::public(primary).with_parameters(self.parameters));
         }
         declarations
     }
