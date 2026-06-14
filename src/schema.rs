@@ -1345,7 +1345,7 @@ enum ApplicationNode {
 /// introduces type-parameter binders. The parameterized form is
 /// structurally the same captured-head + variable-arity tail as the
 /// generic-application form, so it decodes through the *same*
-/// `#[shape(pascal_head, body)]` seam ([`ApplicationNode`]) — each tail
+/// `#[shape(pascal_head, body)]` seam (`ApplicationNode`) — each tail
 /// item must be a bare binder name (a `Plain` reference), since a
 /// parameter is a binder, not an applied type.
 #[derive(Clone, Debug, Eq, PartialEq)]
