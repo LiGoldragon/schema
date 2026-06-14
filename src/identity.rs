@@ -18,7 +18,7 @@
 //! resolved imports, so it is not a pure-structure address; the family
 //! hashes are.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::{
@@ -180,9 +180,9 @@ impl Schema {
 struct ClosureWalk<'schema> {
     schema: &'schema Schema,
     family: &'schema str,
-    declarations: BTreeMap<String, Declaration>,
-    imports: BTreeMap<String, ImportDeclaration>,
-    streams: BTreeMap<String, StreamDeclaration>,
+    declarations: Vec<(String, Declaration)>,
+    imports: Vec<(String, ImportDeclaration)>,
+    streams: Vec<(String, StreamDeclaration)>,
     /// Type-parameter binders in scope for the declaration currently
     /// being walked. A parameterized declaration head `(Name Param …)`
     /// introduces these; a `Plain` reference matching a binder resolves
@@ -222,9 +222,9 @@ impl<'schema> ClosureWalk<'schema> {
         Self {
             schema,
             family,
-            declarations: BTreeMap::new(),
-            imports: BTreeMap::new(),
-            streams: BTreeMap::new(),
+            declarations: Vec::new(),
+            imports: Vec::new(),
+            streams: Vec::new(),
             binders: BTreeSet::new(),
         }
     }
@@ -249,12 +249,20 @@ impl<'schema> ClosureWalk<'schema> {
                 Some(reference.clone())
             }
         };
+        self.declarations
+            .sort_by(|left, right| left.0.cmp(&right.0));
+        self.imports.sort_by(|left, right| left.0.cmp(&right.0));
+        self.streams.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(FamilyClosure {
             root: name,
             root_application,
-            declarations: self.declarations.into_values().collect(),
-            imports: self.imports.into_values().collect(),
-            streams: self.streams.into_values().collect(),
+            declarations: self
+                .declarations
+                .into_iter()
+                .map(|(_, declaration)| declaration)
+                .collect(),
+            imports: self.imports.into_iter().map(|(_, import)| import).collect(),
+            streams: self.streams.into_iter().map(|(_, stream)| stream).collect(),
         })
     }
 
@@ -292,7 +300,11 @@ impl<'schema> ClosureWalk<'schema> {
 
     fn visit_declaration(&mut self, declaration: Declaration) -> Result<(), SchemaError> {
         let name = declaration.name().as_str().to_owned();
-        if self.declarations.contains_key(&name) {
+        if self
+            .declarations
+            .iter()
+            .any(|(existing, _)| existing == &name)
+        {
             return Ok(());
         }
         let value = declaration.value().clone();
@@ -308,7 +320,7 @@ impl<'schema> ClosureWalk<'schema> {
                 .map(|parameter| parameter.as_str().to_owned())
                 .collect(),
         );
-        self.declarations.insert(name, declaration);
+        self.declarations.push((name, declaration));
         let result = match value {
             TypeDeclaration::Struct(body) => {
                 let mut walked = Ok(());
@@ -340,7 +352,11 @@ impl<'schema> ClosureWalk<'schema> {
     }
 
     fn visit_stream(&mut self, stream_name: &Name) -> Result<(), SchemaError> {
-        if self.streams.contains_key(stream_name.as_str()) {
+        if self
+            .streams
+            .iter()
+            .any(|(existing, _)| existing == stream_name.as_str())
+        {
             return Ok(());
         }
         let stream = self
@@ -354,7 +370,7 @@ impl<'schema> ClosureWalk<'schema> {
             })?
             .clone();
         self.streams
-            .insert(stream_name.as_str().to_owned(), stream.clone());
+            .push((stream_name.as_str().to_owned(), stream.clone()));
         self.visit_reference(&stream.token)?;
         self.visit_reference(&stream.opened)?;
         self.visit_reference(&stream.event)?;
@@ -398,7 +414,14 @@ impl<'schema> ClosureWalk<'schema> {
         if self.binders.contains(name.as_str()) {
             return Ok(());
         }
-        if self.declarations.contains_key(name.as_str()) || self.imports.contains_key(name.as_str())
+        if self
+            .declarations
+            .iter()
+            .any(|(existing, _)| existing == name.as_str())
+            || self
+                .imports
+                .iter()
+                .any(|(existing, _)| existing == name.as_str())
         {
             return Ok(());
         }
@@ -416,7 +439,7 @@ impl<'schema> ClosureWalk<'schema> {
             .find(|import| &import.local_name == name)
         {
             self.imports
-                .insert(name.as_str().to_owned(), import.clone());
+                .push((name.as_str().to_owned(), import.clone()));
             return Ok(());
         }
         Err(SchemaError::FamilyReferenceNotFound {
