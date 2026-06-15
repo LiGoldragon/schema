@@ -1,3 +1,7 @@
+[workspace]
+members  = ["schema-cc"]
+resolver = "2"
+
 [package]
 name         = "schema-next"
 version      = "0.2.0"
