@@ -186,7 +186,7 @@ dependencies = [
 [[package]]
 name = "nota-next"
 version = "0.5.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=structural-forms-integration#00d00504ef2f6c590761916eb438ca1a66fdab94"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f9155de55353900ec023b3bb76336b902b8736c1"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -195,7 +195,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=structural-forms-integration#00d00504ef2f6c590761916eb438ca1a66fdab94"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#f9155de55353900ec023b3bb76336b902b8736c1"
 dependencies = [
  "proc-macro2",
  "quote",

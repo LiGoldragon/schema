@@ -14,7 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 blake3 = "1"
-nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "structural-forms-integration" }
+nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 thiserror = "2"
 
