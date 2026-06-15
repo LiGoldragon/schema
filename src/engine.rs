@@ -46,162 +46,141 @@ impl SchemaIdentity {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaError {
-    Nota(String),
-    NotaDecode(String),
+    #[error("NOTA parse error: {0}")]
+    Nota(#[from] nota_next::NotaError),
+    #[error("NOTA decode error: {0}")]
+    NotaDecode(#[from] nota_next::NotaDecodeError),
+    #[error("structural macro parse error: {0}")]
+    StructuralMacroParse(String),
+    #[error("rkyv archive encoding failed")]
     ArchiveEncode,
+    #[error("rkyv archive decoding failed")]
     ArchiveDecode,
+    #[error("expected {expected}, found {found} root objects")]
     ExpectedRootObjectCount {
         expected: &'static str,
         found: usize,
     },
-    ExpectedDelimiter {
-        expected: &'static str,
-    },
-    ExpectedEvenMapEntries {
-        found: usize,
-    },
-    Io {
-        path: String,
-        reason: String,
-    },
-    MalformedSchemaPath {
-        path: String,
-    },
-    ExpectedSymbol {
-        found: String,
-    },
+    #[error("expected {expected} delimiter")]
+    ExpectedDelimiter { expected: &'static str },
+    #[error("expected an even number of map entries, found {found}")]
+    ExpectedEvenMapEntries { found: usize },
+    #[error("io error at {path}: {reason}")]
+    Io { path: String, reason: String },
+    #[error("malformed schema path: {path}")]
+    MalformedSchemaPath { path: String },
+    #[error("expected a symbol, found {found}")]
+    ExpectedSymbol { found: String },
+    #[error("expected an enum variant")]
     ExpectedEnumVariant,
-    MalformedSchemaNode {
-        found: String,
-    },
+    #[error("malformed schema node: {found}")]
+    MalformedSchemaNode { found: String },
+    #[error("unsupported macro node structure at {position}: expected {expected:?}, found {found}")]
     UnsupportedMacroNodeStructure {
         position: String,
         expected: Vec<String>,
         found: String,
     },
-    MacroDidNotMatch {
-        macro_name: String,
-    },
+    #[error("macro {macro_name} did not match")]
+    MacroDidNotMatch { macro_name: String },
+    #[error("macro {macro_name} produced unexpected output, expected {expected}")]
     UnexpectedMacroOutput {
         macro_name: String,
         expected: &'static str,
     },
-    ExpectedMacroDefinition {
-        found: String,
-    },
-    InvalidMacroCapture {
-        found: String,
-    },
-    MissingMacroBinding {
-        name: String,
-    },
-    ConflictingMacroBinding {
-        name: String,
-    },
+    #[error("expected a macro definition, found {found}")]
+    ExpectedMacroDefinition { found: String },
+    #[error("invalid macro capture: {found}")]
+    InvalidMacroCapture { found: String },
+    #[error("missing macro binding {name}")]
+    MissingMacroBinding { name: String },
+    #[error("conflicting macro binding {name}")]
+    ConflictingMacroBinding { name: String },
+    #[error("expected {expected} template objects at {position}, found {found}")]
     ExpectedTemplateObjectCount {
         position: &'static str,
         expected: usize,
         found: usize,
     },
+    #[error("empty type reference")]
     EmptyTypeReference,
-    UnknownTypeReferenceForm {
-        head: String,
-        argument_count: usize,
-    },
-    ReservedScalarTypeName {
-        name: String,
-    },
-    MalformedImportSource {
-        found: String,
-    },
-    UnresolvedImportCrate {
-        crate_name: String,
-    },
+    #[error("unknown type reference form {head} with {argument_count} arguments")]
+    UnknownTypeReferenceForm { head: String, argument_count: usize },
+    #[error("reserved scalar type name {name}")]
+    ReservedScalarTypeName { name: String },
+    #[error("malformed import source: {found}")]
+    MalformedImportSource { found: String },
+    #[error("unresolved import crate {crate_name}")]
+    UnresolvedImportCrate { crate_name: String },
+    #[error("imported type {type_name} not found in {crate_name}:{module}")]
     ImportedTypeNotFound {
         crate_name: String,
         module: String,
         type_name: String,
     },
-    ExpectedRawDeclarationName {
-        found: String,
-    },
-    RawDeclarationNameMismatch {
-        key: String,
-        declared: String,
-    },
-    ExpectedRawFieldPairCount {
-        declaration: String,
-        found: usize,
-    },
-    ExpectedSyntaxDeclaration {
-        found: String,
-    },
-    ExpectedSyntaxReference {
-        found: String,
-    },
+    #[error("expected a raw declaration name, found {found}")]
+    ExpectedRawDeclarationName { found: String },
+    #[error("raw declaration name mismatch: key {key} declared {declared}")]
+    RawDeclarationNameMismatch { key: String, declared: String },
+    #[error("expected an even field-pair count for {declaration}, found {found}")]
+    ExpectedRawFieldPairCount { declaration: String, found: usize },
+    #[error("expected a syntax declaration, found {found}")]
+    ExpectedSyntaxDeclaration { found: String },
+    #[error("expected a syntax reference, found {found}")]
+    ExpectedSyntaxReference { found: String },
+    #[error("expected {form} to hold {expected}, found {found} objects")]
     ExpectedSyntaxReferenceArity {
         form: &'static str,
         expected: &'static str,
         found: usize,
     },
-    ExpectedSyntaxEnumVariant {
-        found: String,
-    },
-    DuplicateSourceDeclaration {
-        name: String,
-    },
-    SchemaEditTargetNotFound {
-        type_name: String,
-    },
-    SchemaEditExpectedStruct {
-        type_name: String,
-    },
-    SchemaEditExpectedEnum {
-        type_name: String,
-    },
+    #[error("expected a syntax enum variant, found {found}")]
+    ExpectedSyntaxEnumVariant { found: String },
+    #[error("duplicate source declaration {name}")]
+    DuplicateSourceDeclaration { name: String },
+    #[error("schema edit target {type_name} not found")]
+    SchemaEditTargetNotFound { type_name: String },
+    #[error("schema edit expected {type_name} to be a struct")]
+    SchemaEditExpectedStruct { type_name: String },
+    #[error("schema edit expected {type_name} to be an enum")]
+    SchemaEditExpectedEnum { type_name: String },
+    #[error("schema edit duplicate field {field_name} on {type_name}")]
     SchemaEditDuplicateField {
         type_name: String,
         field_name: String,
     },
+    #[error("schema edit duplicate variant {variant_name} on {type_name}")]
     SchemaEditDuplicateVariant {
         type_name: String,
         variant_name: String,
     },
+    #[error("schema edit field {field_name} not found on {type_name}")]
     SchemaEditFieldNotFound {
         type_name: String,
         field_name: String,
     },
-    SchemaEditIdentityMismatch {
-        expected: String,
-        found: String,
-    },
-    FamilyRootNotFound {
-        name: String,
-    },
-    FamilyReferenceNotFound {
-        family: String,
-        name: String,
-    },
-    FamilyRecordNotFound {
-        family: String,
-        record: String,
-    },
-    DuplicateFamilyName {
-        name: String,
-    },
-    DuplicateFamilyTable {
-        table: String,
-    },
+    #[error("schema edit identity mismatch: expected {expected}, found {found}")]
+    SchemaEditIdentityMismatch { expected: String, found: String },
+    #[error("family root {name} not found")]
+    FamilyRootNotFound { name: String },
+    #[error("family reference {name} not found in family {family}")]
+    FamilyReferenceNotFound { family: String, name: String },
+    #[error("family record {record} not found in family {family}")]
+    FamilyRecordNotFound { family: String, record: String },
+    #[error("duplicate family name {name}")]
+    DuplicateFamilyName { name: String },
+    #[error("duplicate family table {table}")]
+    DuplicateFamilyTable { table: String },
+    #[error("duplicate type parameter {parameter} on {declaration}")]
     DuplicateTypeParameter {
         declaration: String,
         parameter: String,
     },
-    ExpectedTypeParameterName {
-        declaration: String,
-        found: String,
-    },
+    #[error("expected a type parameter name on {declaration}, found {found}")]
+    ExpectedTypeParameterName { declaration: String, found: String },
+    #[error("generic arity mismatch for {head}: expected {expected}, found {found}")]
     GenericArityMismatch {
         head: String,
         expected: usize,
@@ -211,22 +190,11 @@ pub enum SchemaError {
     /// application form `(Head Arg …)` — a built-in head (`(Vector T)`), a
     /// collection form, or any other non-application parenthesis is not a
     /// legal root body.
+    #[error("expected a root application at {position}, found {found}")]
     ExpectedRootApplication {
         position: &'static str,
         found: String,
     },
-}
-
-impl From<nota_next::NotaError> for SchemaError {
-    fn from(value: nota_next::NotaError) -> Self {
-        Self::Nota(value.to_string())
-    }
-}
-
-impl From<nota_next::NotaDecodeError> for SchemaError {
-    fn from(value: nota_next::NotaDecodeError) -> Self {
-        Self::NotaDecode(value.to_string())
-    }
 }
 
 impl From<nota_next::MacroError> for SchemaError {
@@ -286,7 +254,7 @@ impl From<nota_next::StructuralVariantError> for SchemaError {
 impl From<nota_next::StructuralMacroError<SchemaError>> for SchemaError {
     fn from(value: nota_next::StructuralMacroError<SchemaError>) -> Self {
         match value {
-            nota_next::StructuralMacroError::Parse { error } => Self::Nota(error),
+            nota_next::StructuralMacroError::Parse { error } => Self::StructuralMacroParse(error),
             nota_next::StructuralMacroError::ExpectedSingleRoot { found } => {
                 Self::ExpectedRootObjectCount {
                     expected: "one structural macro node root object",
@@ -310,7 +278,7 @@ impl From<nota_next::StructuralMacroNodeError> for SchemaError {
 impl From<nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>> for SchemaError {
     fn from(value: nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>) -> Self {
         match value {
-            nota_next::StructuralMacroError::Parse { error } => Self::Nota(error),
+            nota_next::StructuralMacroError::Parse { error } => Self::StructuralMacroParse(error),
             nota_next::StructuralMacroError::ExpectedSingleRoot { found } => {
                 Self::ExpectedRootObjectCount {
                     expected: "one structural macro node root object",
@@ -322,14 +290,6 @@ impl From<nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>> 
         }
     }
 }
-
-impl std::fmt::Display for SchemaError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{self:?}")
-    }
-}
-
-impl std::error::Error for SchemaError {}
 
 pub struct SchemaEngine {
     registry: MacroRegistry,

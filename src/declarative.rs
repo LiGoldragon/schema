@@ -11,8 +11,8 @@ use nota_next::{
 use crate::{
     ApplicationHead, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext,
     MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration,
-    SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration,
-    TypeReference, macros::SchemaBlockExt,
+    ReferenceHead, SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration,
+    TypeDeclaration, TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(
@@ -1579,7 +1579,7 @@ impl<'object> ExpandedReference<'object> {
                         return Ok(TypeReference::FixedBytes(width));
                     }
                 }
-                ("Vector" | "Optional" | "ScopeOf" | "Map" | "Bytes", found) => {
+                (head, found) if ReferenceHead::classify(head).is_some() => {
                     return Err(SchemaError::UnknownTypeReferenceForm {
                         head: head.to_owned(),
                         argument_count: found.saturating_sub(1),

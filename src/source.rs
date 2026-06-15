@@ -1965,10 +1965,11 @@ impl SourceReference {
                 ));
             }
             ("Bytes", 2) => return Self::from_fixed_bytes_record(&items[1]),
-            ("Vector" | "Optional" | "ScopeOf" | "Map" | "Bytes", _) => {
-                return Err(SchemaError::UnknownTypeReferenceForm {
-                    head: head.to_owned(),
-                    argument_count: items.len().saturating_sub(1),
+            (head, _) if crate::ReferenceHead::classify(head).is_some() => {
+                return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                    form: "built-in reference head",
+                    expected: "the head's declared arity",
+                    found: items.len(),
                 });
             }
             _ => {}

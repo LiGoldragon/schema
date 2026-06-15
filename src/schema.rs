@@ -1340,6 +1340,14 @@ enum ApplicationNode {
     Application(Name, Vec<TypeReference>),
 }
 
+/// The fixed-width byte leaf `(Bytes N)`, captured through nota-next's
+/// headed-atom structural shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, nota_next::StructuralMacroNode)]
+enum FixedBytesNode {
+    #[shape(head = "Bytes", atom)]
+    FixedBytes(u64),
+}
+
 /// A declaration's type-name position: either a bare `Name` (the ordinary
 /// declaration head) or a parameterized head `(Name Param Param …)` that
 /// introduces type-parameter binders. The parameterized form is
@@ -1452,6 +1460,36 @@ pub enum TypeReference {
         #[rkyv(omit_bounds)]
         arguments: Vec<TypeReference>,
     },
+}
+
+/// Reserved built-in reference heads and their canonical arities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReferenceHead {
+    Vector,
+    Optional,
+    ScopeOf,
+    Map,
+    Bytes,
+}
+
+impl ReferenceHead {
+    pub fn classify(head: &str) -> Option<Self> {
+        match head {
+            "Vector" => Some(Self::Vector),
+            "Optional" => Some(Self::Optional),
+            "ScopeOf" => Some(Self::ScopeOf),
+            "Map" => Some(Self::Map),
+            "Bytes" => Some(Self::Bytes),
+            _ => None,
+        }
+    }
+
+    pub fn node_arity(self) -> usize {
+        match self {
+            Self::Vector | Self::Optional | Self::ScopeOf | Self::Bytes => 2,
+            Self::Map => 3,
+        }
+    }
 }
 
 impl NotaDecode for TypeReference {
@@ -1908,9 +1946,9 @@ impl TypeReference {
                     ));
                 }
                 ("Bytes", 2) => {
-                    return Self::from_fixed_bytes_width(&objects[1]);
+                    return Self::from_fixed_bytes_block(block);
                 }
-                ("Vector" | "Optional" | "ScopeOf" | "Map" | "Bytes", found) => {
+                (head, found) if ReferenceHead::classify(head).is_some() => {
                     return Err(SchemaError::UnknownTypeReferenceForm {
                         head: head.to_owned(),
                         argument_count: found.saturating_sub(1),
@@ -1956,18 +1994,11 @@ impl TypeReference {
         }
     }
 
-    /// Lower the numeric width of a fixed-size byte reference `(Bytes N)`
-    /// into `TypeReference::FixedBytes(N)` — the grammar's one numeric
-    /// type-argument.
-    fn from_fixed_bytes_width(block: &Block) -> Result<Self, SchemaError> {
-        let width = block
-            .demote_to_string()
-            .and_then(|text| text.parse::<u64>().ok())
-            .ok_or_else(|| SchemaError::UnknownTypeReferenceForm {
-                head: "Bytes".to_owned(),
-                argument_count: 1,
-            })?;
-        Ok(Self::FixedBytes(width))
+    /// Lower the fixed-width byte leaf `(Bytes N)` through the HeadedAtom seam.
+    fn from_fixed_bytes_block(block: &Block) -> Result<Self, SchemaError> {
+        match FixedBytesNode::from_structural_block(block)? {
+            FixedBytesNode::FixedBytes(width) => Ok(Self::FixedBytes(width)),
+        }
     }
 
     fn from_macro_invocation(
