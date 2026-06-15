@@ -11,6 +11,7 @@ license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/schema-next"
 description  = "Position-aware schema macro engine and semantic schema model."
 publish      = false
+build        = "build.rs"
 
 [lib]
 name = "schema_next"
@@ -21,6 +22,14 @@ blake3 = "1"
 nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 thiserror = "2"
+
+# Build-time only: schema-cc generates schema-next's parenthesis-reference
+# dispatch from the canonical ReferenceGrammar; it never links into the
+# library. A workspace `path` dep, not a `git` dep — schema-cc is co-located
+# as a workspace member, not a sibling repo.
+[build-dependencies]
+schema-cc = { path = "schema-cc" }
+nota-next = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -28,6 +28,9 @@
             pkgs.lib.hasSuffix ".schema" path
             || pkgs.lib.hasSuffix ".asschema" path
             || pkgs.lib.hasSuffix ".macro-library" path
+            # The canonical reference grammar (schemas/reference-grammar.nota)
+            # is build-time data: build.rs reads it to generate the resolver.
+            || pkgs.lib.hasSuffix ".nota" path
           );
         sourceFilter = path: type:
           type == "directory" || (craneLib.filterCargoSources path type) || (schemaFilter path type);

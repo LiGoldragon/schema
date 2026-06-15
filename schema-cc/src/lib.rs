@@ -10,22 +10,23 @@
 //! direction of typed transformation:
 //!
 //! ```text
-//! NOTA text ─▶ ReferenceGrammar ─(TryFrom)▶ ValidatedReferenceGrammar ─(From)▶ ResolverModule ─▶ Rust source
+//! NOTA text ─▶ ReferenceGrammar ─(TryFrom)▶ ValidatedReferenceGrammar ─(From)▶ ReferenceDispatch ─▶ Rust source
 //! ```
 //!
 //! - [`grammar`]  — `ReferenceGrammar`: the dispatch precedence as data, decoded
 //!   by the nota-next seed (no hand-rolled parser).
 //! - [`validate`] — `ValidatedReferenceGrammar`: catch-all unique and last,
 //!   declared-macro before it, no built-in head collision.
-//! - [`generate`] — `ResolverModule`: emits the resolver Rust from a validated
+//! - [`dispatch`] — `ReferenceDispatch`: emits schema-next's REAL parenthesis
+//!   dispatch (a method body over schema-next's own types) from a validated
 //!   grammar. It generates code; it never resolves references at runtime.
 
+pub mod dispatch;
 pub mod error;
-pub mod generate;
 pub mod grammar;
 pub mod validate;
 
+pub use dispatch::ReferenceDispatch;
 pub use error::Error;
-pub use generate::ResolverModule;
 pub use grammar::{ArgumentCount, BuiltinArity, BuiltinHead, ReferenceForm, ReferenceGrammar};
 pub use validate::ValidatedReferenceGrammar;

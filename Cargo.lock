@@ -335,6 +335,7 @@ dependencies = [
  "blake3",
  "nota-next",
  "rkyv",
+ "schema-cc",
  "thiserror",
 ]
 

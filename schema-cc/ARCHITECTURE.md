@@ -36,7 +36,7 @@ NOTA definition text ──▶ nota-next decode ──▶ ReferenceGrammar (type
                                           ValidatedReferenceGrammar
                                                      │ From (emit)
                                                      ▼
-                                          ResolverModule (Rust tokens) ──▶ generated resolver source
+                                          ReferenceDispatch (Rust tokens) ──▶ schema-next's resolver source
 ```
 
 - **Decode** — `ReferenceGrammar` derives nota-next's `StructuralMacroNode`, so
@@ -48,11 +48,16 @@ NOTA definition text ──▶ nota-next decode ──▶ ReferenceGrammar (type
   This is the conflict check that match-arm ordering could not express, lifted to
   declared data (the registry-aware analogue of nota-next's
   `StructuralVariantSet::validate_no_silent_conflicts`).
-- **Generate** — `From<&ValidatedReferenceGrammar>` for the emitted resolver
-  module: the precedence-ordered dispatch that today is hand-written in
-  schema-next's `from_parenthesis_objects`, emitted from the declared order via
-  `proc-macro2`/`quote` + one `prettyplease` pass (the schema-rust-next emission
-  style).
+- **Generate** — `From<&ValidatedReferenceGrammar>` for `ReferenceDispatch`:
+  schema-next's REAL parenthesis resolver, emitted as a method body over
+  schema-next's own types (`TypeReference`/`SchemaError`/`MacroRegistry`/
+  `MacroContext`/`Block`). The precedence-ordered dispatch that was hand-written
+  in schema-next's `from_parenthesis_objects` is emitted from the declared order
+  via `proc-macro2`/`quote` + one `prettyplease` pass (the schema-rust-next
+  emission style). Each built-in arm dispatches to a uniform `resolve_<snake>`
+  construction method that stays in schema-next; the reserved-head guard is
+  derived from the grammar's built-in set; the `DeclaredMacro` + `Application`
+  markers map to schema-next's `from_macro_or_application` tail.
 
 ## Noun model (Rust discipline)
 
@@ -60,12 +65,25 @@ Behavior lives on the data-bearing types, never free functions or ZST holders:
 `ReferenceGrammar` and `ValidatedReferenceGrammar` own validate/generate via
 `TryFrom`/`From`; head names and arities are newtypes; errors are one
 `thiserror` `Error` enum in `src/error.rs`. One concern per file
-(`grammar.rs`, `validate.rs`, `generate.rs`, `error.rs`); tests under `tests/`.
+(`grammar.rs`, `validate.rs`, `dispatch.rs`, `error.rs`); tests under `tests/`.
 
-## What is NOT here (v0 boundary)
+## How schema-next consumes it
 
-The prototype proves the `ReferenceGrammar` → resolver generation path and the
-validator standalone (generate + prove equivalence to schema-next's current
-hand-written ordering). Re-wiring `schema-next` to *consume* the generated
-resolver, and migrating further definition (built-in heads as data, the shape
-vocabulary, emission rules), are the staged next steps in report `652`.
+schema-next takes `schema-cc` as a `[build-dependencies]` workspace `path` dep.
+schema-next's `build.rs` reads the canonical grammar
+(`schemas/reference-grammar.nota`), decodes + validates it through schema-cc,
+emits `ReferenceDispatch`, and writes it to the COMMITTED, freshness-gated
+`src/reference_resolver_generated.rs`: with `SCHEMA_NEXT_UPDATE_RESOLVER` set the
+build (re)writes the file; unset, it byte-compares and fails on drift. The
+library `include!`s that file, so the generated `resolve_parenthesis_reference`
+becomes the method `from_block_with_registry`'s `Parenthesis` arm calls. The
+hand-written `from_parenthesis_objects` match is retired. Byte-equivalence is
+proven by schema-next's full test suite — `tests/identity.rs` blake3
+hash-stability holds, so the generated dispatch behaves identically.
+
+The earlier v0 standalone resolver (abstract `Resolution`/`ResolveError`
+placeholders with `todo!()` arms) was retired with this wiring: it was a second
+emission mechanism that could silently drift from the consumed one, and the real
+dispatch subsumes its structure-and-precedence proof. Migrating further
+definition (built-in heads as data, the shape vocabulary, emission rules) remains
+the staged next step in report `652`.

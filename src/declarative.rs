@@ -1533,7 +1533,8 @@ impl<'object> ExpandedReference<'object> {
 
     /// Lower a parenthesised reference over the post-expansion
     /// [`ExpandedObject`] tree. This mirrors the `Block`-path dispatch order
-    /// in `TypeReference::from_parenthesis_objects` over a different input
+    /// in `TypeReference::resolve_parenthesis_reference` (which schema-cc now
+    /// generates from the canonical reference grammar) over a different input
     /// type — `ExpandedObject` is schema-next's own template-expansion
     /// representation, not a nota-next `Block`, so it cannot share the
     /// `StructuralMacroNode` decode directly; the canonical-head fast path

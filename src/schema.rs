@@ -1824,7 +1824,7 @@ impl TypeReference {
                 delimiter: Delimiter::Parenthesis,
                 root_objects,
                 ..
-            } => Self::from_parenthesis_objects(block, root_objects, registry, context),
+            } => Self::resolve_parenthesis_reference(block, root_objects, registry, context),
             Block::PipeText(_) => Err(SchemaError::ExpectedSymbol {
                 found: block.reemit_fallback(),
             }),
@@ -1886,78 +1886,84 @@ impl TypeReference {
         name.schema_name()
     }
 
-    /// Lower a parenthesised reference. Dispatch ORDER is the grammar's
-    /// disambiguation — it is deliberately not compiler-checked (the
-    /// application form would otherwise conflict with every built-in and
-    /// declared head), so the ordering is stated here and pinned by tests:
+    /// Construct the `Vector` built-in: `(Vector T)`.
     ///
-    /// 1. The canonical built-in heads — `(Vector T)`, `(Optional T)`,
-    ///    `(ScopeOf T)`, `(Map K V)`, `(Bytes N)` — are the direct fast
-    ///    path. Each has exactly one canonical spelling; the dropped aliases
-    ///    (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse.
-    /// 2. A DECLARED head — a registered user TypeReference macro (e.g.
-    ///    `(Bag $Type)`) — is consulted next; a declared head wins over the
-    ///    broad application form.
-    /// 3. The broad generic-application form `(Foo A B …)` is the
-    ///    structural-macro seam ([`ApplicationNode`] via the
-    ///    `#[shape(pascal_head, body)]` derive) — the fallback for any other
-    ///    PascalCase head whose tail decodes as type-reference arguments.
-    fn from_parenthesis_objects(
-        block: &Block,
+    /// One of the uniform per-built-in resolvers the schema-cc-generated
+    /// parenthesis dispatch calls (see `reference_resolver_generated.rs`).
+    /// Every `resolve_*` method shares this signature so the generated call
+    /// site is uniform; this body is the construction lifted verbatim from
+    /// the former hand-written `(Vector, 2)` match arm.
+    fn resolve_vector(
+        _block: &Block,
         objects: &[Block],
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Self, SchemaError> {
-        if let Some(head) = objects.first().and_then(Block::demote_to_string) {
-            match (head, objects.len()) {
-                ("Vector", 2) => {
-                    return Ok(Self::Vector(Box::new(Self::from_block_with_registry(
-                        &objects[1],
-                        registry,
-                        context,
-                    )?)));
-                }
-                ("Optional", 2) => {
-                    return Ok(Self::Optional(Box::new(Self::from_block_with_registry(
-                        &objects[1],
-                        registry,
-                        context,
-                    )?)));
-                }
-                ("ScopeOf", 2) => {
-                    return Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
-                        &objects[1],
-                        registry,
-                        context,
-                    )?)));
-                }
-                ("Map", 3) => {
-                    return Ok(Self::Map(
-                        Box::new(Self::from_block_with_registry(
-                            &objects[1],
-                            registry,
-                            context,
-                        )?),
-                        Box::new(Self::from_block_with_registry(
-                            &objects[2],
-                            registry,
-                            context,
-                        )?),
-                    ));
-                }
-                ("Bytes", 2) => {
-                    return Self::from_fixed_bytes_block(block);
-                }
-                (head, found) if ReferenceHead::classify(head).is_some() => {
-                    return Err(SchemaError::UnknownTypeReferenceForm {
-                        head: head.to_owned(),
-                        argument_count: found.saturating_sub(1),
-                    });
-                }
-                _ => {}
-            }
-        }
-        Self::from_macro_or_application(block, registry, context)
+        Ok(Self::Vector(Box::new(Self::from_block_with_registry(
+            &objects[1],
+            registry,
+            context,
+        )?)))
+    }
+
+    /// Construct the `Optional` built-in: `(Optional T)`.
+    fn resolve_optional(
+        _block: &Block,
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        Ok(Self::Optional(Box::new(Self::from_block_with_registry(
+            &objects[1],
+            registry,
+            context,
+        )?)))
+    }
+
+    /// Construct the `ScopeOf` built-in: `(ScopeOf T)`.
+    fn resolve_scope_of(
+        _block: &Block,
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
+            &objects[1],
+            registry,
+            context,
+        )?)))
+    }
+
+    /// Construct the `Map` built-in: `(Map K V)`.
+    fn resolve_map(
+        _block: &Block,
+        objects: &[Block],
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        Ok(Self::Map(
+            Box::new(Self::from_block_with_registry(
+                &objects[1],
+                registry,
+                context,
+            )?),
+            Box::new(Self::from_block_with_registry(
+                &objects[2],
+                registry,
+                context,
+            )?),
+        ))
+    }
+
+    /// Construct the `Bytes` built-in: `(Bytes N)` — the fixed-width byte
+    /// leaf decoded through the HeadedAtom seam.
+    fn resolve_bytes(
+        block: &Block,
+        _objects: &[Block],
+        _registry: &MacroRegistry,
+        _context: &mut MacroContext,
+    ) -> Result<Self, SchemaError> {
+        Self::from_fixed_bytes_block(block)
     }
 
     /// The seam between a DECLARED head (a registered user macro) and the
@@ -2357,3 +2363,10 @@ impl SchemaNodeDelimitedNotation {
         }
     }
 }
+
+// The parenthesis-reference dispatch (`TypeReference::resolve_parenthesis_reference`)
+// is GENERATED by schema-cc from `schemas/reference-grammar.nota` and written to
+// the committed, freshness-gated `reference_resolver_generated.rs` by `build.rs`.
+// It dispatches each built-in head to the uniform `resolve_<snake>` construction
+// methods above, then the reserved-head guard, then `from_macro_or_application`.
+include!("reference_resolver_generated.rs");

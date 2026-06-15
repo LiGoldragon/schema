@@ -9,7 +9,7 @@
 //!
 //! It is an ordered list of [`ReferenceForm`]s. The order *is* the dispatch
 //! precedence: a generated resolver tries each form top to bottom. Nothing here
-//! interprets the grammar at runtime — [`crate::generate`] reads a validated
+//! interprets the grammar at runtime — [`crate::dispatch`] reads a validated
 //! grammar and emits the resolver as Rust.
 
 use nota_next::{
@@ -67,6 +67,24 @@ impl BuiltinHead {
     /// The head spelling.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The head's PascalCase spelling rendered in snake_case, e.g.
+    /// `ScopeOf` -> `scope_of`. Used to name the per-built-in construction
+    /// method (`resolve_<snake>`) the generated dispatch calls.
+    pub fn to_snake_case(&self) -> String {
+        let mut snake = String::with_capacity(self.0.len() + 4);
+        for (index, character) in self.0.chars().enumerate() {
+            if character.is_ascii_uppercase() {
+                if index != 0 {
+                    snake.push('_');
+                }
+                snake.push(character.to_ascii_lowercase());
+            } else {
+                snake.push(character);
+            }
+        }
+        snake
     }
 }
 
