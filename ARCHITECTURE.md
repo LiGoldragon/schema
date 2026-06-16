@@ -539,3 +539,68 @@ strict key/value authored surface without invoking macro lowering:
 
 The proof fixture is `tests/fixtures/syntax-layer/schema.schema`; the tests in
 `tests/syntax_layer.rs` assert the raw-to-syntax result directly.
+
+## Generics, Traits, and Component Code Generation
+
+This is the construct vocabulary that lets the schema GENERATE component code
+instead of hand-wiring it. The CONSTRAINTS below are settled (what we want); the
+implementation of several pieces is deliberately OPEN (noted), so this section
+states the shape we are aiming at without pinning the exact mechanism.
+
+### Constraints (settled)
+
+A type's kind is explicit on its declaration form, never inferred from syntactic
+position (Spirit `3742`). The closed delimiter set carries every construct:
+`Name { … }` is a struct, `Name [ … ]` an enum, `Name <ref>` a newtype, and the
+two reserved pipe forms carry the constructs the positional forms cannot —
+`Name (| [params] body |)` is a GENERIC declaration (Spirit `hh3z`; the inner
+`[…]`/`{…}` selects enum/struct), and `{| … |}` is the TRAIT/IMPL construct
+(Spirit `bpyu`). A generic's parameters and body live together inside the
+`(| |)` so the binders scope the body structurally — there is no key/value
+side-channel threading binders from a separate object. A generic is USED by the
+flat `(Head Arg…)` application form, name-resolved against its explicit
+declaration exactly as `(Vector T)` is known; use-site name resolution is
+legitimate, not guessing.
+
+Reaction frames are workspace-universal (Spirit `zjmc`): the Work/Action types
+are declared once as generics and BOUND per component by applying them at the
+component's roots. Re-authoring them per component is a design failure.
+
+Code generation is EXPANSION, not generic-alias: a component root is expanded by
+positional binder→argument substitution into a concrete enum with empty
+parameters, which flows through the existing concrete-enum emitters
+(constructors, `From`, accessors, rkyv/NOTA codecs) for zero new machinery. The
+genericity does not persist as a `pub type Input = Work<…>` alias in the
+component's output — each component owns a concrete interface. Generation is
+build-time only (Spirit `9rjq`).
+
+The data / hand-written boundary (Spirit `5hjv`): generated schema types are the
+source of every operation data type; handwritten Rust implements only BEHAVIOR
+on those generated nouns. A method body is itself data — an expression tree over
+the application form (Spirit `4itr`/`7c71`) — but only for the marker case and a
+small FIXED, named mechanical family (payload projection, the auto-emitted
+constructors, `From` legs, accessors). Genuine business logic (the decision
+plane, the store, the guardian, the signal-query matchers) stays hand-written;
+arbitrary Rust expression bodies are never modeled as data.
+
+### Open (how — deliberately unsettled)
+
+- The `fn` / signature sub-construct for trait DECLARATIONS: signatures datify
+  cleanly, but default method bodies are real Rust — the inside of `{| |}` for a
+  trait declaration is recognized but not designed.
+- The `{| |}` impl shape detail: the optional-slot semantics
+  (`{| [params]? Trait Target [body]? |}`, shape-discriminated, no keywords),
+  where-clauses, and whether impls are a `{| |}` object or a top-level
+  `(Impl …)` section are not finally reconciled.
+- Generic impl-header emission `impl<P..> Type<P..> where P: Bound` plus a
+  parameter-bound vocabulary is genuinely NEW codegen, not a free consequence of
+  generics-as-data; until it lands, parameterized-declaration inherent impls stay
+  suppressed.
+- The named mechanical-body family beyond payload projection is not enumerated.
+- Role→trait binding: an explicit data table versus the current structural
+  inference from variant names is undecided.
+
+The generics leg (declaration, use, expansion) is prototyped and proven green;
+the trait/impl leg is designed-but-not-integrated. Per Spirit (low-certainty
+design record, review certainty as integration proceeds): this section's OPEN
+items are the parts still being settled.

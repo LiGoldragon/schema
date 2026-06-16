@@ -33,6 +33,17 @@ include `(Vector T)`, `(Map K V)`, and `(Optional T)`, lowering to `Vector`,
 `Map`, and `Optional` in semantic schema. Parentheses are composite-reference
 and macro-call form.
 
+*Type kind is announced by the value delimiter; the pipe forms mark generics and
+traits/impls.* A value's wrapping delimiter carries its kind: `{...}` a struct
+body, `[...]` an enum body. The two reserved pipe delimiters extend this:
+`(| ... |)` wraps a generic declaration — `Name (| [params] body |)`, with the
+parameter list and body nested inside the pipe-parenthesis so the type-parameter
+binders scope the body by structure (no key/value side-channel) — and
+`{| ... |}` wraps the trait/impl construct. A type's kind is thus explicit on the
+form, never inferred from syntactic position; uses resolve by name as the
+built-in `(Vector T)` does. Per Spirit `hh3z` and `3742`; the trait/impl
+`{| |}` shape is still to be designed.
+
 *Semantic schema namespace entries are visibility-tagged.* The semantic shape
 is public/private declaration data over `Name` plus `TypeDeclaration`; top-level
 declarations lower to public, direct PascalCase field declarations inside root
