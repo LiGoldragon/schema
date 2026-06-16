@@ -24,7 +24,13 @@ fn rejects_application_not_last() {
     let nota = "(ReferenceGrammar (Builtin Vector 1) Application DeclaredMacro)";
     let error = validate(nota).expect_err("catch-all before later forms is unsound");
     assert!(
-        matches!(error, Error::ApplicationNotLast { position: 1, total: 3 }),
+        matches!(
+            error,
+            Error::ApplicationNotLast {
+                position: 1,
+                total: 3
+            }
+        ),
         "got {error:?}"
     );
 }
@@ -56,7 +62,13 @@ fn declared_macro_after_application_is_caught_as_not_last() {
     let nota = "(ReferenceGrammar (Builtin Vector 1) Application DeclaredMacro)";
     let error = validate(nota).expect_err("a marker after the catch-all is unsound");
     assert!(
-        matches!(error, Error::ApplicationNotLast { position: 1, total: 3 }),
+        matches!(
+            error,
+            Error::ApplicationNotLast {
+                position: 1,
+                total: 3
+            }
+        ),
         "got {error:?}"
     );
 }
@@ -86,8 +98,7 @@ fn rejects_builtin_after_a_marker() {
 
 #[test]
 fn rejects_duplicate_declared_macro() {
-    let nota =
-        "(ReferenceGrammar (Builtin Vector 1) DeclaredMacro DeclaredMacro Application)";
+    let nota = "(ReferenceGrammar (Builtin Vector 1) DeclaredMacro DeclaredMacro Application)";
     let error = validate(nota).expect_err("the registry stage is a single rung");
     assert!(
         matches!(error, Error::DuplicateDeclaredMacro { count: 2 }),

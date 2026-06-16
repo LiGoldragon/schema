@@ -42,8 +42,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match resolver.write_or_check(Path::new(GENERATED_PATH), env::var_os(UPDATE_VARIABLE).is_some())
-    {
+    match resolver.write_or_check(
+        Path::new(GENERATED_PATH),
+        env::var_os(UPDATE_VARIABLE).is_some(),
+    ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(report) => {
             eprintln!("schema-next build: {report}");

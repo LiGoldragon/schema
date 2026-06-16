@@ -25,8 +25,12 @@ fn emitted_dispatch_keeps_builtin_arms_in_declared_order() {
     let source = emit(CANONICAL).to_dispatch_source();
 
     let vector = source.find("resolve_vector").expect("Vector arm present");
-    let optional = source.find("resolve_optional").expect("Optional arm present");
-    let scope_of = source.find("resolve_scope_of").expect("ScopeOf arm present");
+    let optional = source
+        .find("resolve_optional")
+        .expect("Optional arm present");
+    let scope_of = source
+        .find("resolve_scope_of")
+        .expect("ScopeOf arm present");
     let map = source.find("resolve_map").expect("Map arm present");
     let bytes = source.find("resolve_bytes").expect("Bytes arm present");
 
@@ -55,7 +59,9 @@ fn builtin_arm_dispatches_to_the_snake_case_resolver_method() {
 fn emitted_dispatch_orders_guard_then_application_tail() {
     let source = emit(CANONICAL).to_dispatch_source();
 
-    let last_builtin = source.find("resolve_bytes").expect("last built-in arm present");
+    let last_builtin = source
+        .find("resolve_bytes")
+        .expect("last built-in arm present");
     let reserved_guard = source
         .find("RESERVED_BUILTIN_HEADS")
         .expect("reserved-head guard present");
@@ -93,7 +99,10 @@ fn emitted_dispatch_targets_schema_next_types() {
     let source = emit(CANONICAL).to_dispatch_source();
     // The emission names schema-next's real types — co-located, so the
     // generated source compiles into schema-next, not schema-cc.
-    assert!(source.contains("impl TypeReference"), "emits into TypeReference's impl:\n{source}");
+    assert!(
+        source.contains("impl TypeReference"),
+        "emits into TypeReference's impl:\n{source}"
+    );
     assert!(
         source.contains("-> Result<Self, SchemaError>"),
         "returns schema-next's Self/SchemaError:\n{source}"
