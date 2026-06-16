@@ -5,10 +5,10 @@
 //! Three fixtures drive the slice, all under `tests/fixtures/reaction/schema/`:
 //!
 //! - `reaction.schema` — the maximal SHARED reaction frame, declared once as
-//!   the two parameterized declarations `(Work Event WriteDone ReadDone
-//!   EffectDone)` and `(Action Reply Write Read Effect Continuation)`. It has
-//!   no plane roots (empty Input/Output): a file of parameterized declarations
-//!   meant to be imported.
+//!   the two parameterized declarations `(| Work Event WriteDone ReadDone
+//!   EffectDone |)` and `(| Action Reply Write Read Effect Continuation |)`. It
+//!   has no plane roots (empty Input/Output): a file of parameterized
+//!   declarations meant to be imported.
 //! - `spirit-nexus.schema` — spirit's nexus plane MIGRATED onto the frame:
 //!   it imports `Work`/`Action` from the reaction fixture and applies them at
 //!   the Input/Output ROOT positions, binding spirit's payload vocabulary. The
@@ -31,8 +31,8 @@
 use std::path::PathBuf;
 
 use schema_next::{
-    ApplicationHead, Declaration, EnumVariant, ImportResolver, MacroContext, Name, Root,
-    RootApplication, Schema, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference,
+    ApplicationHead, EnumVariant, ImportResolver, MacroContext, Name, Root, RootApplication, Schema,
+    SchemaEngine, SchemaIdentity, TypeReference,
 };
 
 fn fixture_dir() -> PathBuf {
@@ -77,80 +77,23 @@ fn lower_concrete() -> Schema {
         .expect("concrete (pre-migration) spirit nexus lowers")
 }
 
-/// One parameterized frame declaration (`Work` or `Action`) paired with an
-/// application's argument list, ready to expand. Expanding substitutes each
-/// declared binder with the corresponding application argument throughout the
-/// frame's enum variants, yielding the concrete `EnumVariant` list a migrated
-/// root denotes. The frame's variant *names* (`SignalArrived`, `CommandSemaWrite`,
-/// …) are fixed by the frame; only the payload references are substituted.
-struct FrameExpansion<'frame> {
-    parameters: &'frame [Name],
-    variants: &'frame [EnumVariant],
-    arguments: &'frame [TypeReference],
-}
-
-impl<'frame> FrameExpansion<'frame> {
-    /// Pair a frame head declaration (which must be a parameterized enum) with
-    /// the arguments a root application supplies it. The argument count must
-    /// equal the binder count — the arity the frame fixed.
-    fn new(frame_head: &'frame Declaration, arguments: &'frame [TypeReference]) -> Self {
-        let TypeDeclaration::Enum(body) = frame_head.value() else {
-            panic!(
-                "frame head {} must be a parameterized enum",
-                frame_head.name()
-            );
-        };
-        assert_eq!(
-            frame_head.parameters().len(),
-            arguments.len(),
-            "frame head {} arity must match the application argument count",
-            frame_head.name(),
-        );
-        Self {
-            parameters: frame_head.parameters(),
-            variants: &body.variants,
-            arguments,
-        }
-    }
-
-    /// The concrete variant list the application denotes: every variant of the
-    /// frame with its payload's binder reference replaced by the bound argument.
-    fn expanded_variants(&self) -> Vec<EnumVariant> {
-        self.variants
-            .iter()
-            .map(|variant| EnumVariant {
-                name: variant.name.clone(),
-                payload: variant
-                    .payload
-                    .as_ref()
-                    .map(|payload| self.substitute(payload)),
-                stream_relation: variant.stream_relation.clone(),
-            })
-            .collect()
-    }
-
-    /// Replace a binder reference with the argument bound to it; leave any
-    /// other reference untouched. The frame's payloads are bare binder
-    /// references (`Event`, `WriteDone`, …), so a single-level substitution
-    /// covers every leg.
-    fn substitute(&self, payload: &TypeReference) -> TypeReference {
-        let TypeReference::Plain(name) = payload else {
-            return payload.clone();
-        };
-        self.parameters
-            .iter()
-            .position(|parameter| parameter == name)
-            .map(|index| self.arguments[index].clone())
-            .unwrap_or_else(|| payload.clone())
-    }
-}
-
-fn frame_head<'schema>(reaction: &'schema Schema, name: &str) -> &'schema Declaration {
-    reaction
-        .namespace()
-        .iter()
-        .find(|declaration| declaration.name().as_str() == name)
-        .unwrap_or_else(|| panic!("reaction frame declares {name}"))
+/// Monomorphize a migrated root application against the reaction frame, using
+/// the LIBRARY expansion path now under test: read the named frame's body
+/// (binders + variants) from the lowered reaction schema via
+/// [`Schema::declared_frame_body`], then expand the application with
+/// [`RootApplication::expand_with`]. The result is the concrete `EnumVariant`
+/// list the migrated root denotes — what the equivalence assertions check
+/// leg-for-leg against the hand-written concrete baseline.
+fn expand_root(reaction: &Schema, frame_name: &str, application: &RootApplication) -> Vec<EnumVariant> {
+    let (parameters, variants) = reaction
+        .declared_frame_body(frame_name)
+        .unwrap_or_else(|| panic!("reaction frame declares parameterized enum {frame_name}"));
+    assert_eq!(
+        parameters.len(),
+        application.arguments().len(),
+        "frame head {frame_name} arity must match the application argument count",
+    );
+    application.expand_with(parameters, variants)
 }
 
 fn application_root<'schema>(schema: &'schema Schema, position: &str) -> &'schema RootApplication {
@@ -183,9 +126,14 @@ fn concrete_root_variants<'schema>(
 fn reaction_frame_lowers_with_its_two_parameterized_declarations() {
     let reaction = lower_reaction();
 
-    // The frame declares exactly Work and Action, each parameterized.
+    // The frame declares exactly Work and Action, each parameterized. The
+    // binders are read through the same library accessor the import resolver
+    // now carries across the crate boundary.
+    let (work_parameters, _) = reaction
+        .declared_frame_body("Work")
+        .expect("Work is a declared parameterized enum");
     assert_eq!(
-        frame_head(&reaction, "Work").parameters(),
+        work_parameters,
         &[
             Name::new("Event"),
             Name::new("WriteDone"),
@@ -193,8 +141,11 @@ fn reaction_frame_lowers_with_its_two_parameterized_declarations() {
             Name::new("EffectDone"),
         ],
     );
+    let (action_parameters, _) = reaction
+        .declared_frame_body("Action")
+        .expect("Action is a declared parameterized enum");
     assert_eq!(
-        frame_head(&reaction, "Action").parameters(),
+        action_parameters,
         &[
             Name::new("Reply"),
             Name::new("Write"),
@@ -360,9 +311,8 @@ fn migrated_input_frame_expands_to_the_concrete_input_root() {
     let concrete = lower_concrete();
 
     // Expand `(Work SignalInput SemaWriteOutput SemaReadOutput EffectOutcome)`.
-    let work = frame_head(&reaction, "Work");
     let input = application_root(&migrated, "Input");
-    let expanded = FrameExpansion::new(work, input.arguments()).expanded_variants();
+    let expanded = expand_root(&reaction, "Work", input);
 
     // The concrete Input root was hand-written as the same four legs.
     let concrete_variants = concrete_root_variants(&concrete, "Input");
@@ -419,9 +369,8 @@ fn migrated_output_frame_expands_to_the_concrete_output_root() {
     // the migrated leg's payload is the applied `(Work …)`. Compare the four
     // payload-binding legs exactly, then confirm the Continuation leg name and
     // that its migrated payload is the Work application.
-    let action = frame_head(&reaction, "Action");
     let output = application_root(&migrated, "Output");
-    let expanded = FrameExpansion::new(action, output.arguments()).expanded_variants();
+    let expanded = expand_root(&reaction, "Action", output);
     let concrete_variants = concrete_root_variants(&concrete, "Output");
 
     // Same variant names, same order, for all five legs.
@@ -484,22 +433,26 @@ fn spirit_binds_every_frame_leg_full_frame() {
     let reaction = lower_reaction();
     let migrated = lower_migrated();
 
-    let work = frame_head(&reaction, "Work");
-    let action = frame_head(&reaction, "Action");
+    let (work_parameters, _) = reaction
+        .declared_frame_body("Work")
+        .expect("Work frame body");
+    let (action_parameters, _) = reaction
+        .declared_frame_body("Action")
+        .expect("Action frame body");
     let input = application_root(&migrated, "Input");
     let output = application_root(&migrated, "Output");
 
     // Every Work binder and every Action binder receives a real argument —
     // arity is full on both heads.
-    assert_eq!(work.parameters().len(), input.arguments().len());
-    assert_eq!(work.parameters().len(), 4);
-    assert_eq!(action.parameters().len(), output.arguments().len());
-    assert_eq!(action.parameters().len(), 5);
+    assert_eq!(work_parameters.len(), input.arguments().len());
+    assert_eq!(work_parameters.len(), 4);
+    assert_eq!(action_parameters.len(), output.arguments().len());
+    assert_eq!(action_parameters.len(), 5);
 
     // Every expanded leg carries a payload — no leg bound to an absent /
     // uninhabitable type (the omittable-leg mechanism stays unexercised).
-    let input_legs = FrameExpansion::new(work, input.arguments()).expanded_variants();
-    let output_legs = FrameExpansion::new(action, output.arguments()).expanded_variants();
+    let input_legs = expand_root(&reaction, "Work", input);
+    let output_legs = expand_root(&reaction, "Action", output);
     for leg in input_legs.iter().chain(output_legs.iter()) {
         assert!(
             leg.payload.is_some(),

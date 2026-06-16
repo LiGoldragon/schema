@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{ImportDeclaration, Name, SchemaEngine, SchemaError, SchemaPackage};
+use crate::{EnumVariant, ImportDeclaration, Name, SchemaEngine, SchemaError, SchemaPackage};
 
 /// A single-colon import target parsed into its three positions.
 ///
@@ -88,6 +88,12 @@ impl TryFrom<&Name> for ImportSource {
 /// an input/output root enum or a namespace type, then carries the local alias
 /// plus the parsed source so the Rust emitter can write a `use` aliasing the
 /// emitted type to the local name — instead of re-declaring the type.
+// Carrying the imported frame's variant list closes a type cycle for rkyv:
+// `ResolvedImport` -> `Vec<EnumVariant>` -> `EnumVariant` -> `TypeReference`
+// -> `ApplicationHead::Imported(ResolvedImport)`. The recursive `variants`
+// field is `omit_bounds`, and the container carries the same archive /
+// serialize / deserialize bound attributes `TypeReference` and
+// `ApplicationHead` already use to break the same cycle.
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
@@ -99,10 +105,24 @@ impl TryFrom<&Name> for ImportSource {
     Eq,
     PartialEq,
 )]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct ResolvedImport {
     local_name: Name,
     source: ImportSource,
     parameter_count: Option<u32>,
+    parameters: Vec<Name>,
+    #[rkyv(omit_bounds)]
+    variants: Vec<EnumVariant>,
 }
 
 impl ResolvedImport {
@@ -112,6 +132,23 @@ impl ResolvedImport {
 
     pub fn source(&self) -> &ImportSource {
         &self.source
+    }
+
+    /// The binders the imported frame head introduced, carried across the
+    /// crate boundary so a consumer applying the head can monomorphize the
+    /// frame in place. Empty for a non-parameterized import or one that
+    /// resolved to a root enum (roots fix no binders).
+    pub fn parameters(&self) -> &[Name] {
+        &self.parameters
+    }
+
+    /// The imported frame's declared variant list, carried across the crate
+    /// boundary alongside its binders. A consumer applying the head expands
+    /// these — substituting each binder with the application's argument — to
+    /// the concrete root enum the application denotes. Empty when the import
+    /// is not a parameterized enum frame.
+    pub fn variants(&self) -> &[EnumVariant] {
+        &self.variants
     }
 
     /// The generic arity of the imported type, carried across the crate
@@ -232,10 +269,20 @@ impl ImportResolver {
         let parameter_count = module_schema
             .declared_parameter_count(source.type_name().local_part())
             .map(|count| count as u32);
+        // Carry the imported frame's body (its binders and variant list) across
+        // the crate boundary, so a consumer applying this head can monomorphize
+        // the frame in place at its root position. A non-frame import (a plain
+        // namespace type or a root enum) reports an empty body.
+        let (parameters, variants) = module_schema
+            .declared_frame_body(source.type_name().local_part())
+            .map(|(parameters, variants)| (parameters.to_vec(), variants.to_vec()))
+            .unwrap_or_default();
         Ok(ResolvedImport {
             local_name: declaration.local_name.clone(),
             source,
             parameter_count,
+            parameters,
+            variants,
         })
     }
 

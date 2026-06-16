@@ -1,5 +1,5 @@
 //! Generic application references — `(Foo A B …)` at a reference position —
-//! and parameterized DECLARATION heads — `(Name Param …)` at a
+//! and parameterized DECLARATION heads — `(| Name Param … |)` at a
 //! declaration's type-name position.
 //!
 //! `TypeReference::Application { head, arguments }` is the broad
@@ -201,11 +201,12 @@ fn closure_over_imported_generic_head_records_the_import() {
 }
 
 // ----------------------------------------------------------------------
-// Parameterized DECLARATION heads `(Name Param …)` — the head analogue of
+// Parameterized DECLARATION heads `(| Name Param … |)` — the head analogue of
 // the application form. A declaration's type-name position becomes a
-// parenthesized `(Name Param Param …)` head that introduces type-parameter
-// binders; the binders resolve inside the body, and an `Application` of a
-// declared parameterized head is arity-checked at lowering (decision O8).
+// pipe-parenthesized `(| Name Param Param … |)` head that introduces
+// type-parameter binders; the binders resolve inside the body, and an
+// `Application` of a declared parameterized head is arity-checked at lowering
+// (decision O8).
 // ----------------------------------------------------------------------
 
 fn declaration_parameters<'schema>(
@@ -226,7 +227,7 @@ fn declaration_parameters<'schema>(
 
 #[test]
 fn parameterized_declaration_resolves_its_parameters_as_binders() {
-    let schema = lower("(Plane Input Output) { source Input target Output }");
+    let schema = lower("(| Plane Input Output |) { source Input target Output }");
 
     // The binders are recorded on the declaration, in order.
     assert_eq!(
@@ -256,7 +257,7 @@ fn parameterized_declaration_resolves_its_parameters_as_binders() {
 #[test]
 fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
     let error =
-        try_lower("(Plane Input Output) { source Input target Output } Holder (Plane String)")
+        try_lower("(| Plane Input Output |) { source Input target Output } Holder (Plane String)")
             .expect_err("one argument against a two-parameter head must fail at lowering");
     assert_eq!(
         error,
@@ -274,7 +275,7 @@ fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
 #[test]
 fn application_with_correct_argument_count_lowers() {
     let schema =
-        lower("(Plane Input Output) { source Input target Output } Holder (Plane String Integer)");
+        lower("(| Plane Input Output |) { source Input target Output } Holder (Plane String Integer)");
     assert_eq!(
         single_reference(&schema, "Holder"),
         &TypeReference::Application {
@@ -293,7 +294,7 @@ fn application_with_correct_argument_count_lowers() {
 fn declared_parameterized_head_wins_over_unresolved_application() {
     // The declared head's arity binds — a wrong count is rejected.
     assert_eq!(
-        try_lower("(Plane Input Output) { source Input target Output } Holder (Plane String)")
+        try_lower("(| Plane Input Output |) { source Input target Output } Holder (Plane String)")
             .expect_err("declared head is consulted, so its arity binds"),
         SchemaError::GenericArityMismatch {
             head: "Plane".to_owned(),
@@ -316,17 +317,17 @@ fn declared_parameterized_head_wins_over_unresolved_application() {
 }
 
 // The parameterized head survives the source-codec archive: the entry key
-// projects back to `(Plane Input Output)` text and re-decodes to the same
+// projects back to `(| Plane Input Output |)` text and re-decodes to the same
 // source object, and lowering through the source endpoint records the same
 // binders as the macro-engine path (edit site 2).
 
 #[test]
 fn parameterized_head_round_trips_through_the_source_codec() {
-    let source = "{}\n[]\n[]\n{\n  (Plane Input Output) { source Input target Output }\n}";
+    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { source Input target Output }\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     let canonical = artifact.to_schema_text();
     assert!(
-        canonical.contains("(Plane Input Output) { source Input target Output }"),
+        canonical.contains("(|Plane Input Output|) { source Input target Output }"),
         "the parameterized head must project back to source text, got {canonical}",
     );
     let recovered =
@@ -352,7 +353,7 @@ fn parameterized_head_round_trips_through_the_source_codec() {
 
 #[test]
 fn source_codec_path_also_validates_application_arity() {
-    let source = "{}\n[]\n[]\n{\n  (Plane Input Output) { source Input target Output }\n  Holder (Plane String)\n}";
+    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { source Input target Output }\n  Holder (Plane String)\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     let error = artifact
         .source()
@@ -388,7 +389,7 @@ fn source_codec_path_also_validates_application_arity() {
 fn application_root_source(read_output: &str) -> String {
     format!(
         "(Work SignalInput SemaWriteOutput {read_output} EffectOutcome) [] {{ \
-         (Work In WriteOut ReadOut Outcome) {{ request In writes WriteOut reads ReadOut outcome Outcome }} \
+         (| Work In WriteOut ReadOut Outcome |) {{ request In writes WriteOut reads ReadOut outcome Outcome }} \
          SignalInput {{ payload String }} \
          SemaWriteOutput {{ written Boolean }} \
          SemaReadOutput {{ records Integer }} \

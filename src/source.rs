@@ -506,7 +506,7 @@ impl SourceNamespace {
         let mut entries = Vec::new();
         for pair in body.root_objects().chunks_exact(2) {
             // The entry key is a declaration head: a bare name, or a
-            // parameterized `(Name Param …)` head introducing binders.
+            // parameterized `(| Name Param … |)` head introducing binders.
             // The value lowers the same way for either head.
             let (name, parameters) = DeclarationHead::from_block(&pair[0])?.into_parts();
             entries.push(SourceNamespaceEntry {
@@ -585,7 +585,7 @@ impl SourceNamespaceEntry {
     }
 
     /// The declared type parameters from a parameterized entry head
-    /// `(Name Param …)`. Empty for a bare-name entry.
+    /// `(| Name Param … |)`. Empty for a bare-name entry.
     pub fn parameters(&self) -> &[Name] {
         &self.parameters
     }
@@ -603,7 +603,7 @@ impl SourceNamespaceEntry {
     }
 
     /// Project the entry's key position back to source text: a bare name,
-    /// or a parameterized head `(Name Param …)` re-emitting each binder.
+    /// or a parameterized head `(| Name Param … |)` re-emitting each binder.
     fn head_schema_text(&self) -> String {
         if self.parameters.is_empty() {
             return self.name.to_nota();
@@ -611,7 +611,7 @@ impl SourceNamespaceEntry {
         let mut items = Vec::with_capacity(self.parameters.len() + 1);
         items.push(self.name.to_nota());
         items.extend(self.parameters.iter().map(Name::to_nota));
-        Delimiter::Parenthesis.wrap(items)
+        Delimiter::PipeParenthesis.wrap(items)
     }
 
     fn to_declaration_group(

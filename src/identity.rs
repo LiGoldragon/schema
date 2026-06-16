@@ -184,7 +184,7 @@ struct ClosureWalk<'schema> {
     imports: Vec<(String, ImportDeclaration)>,
     streams: Vec<(String, StreamDeclaration)>,
     /// Type-parameter binders in scope for the declaration currently
-    /// being walked. A parameterized declaration head `(Name Param …)`
+    /// being walked. A parameterized declaration head `(| Name Param … |)`
     /// introduces these; a `Plain` reference matching a binder resolves
     /// as a type-parameter rather than a `FamilyReferenceNotFound`. The
     /// scope is per-declaration, so each `visit_declaration` swaps in its

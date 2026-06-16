@@ -351,6 +351,54 @@ impl RootApplication {
     pub fn arguments(&self) -> &[TypeReference] {
         &self.arguments
     }
+
+    /// Monomorphize a parameterized frame at this application's root position:
+    /// substitute each declared frame binder with the corresponding application
+    /// argument throughout the frame's variants, yielding the concrete
+    /// `EnumVariant` list this applied root denotes. The frame's variant
+    /// *names* (`SignalArrived`, `CommandSemaWrite`, …) are fixed by the frame;
+    /// only the payload references are substituted. `frame_parameters` are the
+    /// binders the frame head introduced and `frame_variants` is the frame's
+    /// declared variant list; their pairing is the same expansion the
+    /// equivalence tests assert leg-for-leg against the concrete baseline.
+    ///
+    /// The argument count must equal the binder count — the arity the frame
+    /// fixed (validated at lowering by `arities_verified`); a mismatch is a
+    /// caller bug.
+    pub fn expand_with(
+        &self,
+        frame_parameters: &[Name],
+        frame_variants: &[EnumVariant],
+    ) -> Vec<EnumVariant> {
+        frame_variants
+            .iter()
+            .map(|variant| EnumVariant {
+                name: variant.name.clone(),
+                payload: variant
+                    .payload
+                    .as_ref()
+                    .map(|payload| self.substitute_binder(frame_parameters, payload)),
+                stream_relation: variant.stream_relation.clone(),
+            })
+            .collect()
+    }
+
+    /// Replace a frame binder reference with the argument bound to it; leave
+    /// any other reference untouched. The frame's payloads are bare binder
+    /// references (`Event`, `WriteDone`, …), so a single-level substitution
+    /// covers every leg. A nested application argument (the recursive
+    /// Continuation leg) is carried through unchanged — the applied root that
+    /// owns it lowers it by sibling reference, not by re-expansion.
+    fn substitute_binder(&self, frame_parameters: &[Name], payload: &TypeReference) -> TypeReference {
+        let TypeReference::Plain(name) = payload else {
+            return payload.clone();
+        };
+        frame_parameters
+            .iter()
+            .position(|parameter| parameter == name)
+            .map(|index| self.arguments[index].clone())
+            .unwrap_or_else(|| payload.clone())
+    }
 }
 
 impl From<&RootApplication> for TypeReference {
@@ -526,6 +574,104 @@ impl Schema {
     pub fn declared_parameter_count(&self, name: &str) -> Option<usize> {
         self.namespace_declaration_named(name)
             .map(|declaration| declaration.parameters().len())
+    }
+
+    /// The frame body of a declared parameterized enum: its binders and its
+    /// variant list, paired for monomorphization at an application site. `None`
+    /// when the name is not a namespace declaration or its declaration is not
+    /// an enum. The import resolver reads this across the crate boundary so a
+    /// consumer applying the imported head can expand the frame in place,
+    /// substituting each binder with the application's argument.
+    pub fn declared_frame_body(&self, name: &str) -> Option<(&[Name], &[EnumVariant])> {
+        let declaration = self.namespace_declaration_named(name)?;
+        let TypeDeclaration::Enum(body) = declaration.value() else {
+            return None;
+        };
+        Some((declaration.parameters(), &body.variants))
+    }
+
+    /// The binders and variants of the frame an application head names,
+    /// wherever the head's declaration lives. A `Local` head resolves first
+    /// against this schema's namespace (a locally-declared parameterized
+    /// enum), then against the resolved imports by local alias; an `Imported`
+    /// head reads the body carried on its `ResolvedImport`. `None` when the
+    /// head names no parameterized enum frame.
+    fn frame_body_for_head<'head>(
+        &'head self,
+        head: &'head ApplicationHead,
+    ) -> Option<(&'head [Name], &'head [EnumVariant])> {
+        match head {
+            ApplicationHead::Local(name) => self
+                .declared_frame_body(name.as_str())
+                .or_else(|| self.imported_frame_body(name)),
+            ApplicationHead::Imported(import) => Some((import.parameters(), import.variants())),
+        }
+    }
+
+    /// The frame body carried on the resolved import whose local alias is the
+    /// given name. The lowered migrated nexus keeps an applied frame head as
+    /// `ApplicationHead::Local(Work)` while the body travels on the matching
+    /// `ResolvedImport`, so an applied root over an imported frame resolves
+    /// here.
+    fn imported_frame_body(&self, name: &Name) -> Option<(&[Name], &[EnumVariant])> {
+        self.resolved_imports
+            .iter()
+            .find(|import| import.local_name() == name)
+            .filter(|import| !import.variants().is_empty())
+            .map(|import| (import.parameters(), import.variants()))
+    }
+
+    /// Monomorphize an application root into the concrete enum declaration it
+    /// denotes: resolve the applied frame head's body, expand it by binder ->
+    /// argument substitution, and re-aim any nested frame-application argument
+    /// at the sibling root it reproduces. The Output root's Continuation leg
+    /// binds spirit's own `(Work …)` application — structurally the Input
+    /// root's application — so it lowers to a `Plain` reference to the sibling
+    /// Input root by name rather than re-expanding inline. Recursion
+    /// terminates: the Input frame (Work) carries no Continuation leg.
+    ///
+    /// The resulting `EnumDeclaration` is named by the root's position
+    /// (`Input` / `Output`) and carries no type parameters — a fully concrete
+    /// enum that flows through every concrete-enum emitter unchanged. `None`
+    /// when the application head names no parameterized enum frame.
+    pub fn expand_application_root(
+        &self,
+        application: &RootApplication,
+    ) -> Option<EnumDeclaration> {
+        let (parameters, variants) = self.frame_body_for_head(application.head())?;
+        let expanded = application
+            .expand_with(parameters, variants)
+            .into_iter()
+            .map(|variant| EnumVariant {
+                name: variant.name,
+                payload: variant
+                    .payload
+                    .map(|payload| self.reaim_sibling_application(&payload)),
+                stream_relation: variant.stream_relation,
+            })
+            .collect();
+        Some(EnumDeclaration::new(application.name().clone(), expanded))
+    }
+
+    /// Rewrite a payload that reproduces a sibling application root into a
+    /// `Plain` reference to that root by name. The Output root's Continuation
+    /// argument is spirit's own `(Work …)` application, identical to the Input
+    /// root's application; the concrete enum must point its `Continue` leg at
+    /// the sibling `Input` enum, not embed a second expansion. Any other
+    /// payload passes through untouched.
+    fn reaim_sibling_application(&self, payload: &TypeReference) -> TypeReference {
+        let TypeReference::Application { head, arguments } = payload else {
+            return payload.clone();
+        };
+        for root in self.input_and_output() {
+            if let Some(sibling) = root.as_application()
+                && sibling.head() == head
+                && sibling.arguments() == arguments.as_slice()
+            {
+                return TypeReference::Plain(sibling.name().clone());
+            }
+        }
+        payload.clone()
     }
 
     /// The generic arity an `Application` head must supply when the head
@@ -846,7 +992,7 @@ impl Declaration {
 
     /// Attach declared type parameters to this declaration. The
     /// parameter names are the binders the parameterized declaration
-    /// head `(Name Param …)` introduces; references to them inside the
+    /// head `(| Name Param … |)` introduces; references to them inside the
     /// body resolve as type-parameter binders, and their count is the
     /// declaration's generic arity that an `Application` must match.
     pub fn with_parameters(mut self, parameters: Vec<Name>) -> Self {
@@ -1349,12 +1495,13 @@ enum FixedBytesNode {
 }
 
 /// A declaration's type-name position: either a bare `Name` (the ordinary
-/// declaration head) or a parameterized head `(Name Param Param …)` that
-/// introduces type-parameter binders. The parameterized form is
-/// structurally the same captured-head + variable-arity tail as the
-/// generic-application form, so it decodes through the *same*
-/// `#[shape(pascal_head, body)]` seam (`ApplicationNode`) — each tail
-/// item must be a bare binder name (a `Plain` reference), since a
+/// declaration head) or a pipe-parenthesized `(| Name Param Param … |)` head
+/// that introduces type-parameter binders. Use-site generic application keeps
+/// ordinary parentheses (`(Head Arg …)`); declaration binders use the pipe
+/// form so binding syntax and application syntax remain structurally distinct.
+/// The parameterized form still decodes through the captured-head +
+/// variable-arity tail seam (`ApplicationNode`) after the delimiter gate —
+/// each tail item must be a bare binder name (a `Plain` reference), since a
 /// parameter is a binder, not an applied type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarationHead {
@@ -1376,13 +1523,13 @@ impl DeclarationHead {
     }
 
     /// Decode the declaration-name position from its block. A bare symbol
-    /// atom is an ordinary head with no parameters; a parenthesized
-    /// `(Name Param …)` reuses the application seam and lifts each binder
-    /// out of the decoded tail.
+    /// atom is an ordinary head with no parameters; a pipe-parenthesized
+    /// `(| Name Param … |)` reuses the application seam after delimiter
+    /// discrimination and lifts each binder out of the decoded tail.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         match block {
             Block::Delimited {
-                delimiter: Delimiter::Parenthesis,
+                delimiter: Delimiter::PipeParenthesis,
                 ..
             } => Self::from_parameterized(block),
             _ => Ok(Self {
@@ -1393,16 +1540,27 @@ impl DeclarationHead {
     }
 
     fn from_parameterized(block: &Block) -> Result<Self, SchemaError> {
-        let ApplicationNode::Application(name, tail) =
-            ApplicationNode::from_structural_block(block)?;
+        let body = NotaBody::from_delimited(
+            block,
+            Delimiter::PipeParenthesis,
+            "parameterized declaration head",
+        )?;
+        let [head, tail @ ..] = body.root_objects() else {
+            return Err(SchemaError::ExpectedRootObjectCount {
+                expected: "at least one declaration-head object",
+                found: body.root_objects().len(),
+            });
+        };
+        let name = head.schema_name()?;
         let mut parameters = Vec::with_capacity(tail.len());
         for argument in tail {
-            let TypeReference::Plain(parameter) = argument else {
-                return Err(SchemaError::ExpectedTypeParameterName {
-                    declaration: name.as_str().to_owned(),
-                    found: argument.to_structural_nota(),
-                });
-            };
+            let parameter =
+                argument
+                    .schema_name()
+                    .map_err(|_| SchemaError::ExpectedTypeParameterName {
+                        declaration: name.as_str().to_owned(),
+                        found: format!("{argument:?}"),
+                    })?;
             if parameters.iter().any(|existing| existing == &parameter) {
                 return Err(SchemaError::DuplicateTypeParameter {
                     declaration: name.as_str().to_owned(),

@@ -344,7 +344,7 @@ fn design_example_macro_node_definitions_separate_structural_from_tagged_invocat
 /// key with a brace value is a struct macro, a symbol key with a
 /// bracket value is an enum macro, and a symbol key with a reference
 /// value is a newtype macro. The parameterized declaration form
-/// `(Name Param …)` adds a mirror case for each body shape, so a
+/// `(| Name Param … |)` adds a mirror case for each body shape, so a
 /// declaration head can introduce type-parameter binders.
 #[test]
 fn design_example_macro_node_definition_lists_structural_cases() {

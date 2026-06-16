@@ -594,11 +594,11 @@ impl<'schema> KeyValueDeclaration<'schema> {
 
     /// Lower a namespace key/value pair into a public declaration. The
     /// key position is a [`DeclarationHead`]: a bare name, or a
-    /// parameterized head `(Name Param …)` whose binders become the
-    /// declaration's type parameters. The body lowers the same way for
-    /// either head — the binders only change what the closure walk and
-    /// arity validation later see — so the parameters are attached to the
-    /// finished `Declaration` here.
+    /// parameterized head `(| Name Param … |)` whose binders become the
+    /// declaration's type parameters. The body lowers the same way for either
+    /// head — the binders only change what the closure walk and arity
+    /// validation later see — so the parameters are attached to the finished
+    /// `Declaration` here.
     fn lower(
         &self,
         registry: &MacroRegistry,
