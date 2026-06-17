@@ -389,7 +389,11 @@ impl RootApplication {
     /// covers every leg. A nested application argument (the recursive
     /// Continuation leg) is carried through unchanged — the applied root that
     /// owns it lowers it by sibling reference, not by re-expansion.
-    fn substitute_binder(&self, frame_parameters: &[Name], payload: &TypeReference) -> TypeReference {
+    fn substitute_binder(
+        &self,
+        frame_parameters: &[Name],
+        payload: &TypeReference,
+    ) -> TypeReference {
         let TypeReference::Plain(name) = payload else {
             return payload.clone();
         };

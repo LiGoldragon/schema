@@ -31,8 +31,8 @@
 use std::path::PathBuf;
 
 use schema_next::{
-    ApplicationHead, EnumVariant, ImportResolver, MacroContext, Name, Root, RootApplication, Schema,
-    SchemaEngine, SchemaIdentity, TypeReference,
+    ApplicationHead, EnumVariant, ImportResolver, MacroContext, Name, Root, RootApplication,
+    Schema, SchemaEngine, SchemaIdentity, TypeReference,
 };
 
 fn fixture_dir() -> PathBuf {
@@ -84,7 +84,11 @@ fn lower_concrete() -> Schema {
 /// [`RootApplication::expand_with`]. The result is the concrete `EnumVariant`
 /// list the migrated root denotes — what the equivalence assertions check
 /// leg-for-leg against the hand-written concrete baseline.
-fn expand_root(reaction: &Schema, frame_name: &str, application: &RootApplication) -> Vec<EnumVariant> {
+fn expand_root(
+    reaction: &Schema,
+    frame_name: &str,
+    application: &RootApplication,
+) -> Vec<EnumVariant> {
     let (parameters, variants) = reaction
         .declared_frame_body(frame_name)
         .unwrap_or_else(|| panic!("reaction frame declares parameterized enum {frame_name}"));

@@ -274,8 +274,9 @@ fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
 
 #[test]
 fn application_with_correct_argument_count_lowers() {
-    let schema =
-        lower("(| Plane Input Output |) { source Input target Output } Holder (Plane String Integer)");
+    let schema = lower(
+        "(| Plane Input Output |) { source Input target Output } Holder (Plane String Integer)",
+    );
     assert_eq!(
         single_reference(&schema, "Holder"),
         &TypeReference::Application {
