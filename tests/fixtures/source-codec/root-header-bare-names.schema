@@ -7,7 +7,7 @@
   Found Entry
   Counted Integer
   RecordIdentifier Integer
-  Query { Topic * }
+  Query { Topic }
   Topic String
-  Entry { Topic * }
+  Entry { Topic }
 }

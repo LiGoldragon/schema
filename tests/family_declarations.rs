@@ -97,7 +97,8 @@ fn family_record_must_resolve_to_a_declared_type() {
 [(Record Entry)]
 [Recorded]
 {
-  Entry { body String }
+  Body String
+  Entry { Body }
   GhostFamily (Family { record Ghost table ghosts key Domain })
 }
 ";
@@ -119,7 +120,8 @@ fn duplicate_family_names_are_a_typed_error() {
 [(Record Entry)]
 [Recorded]
 {
-  Entry { body String }
+  Body String
+  Entry { Body }
   EntryFamily (Family { record Entry table entries key Domain })
   EntryFamily (Family { record Entry table archive key Domain })
 }
@@ -141,8 +143,10 @@ fn duplicate_family_tables_are_a_typed_error() {
 [(Record Entry) (Observe Query)]
 [Recorded]
 {
-  Entry { body String }
-  Query { topic String }
+  Body String
+  Topic String
+  Entry { Body }
+  Query { Topic }
   EntryFamily (Family { record Entry table entries key Domain })
   QueryFamily (Family { record Query table entries key Identified })
 }
@@ -164,7 +168,8 @@ fn family_key_kind_is_a_closed_structural_choice() {
 [(Record Entry)]
 [Recorded]
 {
-  Entry { body String }
+  Body String
+  Entry { Body }
   EntryFamily (Family { record Entry table entries key Sideways })
 }
 ";

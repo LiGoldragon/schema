@@ -1,22 +1,22 @@
 []
 []
 {
-  Schema { Input * Output * Namespace * }
-  Imports { importDeclaration (Vector ImportDeclaration) }
-  Namespace { declaration (Vector Declaration) }
-  ImportDeclaration { Name * source TypeReference }
+  Schema { Input Output Namespace }
+  Imports (Vector ImportDeclaration)
+  Namespace (Vector Declaration)
+  ImportDeclaration { Name source.TypeReference }
   Declaration [(Public NamedTypeDeclaration) (Private NamedTypeDeclaration)]
-  NamedTypeDeclaration { Name * value TypeDeclaration }
+  NamedTypeDeclaration { Name value.TypeDeclaration }
   TypeDeclaration [(Struct StructDeclaration) (Enum EnumDeclaration) (Newtype NewtypeDeclaration)]
-  StructDeclaration { Name * StructFieldMap * }
-  NewtypeDeclaration { Name * reference TypeReference }
-  StructFieldMap { fieldDeclaration (Vector FieldDeclaration) }
-  FieldDeclaration { Name * reference TypeReference }
-  EnumDeclaration { Name * Variants * }
-  Variants { variantDeclaration VariantDeclaration }
-  VariantDeclaration { Name * Payload * }
+  StructDeclaration { Name StructFieldMap }
+  NewtypeDeclaration { Name reference.TypeReference }
+  StructFieldMap (Vector FieldDeclaration)
+  FieldDeclaration { Name reference.TypeReference }
+  EnumDeclaration { Name Variants }
+  Variants (Vector VariantDeclaration)
+  VariantDeclaration { Name Payload }
   Payload [Unit (Carries TypeReference)]
   TypeReference [String Integer Boolean Path (Plain Name) (Vector TypeReference) (Map TypeReferencePair) (Optional TypeReference)]
-  TypeReferencePair { key TypeReference value TypeReference }
+  TypeReferencePair { key.TypeReference value.TypeReference }
   Name String
 }

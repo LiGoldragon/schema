@@ -67,6 +67,10 @@ pub enum SchemaError {
     ExpectedDelimiter { expected: &'static str },
     #[error("expected an even number of map entries, found {found}")]
     ExpectedEvenMapEntries { found: usize },
+    #[error(
+        "retired struct field syntax {found}; struct bodies are positional field types, use TypeName or field_name.TypeName"
+    )]
+    RetiredStructFieldSyntax { found: String },
     #[error("io error at {path}: {reason}")]
     Io { path: String, reason: String },
     #[error("malformed schema path: {path}")]

@@ -269,7 +269,7 @@ fn design_example_default_engine_uses_strict_structural_macros() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "[(Record Entry)] [Accepted] { Entry { description Description } }";
+    let source = "[(Record Entry)] [Accepted] { Value String Entry { Value } }";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -297,9 +297,9 @@ fn design_example_schema_lowering_records_source_structure_header() {
             (StructureShape::Parenthesis, 2),
             (StructureShape::SquareBracket, 1),
             (StructureShape::Atom, 0),
-            (StructureShape::Brace, 2),
+            (StructureShape::Brace, 4),
             (StructureShape::Atom, 0),
-            (StructureShape::Brace, 2),
+            (StructureShape::Unknown, 15),
         ],
     );
     assert_ne!(header.packed_word(), 0, "header packs into a u64 word");
@@ -533,8 +533,8 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
           SemaOutput [(Recorded RecordIdentifier) (Observed RecordSet)]
           Topic String
           RecordIdentifier Integer
-          Entry { topic Topic }
-          Query { topic Topic }
+          Entry { Topic }
+          Query { Topic }
           RecordSet (Vector Entry)
         }
     ";

@@ -25,26 +25,30 @@
   Unwatched SubscriptionReceipt
   Rejected Rejection
   Indexed IndexReceipt
-  Topic { string String }
-  Topics { values (Vector Topic) }
-  Description { string String }
-  AgentName { string String }
-  Timestamp { integer Integer }
-  RecordIdentifier { integer Integer }
-  SubscriptionToken { integer Integer }
-  CommitSequence { integer Integer }
-  DatabaseDigest { integer Integer }
+  Topic String
+  Topics (Vector Topic)
+  Description String
+  AgentName String
+  Timestamp Integer
+  RecordIdentifier Integer
+  SubscriptionToken Integer
+  CommitSequence Integer
+  DatabaseDigest Integer
+  Kinds (Vector Kind)
+  Limit (Optional Integer)
+  Records (Vector Entry)
+  ByTopic (Map Topic RecordIdentifier)
   Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]
   Kind [Decision Principle Correction Clarification Constraint Observation Question]
   RejectionReason [Malformed Unauthorized Conflict Unsupported StaleVersion]
-  Entry { topics Topics kind Kind description Description magnitude Magnitude agentName AgentName timestamp Timestamp }
-  Correction { recordIdentifier RecordIdentifier description Description magnitude Magnitude agentName AgentName timestamp Timestamp }
-  Query { topics Topics kinds (Vector Kind) limit (Optional Integer) }
-  WatchRequest { topics Topics kinds (Vector Kind) agentName AgentName }
-  RecordReceipt { recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest }
-  CorrectionReceipt { recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest }
-  RecordSet { records (Vector Entry) byTopic (Map Topic RecordIdentifier) }
-  SubscriptionReceipt { subscriptionToken SubscriptionToken commitSequence CommitSequence }
-  Rejection { rejectionReason RejectionReason description Description }
-  IndexReceipt { commitSequence CommitSequence databaseDigest DatabaseDigest }
+  Entry { Topics Kind Description Magnitude AgentName Timestamp }
+  Correction { RecordIdentifier Description Magnitude AgentName Timestamp }
+  Query { Topics Kinds Limit }
+  WatchRequest { Topics Kinds AgentName }
+  RecordReceipt { RecordIdentifier CommitSequence DatabaseDigest }
+  CorrectionReceipt { RecordIdentifier CommitSequence DatabaseDigest }
+  RecordSet { Records ByTopic }
+  SubscriptionReceipt { SubscriptionToken CommitSequence }
+  Rejection { RejectionReason Description }
+  IndexReceipt { CommitSequence DatabaseDigest }
 }

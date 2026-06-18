@@ -2,5 +2,5 @@
 [(SignalArrived SignalInput)]
 [(ReplyToSignal SignalOutput)]
 {
-  NexusReceipt { integer Integer }
+  NexusReceipt Integer
 }

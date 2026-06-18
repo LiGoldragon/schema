@@ -56,7 +56,7 @@ fn vec_field_lowers_to_vector_reference() {
 #[test]
 fn scalar_field_names_lower_to_reserved_references() {
     let schema = lower(&roots(
-        "Entry { string String integer Integer boolean Boolean path Path }",
+        "Entry { string.String integer.Integer boolean.Boolean path.Path }",
     ));
     let fields = struct_fields(&schema, "Entry");
     assert_eq!(fields[0].name.as_str(), "string");
@@ -72,7 +72,7 @@ fn scalar_field_names_lower_to_reserved_references() {
 #[test]
 fn scalar_references_nest_inside_collections() {
     let schema = lower(&roots(
-        "Query { optionalInteger (Optional Integer) stringVector (Vector String) booleanByString (Map String Boolean) optionalPath (Optional Path) }",
+        "Query { (Optional Integer) (Vector String) (Map String Boolean) (Optional Path) }",
     ));
     let fields = struct_fields(&schema, "Query");
     assert_eq!(
@@ -100,7 +100,7 @@ fn scalar_references_nest_inside_collections() {
 fn scalar_names_are_reserved_at_namespace_declaration_position() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { String { integer Integer } }",
+            "[] [] { String Integer }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("reserved scalar names cannot be user-declared schema types");
@@ -139,7 +139,7 @@ fn option_field_lowers_to_optional_reference() {
 fn square_bracket_field_is_not_vec_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Service { string String } Cluster { service [Service] } }",
+            "[] [] { Service String Cluster { [Service] } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw square bracket is not a Vec reference");
@@ -156,7 +156,7 @@ fn square_bracket_field_is_not_vec_type_syntax() {
 fn brace_field_is_not_map_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { NodeName { string String } NodeProposal { string String } Cluster { nodes {NodeName NodeProposal} } }",
+            "[] [] { NodeName String NodeProposal String Cluster { {NodeName NodeProposal} } }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw brace map is not a Map reference");
@@ -172,10 +172,10 @@ fn brace_field_is_not_map_type_syntax() {
 #[test]
 fn collection_field_and_plain_field_coexist_in_one_struct() {
     let schema = lower(&roots(
-        "Trust { string String } Service { string String } Cluster { trust Trust serviceVector (Vector Service) optionalTrust (Optional Trust) }",
+        "Trust String Service String Cluster { Trust (Vector Service) (Optional Trust) }",
     ));
     let fields = struct_fields(&schema, "Cluster");
-    // Bare symbol stays the legacy plain field (name derived from type).
+    // Bare symbol stays a plain field with its name derived from type.
     assert_eq!(fields[0].name.as_str(), "trust");
     assert_eq!(fields[0].reference, TypeReference::new("Trust"));
     assert_eq!(fields[1].name.as_str(), "service_vector");
@@ -205,9 +205,8 @@ fn nested_collections_lower_recursively() {
 fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
-    let schema = lower(
-        "[] [(Projected (Map NodeName NodeConfig))] { NodeName { string String } NodeConfig { string String } }",
-    );
+    let schema =
+        lower("[] [(Projected (Map NodeName NodeConfig))] { NodeName String NodeConfig String }");
     let payload = schema
         .output()
         .as_enum()
@@ -261,7 +260,7 @@ fn dropped_vec_alias_no_longer_lowers_to_vector() {
 fn map_with_wrong_argument_count_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Leaf { string String } Bad { map (Map (Leaf)) } }",
+            "[] [] { Leaf String Bad (Map (Leaf)) }",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("Map needs two arguments");

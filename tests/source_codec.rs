@@ -26,7 +26,7 @@ fn schema_source_artifact_round_trips_module_source_text() {
         "canonical schema source text should recover the same source object"
     );
     assert_eq!(
-        "{}\n[Record Observe]\n[RecordAccepted RecordsObserved]\n{\n  Record Entry\n  Observe Query\n  RecordAccepted RecordIdentifier\n  RecordsObserved RecordSet\n  Topic { string String }\n  Topics { values (Vector Topic) }\n  Description { string String }\n  RecordIdentifier { integer Integer }\n  Entry { topics Topics kind Kind description Description magnitude Magnitude }\n  Query { topic Topic kind Kind }\n  RecordSet { entries (Vector Entry) }\n  Kind [Decision Principle Correction Clarification Constraint]\n  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]\n}",
+        "{}\n[Record Observe]\n[RecordAccepted RecordsObserved]\n{\n  Record Entry\n  Observe Query\n  RecordAccepted RecordIdentifier\n  RecordsObserved RecordSet\n  Topic String\n  Topics (Vector Topic)\n  Description String\n  RecordIdentifier Integer\n  Entry { Topics Kind Description Magnitude }\n  Query { Topic Kind }\n  RecordSet (Vector Entry)\n  Kind [Decision Principle Correction Clarification Constraint]\n  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]\n}",
         canonical,
         "source codec should write one canonical schema source surface"
     );
@@ -485,37 +485,33 @@ fn trailing_namespace_can_reference_root_payload_field_declarations() {
 #[test]
 fn duplicate_inline_and_namespace_declarations_are_errors() {
     let source = source_codec_fixture("duplicate-inline-and-namespace");
-    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
-    let error = artifact
-        .source()
-        .lower(
-            &SchemaEngine::default(),
-            SchemaIdentity::new("example:lib", "0.1.0"),
-        )
-        .expect_err("duplicate Topic declaration should fail");
+    let error = SchemaSourceArtifact::from_schema_text(&source)
+        .expect_err("retired inline pair syntax should fail before lowering");
 
-    assert!(matches!(
-        error,
-        SchemaError::DuplicateSourceDeclaration { name } if name == "Topic"
-    ));
+    assert!(
+        matches!(
+            error,
+            SchemaError::MalformedSchemaNode { ref found }
+                if found.contains("retired struct field syntax topic")
+        ),
+        "got {error:?}"
+    );
 }
 
 #[test]
 fn duplicate_inline_declarations_are_errors() {
     let source = source_codec_fixture("duplicate-inline-fields");
-    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
-    let error = artifact
-        .source()
-        .lower(
-            &SchemaEngine::default(),
-            SchemaIdentity::new("example:lib", "0.1.0"),
-        )
-        .expect_err("duplicate inline Topic declaration should fail");
+    let error = SchemaSourceArtifact::from_schema_text(&source)
+        .expect_err("retired Pascal-scalar pair syntax should fail before lowering");
 
-    assert!(matches!(
-        error,
-        SchemaError::DuplicateSourceDeclaration { name } if name == "Topic"
-    ));
+    assert!(
+        matches!(
+            error,
+            SchemaError::MalformedSchemaNode { ref found }
+                if found.contains("retired struct field syntax String")
+        ),
+        "got {error:?}"
+    );
 }
 
 #[test]

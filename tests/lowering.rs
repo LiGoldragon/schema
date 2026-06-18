@@ -75,17 +75,17 @@ fn lowers_spirit_schema_into_ordered_schema() {
 
 #[test]
 fn strict_key_value_declarations_lower_to_structs_and_enums() {
-    let source = "[] [] { Entry { topic Topic kind Kind } Kind [Decision Constraint] }";
+    let source = "[] [] { Topic String Entry { Topic Kind } Kind [Decision Constraint] }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
 
     assert!(matches!(
-        schema.namespace()[0].value(),
+        schema.namespace()[1].value(),
         TypeDeclaration::Struct(_)
     ));
     assert!(matches!(
-        schema.namespace()[1].value(),
+        schema.namespace()[2].value(),
         TypeDeclaration::Enum(_)
     ));
 }
@@ -179,7 +179,7 @@ fn fixed_size_bytes_lowers_to_a_fixed_bytes_reference() {
 
 #[test]
 fn single_field_brace_declarations_lower_to_newtypes() {
-    let source = "[] [] { Topic String Entry { Topic * } Wrapper { value Topic } }";
+    let source = "[] [] { Topic String Entry { Topic } Wrapper { value.Topic } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("single-field brace declarations lower");
@@ -198,7 +198,8 @@ fn single_field_brace_declarations_lower_to_newtypes() {
 
 #[test]
 fn single_field_inline_pascal_declarations_lower_to_newtypes() {
-    let source = "[] [] { RecordIdentifier Integer Entry { Receipt { RecordIdentifier * } } }";
+    let source =
+        "[] [] { RecordIdentifier Integer Receipt { RecordIdentifier } Entry { Receipt } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline single-field declaration lowers");
@@ -211,7 +212,7 @@ fn single_field_inline_pascal_declarations_lower_to_newtypes() {
             .collect::<Vec<_>>(),
         vec![
             ("RecordIdentifier", Visibility::Public),
-            ("Receipt", Visibility::Private),
+            ("Receipt", Visibility::Public),
             ("Entry", Visibility::Public),
         ]
     );
@@ -233,7 +234,7 @@ fn single_field_inline_pascal_declarations_lower_to_newtypes() {
 
 #[test]
 fn brace_namespace_rejects_parenthesized_named_objects() {
-    let source = "[] [] { (Entry Entry { topic Topic kind Kind }) }";
+    let source = "[] [] { (Entry Entry { Topic Kind }) }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespaces contain key/value declarations only");
@@ -249,7 +250,7 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
 
 #[test]
 fn brace_namespace_rejects_redundant_key_value_declarations() {
-    let source = "[] [] { Entry Entry { topic Topic kind Kind } }";
+    let source = "[] [] { Entry Entry { Topic Kind } }";
     let error = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("namespace declarations must be key/value pairs without duplicated names");
@@ -656,11 +657,11 @@ fn macro_lowering_receives_macro_position() {
 
 #[test]
 fn field_names_are_derived_from_type_names() {
-    let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
+    let source = "[] [] { RecordIdentifier Integer Description String Entry { RecordIdentifier Description } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("schema lowers");
-    let TypeDeclaration::Struct(entry) = schema.namespace()[0].value() else {
+    let TypeDeclaration::Struct(entry) = schema.namespace()[2].value() else {
         panic!("entry should be a struct");
     };
 
@@ -793,7 +794,8 @@ impl SchemaMacroHandler for RejectingRootImports {
 
 #[test]
 fn brace_body_lowers_as_struct_map_with_inline_private_types() {
-    let source = "[] [] { Routing {ToInbox Address ToOutbox Address} }";
+    let source =
+        "[] [] { Address String ToInbox Address ToOutbox Address Routing { ToInbox ToOutbox } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("brace values are struct maps, not enum sugar");
@@ -805,8 +807,9 @@ fn brace_body_lowers_as_struct_map_with_inline_private_types() {
             .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
             .collect::<Vec<_>>(),
         vec![
-            ("ToInbox", Visibility::Private),
-            ("ToOutbox", Visibility::Private),
+            ("Address", Visibility::Public),
+            ("ToInbox", Visibility::Public),
+            ("ToOutbox", Visibility::Public),
             ("Routing", Visibility::Public),
         ]
     );
@@ -818,11 +821,11 @@ fn brace_body_lowers_as_struct_map_with_inline_private_types() {
 
 #[test]
 fn strict_declaration_field_pairs_lower_through_default_engine() {
-    let source = "[] [] { Entry { recordIdentifier RecordIdentifier description Description } }";
+    let source = "[] [] { RecordIdentifier Integer Description String Entry { RecordIdentifier Description } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("at declaration lowers");
-    let TypeDeclaration::Struct(entry) = schema.namespace()[0].value() else {
+    let TypeDeclaration::Struct(entry) = schema.namespace()[2].value() else {
         panic!("entry should be a struct");
     };
 
@@ -900,7 +903,7 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
 
 #[test]
 fn inline_pascal_declaration_creates_ordered_namespace_type() {
-    let source = "[] [] { Entry { Receipt { recordIdentifier RecordIdentifier } later Receipt } }";
+    let source = "[] [] { RecordIdentifier Integer Receipt { RecordIdentifier } Entry { Receipt later.Receipt } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline declaration lowers");
@@ -912,12 +915,13 @@ fn inline_pascal_declaration_creates_ordered_namespace_type() {
             .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
             .collect::<Vec<_>>(),
         vec![
-            ("Receipt", Visibility::Private),
+            ("RecordIdentifier", Visibility::Public),
+            ("Receipt", Visibility::Public),
             ("Entry", Visibility::Public),
         ]
     );
 
-    let TypeDeclaration::Struct(entry) = schema.namespace()[1].value() else {
+    let TypeDeclaration::Struct(entry) = schema.namespace()[2].value() else {
         panic!("entry should be a struct");
     };
     assert_eq!(entry.fields[0].name, Name::new("receipt"));

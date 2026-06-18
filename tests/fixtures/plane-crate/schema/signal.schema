@@ -2,6 +2,6 @@
 [(Sent Receipt)]
 {
   Text String
-  Message { text Text }
-  Receipt { integer Integer }
+  Message { Text }
+  Receipt Integer
 }

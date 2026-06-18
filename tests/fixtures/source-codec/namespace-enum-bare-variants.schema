@@ -2,7 +2,7 @@
 []
 []
 {
-  Correction { Topic * }
+  Correction { Topic }
   Topic String
   Kind [Decision Correction]
 }

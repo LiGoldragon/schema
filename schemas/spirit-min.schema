@@ -9,8 +9,8 @@
   Topics (Vector Topic)
   Description String
   RecordIdentifier Integer
-  Entry { Topics * Kind * Description * Magnitude * }
-  Query { Topic * Kind * }
+  Entry { Topics Kind Description Magnitude }
+  Query { Topic Kind }
   RecordSet (Vector Entry)
   Kind [Decision Principle Correction Clarification Constraint]
   Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]

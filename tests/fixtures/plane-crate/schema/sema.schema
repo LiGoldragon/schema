@@ -2,6 +2,6 @@
 [(Recorded Receipt)]
 {
   Topic String
-  Entry { topic Topic }
-  Receipt { integer Integer }
+  Entry { Topic }
+  Receipt Integer
 }

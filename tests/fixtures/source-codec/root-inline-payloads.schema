@@ -1,8 +1,8 @@
 {}
-[(Lookup { RecordIdentifier * }) (Count { Query * })]
+[(Lookup { RecordIdentifier }) (Count { Query })]
 []
 {
   RecordIdentifier Integer
-  Query { Topic * }
+  Query { Topic }
   Topic String
 }

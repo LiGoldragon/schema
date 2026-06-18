@@ -24,11 +24,13 @@ impl IdentityFixture {
 {
   Topic String
   Magnitude Integer
-  Detail { magnitude Magnitude }
-  Entry { topic Topic detail Detail }
-  Receipt { topic Topic }
-  Rejection { reason String }
-  Unrelated { note String }
+  Reason String
+  Note String
+  Detail { Magnitude }
+  Entry { Topic Detail }
+  Receipt { Topic }
+  Rejection { Reason }
+  Unrelated { Note }
 }
 ";
 
@@ -42,12 +44,14 @@ impl IdentityFixture {
 {
   Topic     String   ;; alias
   Magnitude Integer
+  Reason    String
+  Note      String
 
-  Detail    { magnitude Magnitude }
-  Entry     { topic Topic detail Detail }
-  Receipt   { topic Topic }
-  Rejection { reason String }
-  Unrelated { note String }
+  Detail    { Magnitude }
+  Entry     { Topic Detail }
+  Receipt   { Topic }
+  Rejection { Reason }
+  Unrelated { Note }
 }
 ";
 
@@ -59,11 +63,13 @@ impl IdentityFixture {
 {
   Topic String
   Magnitude String
-  Detail { magnitude Magnitude }
-  Entry { topic Topic detail Detail }
-  Receipt { topic Topic }
-  Rejection { reason String }
-  Unrelated { note String }
+  Reason String
+  Note String
+  Detail { Magnitude }
+  Entry { Topic Detail }
+  Receipt { Topic }
+  Rejection { Reason }
+  Unrelated { Note }
 }
 ";
 
@@ -74,11 +80,13 @@ impl IdentityFixture {
 {
   Topic String
   Magnitude Integer
-  Detail { magnitude Magnitude }
-  Entry { topic Topic detail Detail }
-  Receipt { topic Topic }
-  Rejection { reason String }
-  Unrelated { note Integer }
+  Reason String
+  Note Integer
+  Detail { Magnitude }
+  Entry { Topic Detail }
+  Receipt { Topic }
+  Rejection { Reason }
+  Unrelated { Note }
 }
 ";
 
@@ -193,7 +201,7 @@ fn root_enum_family_closes_over_its_variant_payloads() {
         .iter()
         .map(|declaration| declaration.name().as_str())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["Output", "Receipt", "Rejection", "Topic"]);
+    assert_eq!(names, ["Output", "Reason", "Receipt", "Rejection", "Topic"]);
 }
 
 #[test]

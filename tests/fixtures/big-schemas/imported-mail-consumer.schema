@@ -19,14 +19,17 @@
   Marked DatabaseMarker
   Committed CommitSequence
   Rejected Rejection
-  Topic { string String }
-  Topics { values (Vector Topic) }
-  Description { string String }
-  AgentName { string String }
-  RecordIdentifier { integer Integer }
-  Rejection { description Description }
-  Entry { topics Topics description Description agentName AgentName databaseMarker DatabaseMarker }
-  Query { topics Topics limit (Optional Integer) }
-  RecordReceipt { recordIdentifier RecordIdentifier databaseMarker DatabaseMarker commitSequence CommitSequence }
-  RecordSet { records (Vector Entry) byTopic (Map Topic RecordIdentifier) }
+  Topic String
+  Topics (Vector Topic)
+  Description String
+  AgentName String
+  RecordIdentifier Integer
+  Rejection { Description }
+  Limit (Optional Integer)
+  Entries (Vector Entry)
+  ByTopic (Map Topic RecordIdentifier)
+  Entry { Topics Description AgentName databaseMarker.DatabaseMarker }
+  Query { Topics Limit }
+  RecordReceipt { RecordIdentifier databaseMarker.DatabaseMarker commitSequence.CommitSequence }
+  RecordSet { records.Entries ByTopic }
 }

@@ -1,4 +1,8 @@
 {}
-[(Record { Topic String Description String })]
+[(Record { Topic Description })]
 []
-{ Wrapper { Topic * } }
+{
+  Topic String
+  Description String
+  Wrapper { Topic }
+}

@@ -3,10 +3,13 @@
 [Recorded (Rejected Rejection)]
 {
   Topic String
-  Entry { topic Topic body String }
-  Observation { note String }
-  Query { topic Topic }
-  Rejection { reason String }
+  Body String
+  Note String
+  Reason String
+  Entry { topic.Topic Body }
+  Observation { Note }
+  Query { Topic }
+  Rejection { Reason }
   EntryFamily (Family { record Entry table entries key Domain })
   ObservationFamily (Family { record Observation table observations key Identified })
 }

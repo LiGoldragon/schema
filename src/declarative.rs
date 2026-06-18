@@ -9,10 +9,10 @@ use nota_next::{
 };
 
 use crate::{
-    ApplicationHead, Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext,
-    MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration,
-    ReferenceHead, SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration,
-    TypeDeclaration, TypeReference, macros::SchemaBlockExt,
+    ApplicationHead, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
+    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, ReferenceHead,
+    SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration,
+    TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(
@@ -1739,107 +1739,30 @@ impl<'template> MacroExpansionFields<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<FieldDeclaration>, SchemaError> {
-        let mut fields = Vec::new();
-        let mut index = 0;
-        while index < self.objects.len() {
-            if self.starts_flat_field_pair(index) {
-                let next_index = index + 1;
-                if next_index >= self.objects.len() {
-                    return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                        form: "flat struct field pair",
-                        expected: "field name plus one type reference",
-                        found: 1,
-                    });
-                }
-                fields.push(
-                    MacroExpansionField::new_named_pair(
-                        self.objects[index],
-                        self.objects[next_index],
-                    )
-                    .lower(registry, context)?,
-                );
-                index += 2;
-            } else if self.starts_ambiguous_pascal_pair(index) {
-                fields.push(
-                    MacroExpansionField::new_named_pair(
-                        self.objects[index],
-                        self.objects[index + 1],
-                    )
-                    .lower(registry, context)?,
-                );
-                index += 2;
-            } else {
-                fields
-                    .push(MacroExpansionField::new(self.objects[index]).lower(registry, context)?);
-                index += 1;
-            }
-        }
-        Ok(fields)
-    }
-
-    fn starts_flat_field_pair(&self, index: usize) -> bool {
-        let Some(name) = self.objects[index].demote_to_string() else {
-            return false;
-        };
-        if self
-            .objects
-            .get(index + 1)
-            .and_then(ObjectView::demote_to_string)
-            == Some("*")
-        {
-            return true;
-        }
-        !name.contains('@')
-            && name
-                .chars()
-                .next()
-                .is_some_and(|character| character.is_ascii_lowercase())
-    }
-
-    fn starts_ambiguous_pascal_pair(&self, index: usize) -> bool {
-        if index + 1 >= self.objects.len() {
-            return false;
-        }
-        self.objects[index].demote_to_string().is_some_and(|name| {
-            !name.contains('@')
-                && name
-                    .chars()
-                    .next()
-                    .is_some_and(|character| character.is_ascii_uppercase())
-        })
+        self.objects
+            .iter()
+            .map(|object| MacroExpansionField::new(*object).lower(registry, context))
+            .collect()
     }
 }
 
 /// One field inside a struct body.
 ///
-/// Strict struct bodies are key/value maps. `Topic *` derives the
-/// field name from an already-declared type (`topic`) and creates a
-/// `Plain` reference. Native NOTA type-reference objects can also sit
-/// directly in a field position: `(Vector Topic)`,
-/// `(Map Topic RecordIdentifier)`, and `(Optional Topic)` lower to
-/// vector, map, and optional references with names derived from the
-/// reference shape. A parenthesised pair whose first object is a
-/// lower-case field symbol remains the explicit escape hatch for
-/// uncommon names.
+/// Strict struct bodies are positional lists. A bare PascalCase type
+/// derives the field name from the referenced type. `field.Type` is the
+/// explicit differentiator when a field role should not be derived from
+/// the referenced type. Native NOTA type-reference objects can also sit
+/// directly in a field position: `(Vector Topic)`, `(Map Topic
+/// RecordIdentifier)`, and `(Optional Topic)` lower to vector, map, and
+/// optional references with names derived from the reference shape.
 #[derive(Clone, Copy, Debug)]
 struct MacroExpansionField<'template> {
     object: ObjectView<'template>,
-    paired_reference: Option<ObjectView<'template>>,
 }
 
 impl<'template> MacroExpansionField<'template> {
     fn new(object: ObjectView<'template>) -> Self {
-        Self {
-            object,
-            paired_reference: None,
-        }
-    }
-
-    fn new_named_pair(name: ObjectView<'template>, reference: ObjectView<'template>) -> Self {
-        Self {
-            object: name,
-            paired_reference: Some(reference),
-        }
+        Self { object }
     }
 
     fn lower(
@@ -1847,41 +1770,13 @@ impl<'template> MacroExpansionField<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<FieldDeclaration, SchemaError> {
-        if let Some(reference_object) = self.paired_reference {
-            let field_name = self.object.schema_name()?;
-            let reference = if reference_object.demote_to_string() == Some("*") {
-                TypeReference::from_name(field_name.clone())
-            } else if Self::is_pascal_case_name(&field_name) {
-                let declaration = self.inline_declaration(
-                    field_name.clone(),
-                    reference_object,
-                    registry,
-                    context,
-                )?;
-                context.remember_inline_declaration(Declaration::private(declaration));
-                TypeReference::from_name(field_name.clone())
-            } else {
-                reference_object.type_reference(registry, context)?
-            };
-            return Ok(FieldDeclaration {
-                name: Name::new(field_name.field_name()),
-                reference,
-            });
-        }
         if self.is_explicit_field_pair() {
-            let field_name = self
-                .object
-                .root_object_at(0)
-                .expect("count checked")
-                .schema_name()?;
-            let reference = self
-                .object
-                .root_object_at(1)
-                .expect("count checked")
-                .type_reference(registry, context)?;
-            return Ok(FieldDeclaration {
-                name: Name::new(field_name.field_name()),
-                reference,
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: self
+                    .object
+                    .demote_to_string()
+                    .unwrap_or("parenthesized field pair")
+                    .to_owned(),
             });
         }
         if self.object.demote_to_string().is_none() {
@@ -1891,39 +1786,55 @@ impl<'template> MacroExpansionField<'template> {
                 reference,
             });
         }
+        let text = self.object.demote_to_string().expect("checked");
+        if let Some((field_name, type_name)) = text.split_once('.') {
+            return self.explicit_dot_field(field_name, type_name);
+        }
+        if text == "*"
+            || text
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_lowercase())
+        {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: text.to_owned(),
+            });
+        }
         let name = self.object.schema_name()?;
+        if Self::is_reserved_scalar_name(&name) {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: name.to_nota(),
+            });
+        }
         Ok(FieldDeclaration {
             name: Name::new(name.field_name()),
             reference: TypeReference::from_name(name),
         })
     }
 
-    fn inline_declaration(
+    fn explicit_dot_field(
         &self,
-        name: Name,
-        object: ObjectView<'template>,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeDeclaration, SchemaError> {
-        if let Some(children) = object.delimited_children(Delimiter::Brace) {
-            return MacroExpansionStructBody::new(name, children).lower_type(registry, context);
+        field_name: &str,
+        type_name: &str,
+    ) -> Result<FieldDeclaration, SchemaError> {
+        let name = Name::new(field_name);
+        let reference = Name::new(type_name);
+        if field_name.is_empty()
+            || type_name.is_empty()
+            || field_name.contains('.')
+            || type_name.contains('.')
+            || !name.qualifies_as_symbol_name()
+            || !reference.qualifies_as_symbol_name()
+            || !reference.qualifies_as_pascal_case()
+        {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: format!("{field_name}.{type_name}"),
+            });
         }
-        if let Some(children) = object.delimited_children(Delimiter::SquareBracket) {
-            let variants =
-                MacroExpansionVariants::from_objects(children).lower(registry, context)?;
-            return Ok(TypeDeclaration::Enum(EnumDeclaration::new(name, variants)));
-        }
-        Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
-            name,
-            object.type_reference(registry, context)?,
-        )))
-    }
-
-    fn is_pascal_case_name(name: &Name) -> bool {
-        name.as_str()
-            .chars()
-            .next()
-            .is_some_and(|character| character.is_ascii_uppercase())
+        Ok(FieldDeclaration {
+            name: Name::new(name.field_name()),
+            reference: TypeReference::from_name(reference),
+        })
     }
 
     fn is_explicit_field_pair(&self) -> bool {
@@ -1938,6 +1849,13 @@ impl<'template> MacroExpansionField<'template> {
                         .next()
                         .is_some_and(|character| character.is_ascii_lowercase())
                 })
+    }
+
+    fn is_reserved_scalar_name(name: &Name) -> bool {
+        matches!(
+            name.as_str(),
+            "String" | "Integer" | "Boolean" | "Path" | "Bytes"
+        )
     }
 
     fn derived_name_for_reference(&self, reference: &TypeReference) -> Name {

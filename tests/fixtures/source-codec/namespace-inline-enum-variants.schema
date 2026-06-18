@@ -3,5 +3,5 @@
 []
 {
   Domain [(Craft [Schema Programming]) (Information [Documentation RecordKeeping])]
-  Entry { Domain * }
+  Entry { Domain }
 }

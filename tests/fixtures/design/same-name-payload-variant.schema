@@ -1,3 +1,8 @@
 [(Record)]
 [(Recorded)]
-{ Record { description Description } Recorded { recordIdentifier RecordIdentifier } }
+{
+  Description String
+  RecordIdentifier Integer
+  Record { Description }
+  Recorded { RecordIdentifier }
+}

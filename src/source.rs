@@ -491,29 +491,12 @@ pub struct SourceNamespace {
     entries: Vec<SourceNamespaceEntry>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SourceStructSyntax {
-    FieldPairs,
-    Positional,
-}
-
 impl SourceNamespace {
     pub fn entries(&self) -> &[SourceNamespaceEntry] {
         &self.entries
     }
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        Self::from_block_with_struct_syntax(block, SourceStructSyntax::FieldPairs)
-    }
-
-    fn from_nested_block(block: &Block) -> Result<Self, SchemaError> {
-        Self::from_block_with_struct_syntax(block, SourceStructSyntax::Positional)
-    }
-
-    fn from_block_with_struct_syntax(
-        block: &Block,
-        struct_syntax: SourceStructSyntax,
-    ) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source namespace")?;
         if body.root_objects().len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
@@ -527,10 +510,7 @@ impl SourceNamespace {
             // The value lowers the same way for either head.
             let (name, parameters) = DeclarationHead::from_block(&pair[0])?.into_parts();
             entries.push(SourceNamespaceEntry::from_parts(
-                name,
-                parameters,
-                &pair[1],
-                struct_syntax,
+                name, parameters, &pair[1],
             )?);
         }
         Ok(Self { entries })
@@ -625,21 +605,14 @@ pub struct SourceNamespaceEntry {
 }
 
 impl SourceNamespaceEntry {
-    fn from_parts(
-        name: Name,
-        parameters: Vec<Name>,
-        value: &Block,
-        struct_syntax: SourceStructSyntax,
-    ) -> Result<Self, SchemaError> {
+    fn from_parts(name: Name, parameters: Vec<Name>, value: &Block) -> Result<Self, SchemaError> {
         let value = if parameters.is_empty()
             && SourceIdentifierCase::new(&name).is_namespace()
             && value.is_brace()
         {
-            SourceNamespaceEntryValue::Namespace(SourceNamespace::from_nested_block(value)?)
+            SourceNamespaceEntryValue::Namespace(SourceNamespace::from_block(value)?)
         } else {
-            SourceNamespaceEntryValue::Declaration(
-                SourceDeclarationValue::from_block_with_struct_syntax(value, struct_syntax)?,
-            )
+            SourceNamespaceEntryValue::Declaration(SourceDeclarationValue::from_block(value)?)
         };
         Ok(Self {
             name,
@@ -1012,13 +985,6 @@ pub enum SourceDeclarationValue {
 
 impl SourceDeclarationValue {
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        Self::from_block_with_struct_syntax(block, SourceStructSyntax::FieldPairs)
-    }
-
-    fn from_block_with_struct_syntax(
-        block: &Block,
-        struct_syntax: SourceStructSyntax,
-    ) -> Result<Self, SchemaError> {
         match block {
             Block::Atom(_) => Ok(Self::Reference(SourceReference::from_block(block)?)),
             Block::Delimited {
@@ -1032,10 +998,7 @@ impl SourceDeclarationValue {
             Block::Delimited {
                 delimiter: Delimiter::Brace,
                 ..
-            } => Ok(Self::Struct(SourceStructBody::from_block_with_syntax(
-                block,
-                struct_syntax,
-            )?)),
+            } => Ok(Self::Struct(SourceStructBody::from_block(block)?)),
             Block::Delimited {
                 delimiter: Delimiter::SquareBracket,
                 ..
@@ -1423,40 +1386,13 @@ impl SourceStructBody {
         &self.fields
     }
 
-    fn from_block_with_syntax(
-        block: &Block,
-        struct_syntax: SourceStructSyntax,
-    ) -> Result<Self, SchemaError> {
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source struct body")?;
-        if struct_syntax == SourceStructSyntax::Positional
-            && Self::uses_positional_fields(body.root_objects())
-        {
-            return body
-                .root_objects()
-                .iter()
-                .map(SourceField::from_positional_block)
-                .collect::<Result<Vec<_>, _>>()
-                .map(|fields| Self { fields });
-        }
-        if body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: body.root_objects().len(),
-            });
-        }
-        let mut fields = Vec::new();
-        for pair in body.root_objects().chunks_exact(2) {
-            fields.push(SourceField::from_pair(&pair[0], &pair[1])?);
-        }
-        Ok(Self { fields })
-    }
-
-    fn uses_positional_fields(blocks: &[Block]) -> bool {
-        !blocks.is_empty()
-            && blocks.iter().all(|block| {
-                block
-                    .schema_name()
-                    .is_ok_and(|name| SourceIdentifierCase::new(&name).is_type())
-            })
+        body.root_objects()
+            .iter()
+            .map(SourceField::from_positional_block)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|fields| Self { fields })
     }
 
     fn to_schema_text(&self) -> String {
@@ -1570,27 +1506,68 @@ impl SourceField {
             (SourceFieldValue::Derived, false) => {
                 format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
             }
+            (SourceFieldValue::Reference(reference), true) => {
+                format!("{}.{}", self.name.to_nota(), reference.to_schema_text())
+            }
             (SourceFieldValue::Reference(_) | SourceFieldValue::Declaration(_), _) => {
                 format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
             }
         }
     }
 
-    fn from_pair(name: &Block, value: &Block) -> Result<Self, SchemaError> {
-        Ok(Self {
-            name: SourceAtom::from_block(name)?.into_name(),
-            value: SourceFieldValue::from_block(value)?,
-            positional: false,
+    fn from_positional_block(block: &Block) -> Result<Self, SchemaError> {
+        let atom = SourceAtom::from_block(block)?;
+        if atom.0 == "*" {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: atom.0.to_owned(),
+            });
+        }
+        if let Some((field_name, type_name)) = atom.0.split_once('.') {
+            return Self::from_explicit_field_reference(field_name, type_name);
+        }
+        let name = atom.into_name();
+        if SourceIdentifierCase::new(&name).is_type() && !Self::is_reserved_scalar_name(&name) {
+            return Ok(Self {
+                name,
+                value: SourceFieldValue::Derived,
+                positional: true,
+            });
+        }
+        Err(SchemaError::RetiredStructFieldSyntax {
+            found: name.to_nota(),
         })
     }
 
-    fn from_positional_block(block: &Block) -> Result<Self, SchemaError> {
-        let name = block.schema_name()?;
+    fn from_explicit_field_reference(
+        field_name: &str,
+        type_name: &str,
+    ) -> Result<Self, SchemaError> {
+        let name = Name::new(field_name);
+        let reference = Name::new(type_name);
+        if field_name.is_empty()
+            || type_name.is_empty()
+            || field_name.contains('.')
+            || type_name.contains('.')
+            || !name.qualifies_as_symbol_name()
+            || !reference.qualifies_as_symbol_name()
+            || !SourceIdentifierCase::new(&reference).is_type()
+        {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: format!("{field_name}.{type_name}"),
+            });
+        }
         Ok(Self {
             name,
-            value: SourceFieldValue::Derived,
+            value: SourceFieldValue::Reference(SourceReference::Plain(reference)),
             positional: true,
         })
+    }
+
+    fn is_reserved_scalar_name(name: &Name) -> bool {
+        matches!(
+            name.as_str(),
+            "String" | "Integer" | "Boolean" | "Path" | "Bytes"
+        )
     }
 
     fn to_lowered_field(
@@ -1690,16 +1667,6 @@ pub enum SourceFieldValue {
 }
 
 impl SourceFieldValue {
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        if block.demote_to_string() == Some("*") {
-            return Ok(Self::Derived);
-        }
-        match SourceReference::from_block(block) {
-            Ok(reference) => Ok(Self::Reference(reference)),
-            Err(_) => SourceDeclarationValue::from_block(block).map(Self::Declaration),
-        }
-    }
-
     fn to_schema_text(&self) -> String {
         match self {
             Self::Derived => "*".to_owned(),

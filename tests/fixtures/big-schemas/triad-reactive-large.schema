@@ -20,10 +20,10 @@
   AdminOut AdminReply
   Event RuntimeEvent
   Rejected Rejected
-  CommitSequence { integer Integer }
-  DatabaseDigest { integer Integer }
-  ActorIdentifier { string String }
-  SocketPath { string String }
+  CommitSequence Integer
+  DatabaseDigest Integer
+  ActorIdentifier String
+  SocketPath String
   SignalRequest [(RecordIntent) (ObserveIntent) (SubscribeIntent)]
   SignalReply [(RecordAccepted) (ObservationReturned) (SubscriptionStarted)]
   NexusRequest [(PushSignal) (PushSemaResult) ResolveMail ExpireMail]
@@ -33,40 +33,44 @@
   AdminRequest [Drain Pause Resume (Snapshot)]
   AdminReply [Drained Paused Resumed (SnapshotReady)]
   RuntimeEvent [(MailSent) (MessageAccepted) (MessageCommitted) (MessageFailed)]
-  Rejected { rejectionReason RejectionReason }
+  Rejected { RejectionReason }
   RejectionReason [Malformed Unauthorized Conflict Unsupported StaleVersion InternalError]
-  RecordIntent { actorIdentifier ActorIdentifier entry Entry }
-  ObserveIntent { query Query }
-  SubscribeIntent { query Query }
-  RecordAccepted { recordIdentifier RecordIdentifier commitSequence CommitSequence }
-  ObservationReturned { recordSet RecordSet }
-  SubscriptionStarted { subscriptionToken SubscriptionToken }
-  PushSignal { signalRequest SignalRequest }
-  PushSemaResult { semaReply SemaReply }
-  PushedToSema { semaRequest SemaRequest }
-  MailResolved { signalReply SignalReply }
-  WriteEntry { entry Entry }
-  ReadEntries { query Query }
-  OpenSubscription { query Query }
-  CloseSubscription { subscriptionToken SubscriptionToken }
-  EntryWritten { recordIdentifier RecordIdentifier commitSequence CommitSequence databaseDigest DatabaseDigest }
-  EntriesRead { recordSet RecordSet databaseDigest DatabaseDigest }
-  SubscriptionOpened { subscriptionToken SubscriptionToken commitSequence CommitSequence }
-  SubscriptionClosed { subscriptionToken SubscriptionToken commitSequence CommitSequence }
-  Snapshot { socketPath SocketPath }
-  SnapshotReady { socketPath SocketPath databaseDigest DatabaseDigest }
-  MailSent { signalRequest SignalRequest }
-  MessageAccepted { signalRequest SignalRequest }
-  MessageCommitted { commitSequence CommitSequence }
-  MessageFailed { rejectionReason RejectionReason }
-  Entry { topics Topics kind Kind description Description magnitude Magnitude actorIdentifier ActorIdentifier }
-  Topic { string String }
-  Topics { values (Vector Topic) }
-  Description { string String }
+  RecordIntent { ActorIdentifier Entry }
+  ObserveIntent { Query }
+  SubscribeIntent { Query }
+  RecordAccepted { RecordIdentifier CommitSequence }
+  ObservationReturned { RecordSet }
+  SubscriptionStarted { SubscriptionToken }
+  PushSignal { SignalRequest }
+  PushSemaResult { SemaReply }
+  PushedToSema { SemaRequest }
+  MailResolved { SignalReply }
+  WriteEntry { Entry }
+  ReadEntries { Query }
+  OpenSubscription { Query }
+  CloseSubscription { SubscriptionToken }
+  EntryWritten { RecordIdentifier CommitSequence DatabaseDigest }
+  EntriesRead { RecordSet DatabaseDigest }
+  SubscriptionOpened { SubscriptionToken CommitSequence }
+  SubscriptionClosed { SubscriptionToken CommitSequence }
+  Snapshot { SocketPath }
+  SnapshotReady { SocketPath DatabaseDigest }
+  MailSent { SignalRequest }
+  MessageAccepted { SignalRequest }
+  MessageCommitted { CommitSequence }
+  MessageFailed { RejectionReason }
+  Entry { Topics Kind Description Magnitude ActorIdentifier }
+  Topic String
+  Topics (Vector Topic)
+  Description String
   Kind [Decision Principle Correction Clarification Constraint Observation Question]
   Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]
-  Query { topics Topics kinds (Vector Kind) limit (Optional Integer) }
-  RecordIdentifier { integer Integer }
-  SubscriptionToken { integer Integer }
-  RecordSet { records (Vector Entry) byTopic (Map Topic RecordIdentifier) }
+  Kinds (Vector Kind)
+  Limit (Optional Integer)
+  Query { Topics Kinds Limit }
+  RecordIdentifier Integer
+  SubscriptionToken Integer
+  Records (Vector Entry)
+  ByTopic (Map Topic RecordIdentifier)
+  RecordSet { Records ByTopic }
 }

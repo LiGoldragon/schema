@@ -4,5 +4,6 @@
 {
   Topic String
   RecordIdentifier Integer
-  Entry { recordIdentifier RecordIdentifier byTopic (Map Topic RecordIdentifier) }
+  ByTopic (Map Topic RecordIdentifier)
+  Entry { recordIdentifier.RecordIdentifier ByTopic }
 }

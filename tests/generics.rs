@@ -227,7 +227,7 @@ fn declaration_parameters<'schema>(
 
 #[test]
 fn parameterized_declaration_resolves_its_parameters_as_binders() {
-    let schema = lower("(| Plane Input Output |) { source Input target Output }");
+    let schema = lower("(| Plane Input Output |) { source.Input target.Output }");
 
     // The binders are recorded on the declaration, in order.
     assert_eq!(
@@ -257,7 +257,7 @@ fn parameterized_declaration_resolves_its_parameters_as_binders() {
 #[test]
 fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
     let error =
-        try_lower("(| Plane Input Output |) { source Input target Output } Holder (Plane String)")
+        try_lower("(| Plane Input Output |) { source.Input target.Output } Holder (Plane String)")
             .expect_err("one argument against a two-parameter head must fail at lowering");
     assert_eq!(
         error,
@@ -275,7 +275,7 @@ fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
 #[test]
 fn application_with_correct_argument_count_lowers() {
     let schema = lower(
-        "(| Plane Input Output |) { source Input target Output } Holder (Plane String Integer)",
+        "(| Plane Input Output |) { source.Input target.Output } Holder (Plane String Integer)",
     );
     assert_eq!(
         single_reference(&schema, "Holder"),
@@ -295,7 +295,7 @@ fn application_with_correct_argument_count_lowers() {
 fn declared_parameterized_head_wins_over_unresolved_application() {
     // The declared head's arity binds — a wrong count is rejected.
     assert_eq!(
-        try_lower("(| Plane Input Output |) { source Input target Output } Holder (Plane String)")
+        try_lower("(| Plane Input Output |) { source.Input target.Output } Holder (Plane String)")
             .expect_err("declared head is consulted, so its arity binds"),
         SchemaError::GenericArityMismatch {
             head: "Plane".to_owned(),
@@ -324,11 +324,11 @@ fn declared_parameterized_head_wins_over_unresolved_application() {
 
 #[test]
 fn parameterized_head_round_trips_through_the_source_codec() {
-    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { source Input target Output }\n}";
+    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { source.Input target.Output }\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     let canonical = artifact.to_schema_text();
     assert!(
-        canonical.contains("(|Plane Input Output|) { source Input target Output }"),
+        canonical.contains("(|Plane Input Output|) { source.Input target.Output }"),
         "the parameterized head must project back to source text, got {canonical}",
     );
     let recovered =
@@ -354,7 +354,7 @@ fn parameterized_head_round_trips_through_the_source_codec() {
 
 #[test]
 fn source_codec_path_also_validates_application_arity() {
-    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { source Input target Output }\n  Holder (Plane String)\n}";
+    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { source.Input target.Output }\n  Holder (Plane String)\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     let error = artifact
         .source()
@@ -390,12 +390,12 @@ fn source_codec_path_also_validates_application_arity() {
 fn application_root_source(read_output: &str) -> String {
     format!(
         "(Work SignalInput SemaWriteOutput {read_output} EffectOutcome) [] {{ \
-         (| Work In WriteOut ReadOut Outcome |) {{ request In writes WriteOut reads ReadOut outcome Outcome }} \
-         SignalInput {{ payload String }} \
-         SemaWriteOutput {{ written Boolean }} \
-         SemaReadOutput {{ records Integer }} \
-         AltReadOutput {{ rows Integer }} \
-         EffectOutcome {{ ok Boolean }} \
+         (| Work In WriteOut ReadOut Outcome |) {{ request.In writes.WriteOut reads.ReadOut outcome.Outcome }} \
+         SignalInput String \
+         SemaWriteOutput Boolean \
+         SemaReadOutput Integer \
+         AltReadOutput Integer \
+         EffectOutcome Boolean \
          }}"
     )
 }
@@ -503,7 +503,7 @@ fn root_position_application_lowers_to_root_application() {
 fn enum_body_root_still_lowers_to_root_enum() {
     let schema = SchemaEngine::default()
         .lower_source(
-            "[(Record Entry)] [(Recorded Receipt)] { Entry { topic String } Receipt { ok Boolean } }",
+            "[(Record Entry)] [(Recorded Receipt)] { Topic String Ok Boolean Entry { Topic } Receipt { Ok } }",
             SchemaIdentity::new("enum-root:lib", "0.1.0"),
         )
         .expect("enum-body root schema lowers");
