@@ -1506,16 +1506,33 @@ impl SourceField {
             (SourceFieldValue::Derived, false) => {
                 format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
             }
-            (SourceFieldValue::Reference(reference), true) => {
-                format!("{}.{}", self.name.to_nota(), reference.to_schema_text())
+            (SourceFieldValue::Reference(SourceReference::Plain(reference)), true) => {
+                format!("{}.{}", self.name.to_nota(), reference.to_nota())
             }
-            (SourceFieldValue::Reference(_) | SourceFieldValue::Declaration(_), _) => {
+            (SourceFieldValue::Reference(reference), true) => {
+                Delimiter::Parenthesis.wrap([self.name.to_nota(), reference.to_schema_text()])
+            }
+            (SourceFieldValue::Reference(reference), false) => {
+                format!("{} {}", self.name.to_nota(), reference.to_schema_text())
+            }
+            (SourceFieldValue::Declaration(_), _) => {
                 format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
             }
         }
     }
 
     fn from_positional_block(block: &Block) -> Result<Self, SchemaError> {
+        if block.is_parenthesis() {
+            if let Some(field) = Self::from_explicit_structural_field(block)? {
+                return Ok(field);
+            }
+            let reference = SourceReference::from_block(block)?;
+            return Ok(Self {
+                name: reference.derived_field_name(),
+                value: SourceFieldValue::Reference(reference),
+                positional: true,
+            });
+        }
         let atom = SourceAtom::from_block(block)?;
         if atom.0 == "*" {
             return Err(SchemaError::RetiredStructFieldSyntax {
@@ -1536,6 +1553,29 @@ impl SourceField {
         Err(SchemaError::RetiredStructFieldSyntax {
             found: name.to_nota(),
         })
+    }
+
+    fn from_explicit_structural_field(block: &Block) -> Result<Option<Self>, SchemaError> {
+        let body =
+            NotaBody::from_delimited(block, Delimiter::Parenthesis, "explicit structural field")?;
+        let objects = body.root_objects();
+        if objects.len() != 2 || matches!(objects[1], Block::Atom(_)) {
+            return Ok(None);
+        }
+        let name = SourceAtom::from_block(&objects[0])?.into_name();
+        if crate::ReferenceHead::classify(name.as_str()).is_some() {
+            return Ok(None);
+        }
+        if !SourceIdentifierCase::new(&name).is_type() || Self::is_reserved_scalar_name(&name) {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: block.reemit_fallback(),
+            });
+        }
+        Ok(Some(Self {
+            name,
+            value: SourceFieldValue::Reference(SourceReference::from_block(&objects[1])?),
+            positional: true,
+        }))
     }
 
     fn from_explicit_field_reference(
@@ -2268,6 +2308,42 @@ impl SourceReference {
                 items.push(head.to_nota());
                 items.extend(arguments.iter().map(Self::to_schema_text));
                 Delimiter::Parenthesis.wrap(items)
+            }
+        }
+    }
+
+    fn derived_field_name(&self) -> Name {
+        match self {
+            Self::Plain(name) => match name.as_str() {
+                "String" => Name::new("string"),
+                "Integer" => Name::new("integer"),
+                "Boolean" => Name::new("boolean"),
+                "Path" => Name::new("path"),
+                "Bytes" => Name::new("bytes"),
+                _ => Name::new(name.field_name()),
+            },
+            Self::FixedBytes(_) => Name::new("bytes"),
+            Self::Vector(reference) => {
+                Name::new(format!("{}_vector", reference.derived_field_name()))
+            }
+            Self::Optional(reference) => {
+                Name::new(format!("optional_{}", reference.derived_field_name()))
+            }
+            Self::ScopeOf(reference) => {
+                Name::new(format!("{}_scope", reference.derived_field_name()))
+            }
+            Self::Map(key, value) => Name::new(format!(
+                "{}_by_{}",
+                value.derived_field_name(),
+                key.derived_field_name()
+            )),
+            Self::Application { head, arguments } => {
+                let mut derived = Name::new(head.field_name()).as_str().to_owned();
+                for argument in arguments {
+                    derived.push('_');
+                    derived.push_str(argument.derived_field_name().as_str());
+                }
+                Name::new(derived)
             }
         }
     }

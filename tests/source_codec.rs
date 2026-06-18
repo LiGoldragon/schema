@@ -82,6 +82,32 @@ fn schema_source_reference_fields_lower_to_canonical_field_names() {
 }
 
 #[test]
+fn schema_source_explicit_structural_fields_round_trip() {
+    let source = "{}\n[]\n[]\n{\n  Topic String\n  Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let canonical = artifact.to_schema_text();
+    let recovered = SchemaSourceArtifact::from_schema_text(&canonical)
+        .expect("canonical schema source decodes");
+    let schema = recovered
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect("schema source lowers");
+    let Some(TypeDeclaration::Struct(query)) = schema.type_named("Query") else {
+        panic!("Query should lower to a struct");
+    };
+
+    assert_eq!(
+        canonical,
+        "{}\n[]\n[]\n{\n  Topic String\n  Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }\n}"
+    );
+    assert_eq!(query.fields[0].name.as_str(), "topics");
+    assert_eq!(query.fields[1].name.as_str(), "limit");
+}
+
+#[test]
 fn nested_namespace_router_envelope_round_trips_and_lowers() {
     let source = source_codec_fixture("nested-router-namespace");
     let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");

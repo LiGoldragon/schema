@@ -97,6 +97,25 @@ fn scalar_references_nest_inside_collections() {
 }
 
 #[test]
+fn explicit_structural_field_roles_lower_recursively() {
+    let schema = lower(&roots(
+        "Topic String Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }",
+    ));
+    let fields = struct_fields(&schema, "Query");
+
+    assert_eq!(fields[0].name.as_str(), "topics");
+    assert_eq!(
+        fields[0].reference,
+        TypeReference::Vector(Box::new(TypeReference::new("Topic")))
+    );
+    assert_eq!(fields[1].name.as_str(), "limit");
+    assert_eq!(
+        fields[1].reference,
+        TypeReference::Optional(Box::new(TypeReference::Integer))
+    );
+}
+
+#[test]
 fn scalar_names_are_reserved_at_namespace_declaration_position() {
     let error = SchemaEngine::default()
         .lower_source(

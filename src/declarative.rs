@@ -1779,6 +1779,9 @@ impl<'template> MacroExpansionField<'template> {
                     .to_owned(),
             });
         }
+        if let Some(field) = self.explicit_structural_field(registry, context)? {
+            return Ok(field);
+        }
         if self.object.demote_to_string().is_none() {
             let reference = self.object.type_reference(registry, context)?;
             return Ok(FieldDeclaration {
@@ -1842,6 +1845,44 @@ impl<'template> MacroExpansionField<'template> {
             name: Name::new(name.field_name()),
             reference: TypeReference::from_name(reference),
         })
+    }
+
+    fn explicit_structural_field(
+        &self,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Option<FieldDeclaration>, SchemaError> {
+        if !self.object.is_parenthesis() || self.object.holds_root_objects() != 2 {
+            return Ok(None);
+        }
+        let Some(name_object) = self.object.root_object_at(0) else {
+            return Ok(None);
+        };
+        let Some(reference_object) = self.object.root_object_at(1) else {
+            return Ok(None);
+        };
+        if !name_object.qualifies_as_pascal_case_symbol()
+            || reference_object.demote_to_string().is_some()
+        {
+            return Ok(None);
+        }
+        let name = name_object.schema_name()?;
+        if ReferenceHead::classify(name.as_str()).is_some() {
+            return Ok(None);
+        }
+        if Self::is_reserved_scalar_name(&name) {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: self
+                    .object
+                    .demote_to_string()
+                    .unwrap_or("parenthesized structural field")
+                    .to_owned(),
+            });
+        }
+        Ok(Some(FieldDeclaration {
+            name: Name::new(name.field_name()),
+            reference: reference_object.type_reference(registry, context)?,
+        }))
     }
 
     fn is_explicit_field_pair(&self) -> bool {
