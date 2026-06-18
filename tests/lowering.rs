@@ -197,6 +197,22 @@ fn single_field_brace_declarations_lower_to_newtypes() {
 }
 
 #[test]
+fn redundant_dot_field_roles_are_rejected() {
+    let source = "[] [] { Topic String Entry { topic.Topic } }";
+    let error = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("redundant explicit field role is rejected");
+
+    assert_eq!(
+        error,
+        schema_next::SchemaError::RedundantExplicitFieldRole {
+            found: "topic.Topic".to_owned(),
+            type_name: "Topic".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn single_field_inline_pascal_declarations_lower_to_newtypes() {
     let source =
         "[] [] { RecordIdentifier Integer Receipt { RecordIdentifier } Entry { Receipt } }";

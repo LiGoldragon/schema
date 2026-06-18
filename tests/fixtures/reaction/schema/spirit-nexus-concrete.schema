@@ -26,9 +26,9 @@
   RetirementReceipt Boolean
   RemoveReceipt Boolean
   RecordChangeReceipt Boolean
-  GuardianRejection { reason.GuardianRejectionReason explanation.Explanation }
+  GuardianRejection { reason.GuardianRejectionReason Explanation }
   GuardianRejectionReason String
-  ReferentGuardianRejection { reason.ReferentGuardianRejectionReason explanation.Explanation }
+  ReferentGuardianRejection { reason.ReferentGuardianRejectionReason Explanation }
   ReferentGuardianRejectionReason String
   Explanation String
   ErrorReport String
@@ -99,6 +99,6 @@
   ObserverTapOpened ObserverSubscription
   ObserverTapClosed ObserverRetraction
 
-  StashRequest { records.Records marker.DatabaseMarker }
+  StashRequest { Records marker.DatabaseMarker }
   StashResult { handle.StashHandle count.RecordCount marker.DatabaseMarker }
 }

@@ -8,6 +8,6 @@
   Topics (Vector Topic)
   Topic String
   SubscriptionToken Integer
-  SubscriptionReceipt { subscriptionToken.SubscriptionToken }
+  SubscriptionReceipt { SubscriptionToken }
   RecordChanged { Topic }
 }

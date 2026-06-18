@@ -1556,6 +1556,13 @@ impl SourceField {
                 found: format!("{field_name}.{type_name}"),
             });
         }
+        if name.field_name() == reference.field_name() && !Self::is_reserved_scalar_name(&reference)
+        {
+            return Err(SchemaError::RedundantExplicitFieldRole {
+                found: format!("{field_name}.{type_name}"),
+                type_name: reference.to_nota(),
+            });
+        }
         Ok(Self {
             name,
             value: SourceFieldValue::Reference(SourceReference::Plain(reference)),

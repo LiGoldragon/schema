@@ -1831,6 +1831,13 @@ impl<'template> MacroExpansionField<'template> {
                 found: format!("{field_name}.{type_name}"),
             });
         }
+        if name.field_name() == reference.field_name() && !Self::is_reserved_scalar_name(&reference)
+        {
+            return Err(SchemaError::RedundantExplicitFieldRole {
+                found: format!("{field_name}.{type_name}"),
+                type_name: reference.to_nota(),
+            });
+        }
         Ok(FieldDeclaration {
             name: Name::new(name.field_name()),
             reference: TypeReference::from_name(reference),

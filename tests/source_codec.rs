@@ -515,6 +515,20 @@ fn duplicate_inline_declarations_are_errors() {
 }
 
 #[test]
+fn redundant_dot_field_roles_are_errors() {
+    let source = "{}\n[]\n[]\n{\n  Topic String\n  Entry { topic.Topic }\n}";
+    let error = SchemaSourceArtifact::from_schema_text(source)
+        .expect_err("redundant explicit field role should fail before lowering");
+    let rendered = error.to_string();
+
+    assert!(
+        rendered.contains("redundant explicit field role topic.Topic")
+            && rendered.contains("just use Topic"),
+        "got {error:?}"
+    );
+}
+
+#[test]
 fn schema_source_artifact_round_trips_through_binary_archive() {
     let source = source_codec_fixture("root-inline-payloads");
     let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");

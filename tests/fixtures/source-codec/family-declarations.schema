@@ -6,7 +6,7 @@
   Body String
   Note String
   Reason String
-  Entry { topic.Topic Body }
+  Entry { Topic Body }
   Observation { Note }
   Query { Topic }
   Rejection { Reason }

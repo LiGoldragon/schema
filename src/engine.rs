@@ -71,6 +71,8 @@ pub enum SchemaError {
         "retired struct field syntax {found}; struct bodies are positional field types, use TypeName or field_name.TypeName"
     )]
     RetiredStructFieldSyntax { found: String },
+    #[error("redundant explicit field role {found}; just use {type_name}")]
+    RedundantExplicitFieldRole { found: String, type_name: String },
     #[error("io error at {path}: {reason}")]
     Io { path: String, reason: String },
     #[error("malformed schema path: {path}")]

@@ -28,8 +28,8 @@
   Limit (Optional Integer)
   Entries (Vector Entry)
   ByTopic (Map Topic RecordIdentifier)
-  Entry { Topics Description AgentName databaseMarker.DatabaseMarker }
+  Entry { Topics Description AgentName DatabaseMarker }
   Query { Topics Limit }
-  RecordReceipt { RecordIdentifier databaseMarker.DatabaseMarker commitSequence.CommitSequence }
-  RecordSet { records.Entries ByTopic }
+  RecordReceipt { RecordIdentifier DatabaseMarker CommitSequence }
+  RecordSet { Entries ByTopic }
 }

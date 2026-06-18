@@ -390,7 +390,7 @@ fn source_codec_path_also_validates_application_arity() {
 fn application_root_source(read_output: &str) -> String {
     format!(
         "(Work SignalInput SemaWriteOutput {read_output} EffectOutcome) [] {{ \
-         (| Work In WriteOut ReadOut Outcome |) {{ request.In writes.WriteOut reads.ReadOut outcome.Outcome }} \
+         (| Work In WriteOut ReadOut Outcome |) {{ request.In writes.WriteOut reads.ReadOut Outcome }} \
          SignalInput String \
          SemaWriteOutput Boolean \
          SemaReadOutput Integer \

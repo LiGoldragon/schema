@@ -5,5 +5,5 @@
   Topic String
   RecordIdentifier Integer
   ByTopic (Map Topic RecordIdentifier)
-  Entry { recordIdentifier.RecordIdentifier ByTopic }
+  Entry { RecordIdentifier ByTopic }
 }
