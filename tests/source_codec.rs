@@ -2,7 +2,7 @@ use std::fs;
 
 use schema_next::{
     RelationDeclaration, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
-    TypeDeclaration,
+    TypeDeclaration, TypeReference,
 };
 
 fn source_codec_fixture(name: &str) -> String {
@@ -78,6 +78,122 @@ fn schema_source_reference_fields_lower_to_canonical_field_names() {
         field_names,
         vec!["record_identifier", "by_topic"],
         "schema-source lowering must preserve canonical derived field names"
+    );
+}
+
+#[test]
+fn nested_namespace_router_envelope_round_trips_and_lowers() {
+    let source = source_codec_fixture("nested-router-namespace");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
+    let canonical = artifact.to_schema_text();
+    let recovered = SchemaSourceArtifact::from_schema_text(&canonical)
+        .expect("canonical nested namespace source decodes");
+    let recovered_from_binary = SchemaSourceArtifact::from_binary_bytes(
+        &artifact
+            .to_binary_bytes()
+            .expect("nested namespace source archives"),
+    )
+    .expect("nested namespace source decodes from archive");
+
+    assert_eq!(
+        artifact, recovered,
+        "canonical nested namespace source should recover the same typed source"
+    );
+    assert_eq!(
+        artifact, recovered_from_binary,
+        "source-level nested namespace data should survive the rkyv archive boundary"
+    );
+    assert!(
+        canonical.contains(
+            "Envelope { Destination Contract Operation Exchange PayloadSize PayloadOctets }"
+        ),
+        "canonical source keeps the envelope fields positional and bare"
+    );
+    assert!(
+        !canonical.contains("Destination *"),
+        "canonical source must not reintroduce the retired star shorthand"
+    );
+    assert!(
+        !canonical.contains("destination ActorIdentifier"),
+        "canonical source must not reintroduce key/value-style field labels"
+    );
+
+    let schema = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("router:signal", "0.1.0"),
+        )
+        .expect("nested namespace source lowers");
+    let schema_from_canonical = recovered
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("router:signal", "0.1.0"),
+        )
+        .expect("canonical nested namespace source lowers");
+
+    assert_eq!(
+        schema.content_hash(),
+        schema_from_canonical.content_hash(),
+        "source projection details must not move semantic content identity"
+    );
+    assert!(
+        schema.type_named("router:routed_object:Envelope").is_some(),
+        "nested Envelope should flatten to a fully qualified schema type"
+    );
+    assert!(
+        schema.type_named("Envelope").is_none(),
+        "nested local names must not leak into the top-level type namespace"
+    );
+
+    let Some(TypeDeclaration::Struct(envelope)) =
+        schema.type_named("router:routed_object:Envelope")
+    else {
+        panic!("router envelope should lower to a struct");
+    };
+    assert_eq!(
+        envelope
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "destination",
+            "contract",
+            "operation",
+            "exchange",
+            "payload_size",
+            "payload_octets"
+        ],
+        "field names derive from local role types inside the namespace"
+    );
+    assert_eq!(
+        envelope
+            .fields
+            .iter()
+            .map(|field| &field.reference)
+            .collect::<Vec<_>>(),
+        vec![
+            &TypeReference::Plain(schema_next::Name::new("router:routed_object:Destination")),
+            &TypeReference::Plain(schema_next::Name::new("router:routed_object:Contract")),
+            &TypeReference::Plain(schema_next::Name::new("router:routed_object:Operation")),
+            &TypeReference::Plain(schema_next::Name::new("router:routed_object:Exchange")),
+            &TypeReference::Plain(schema_next::Name::new("router:routed_object:PayloadSize")),
+            &TypeReference::Plain(schema_next::Name::new("router:routed_object:PayloadOctets")),
+        ],
+        "local field types resolve to fully qualified semantic references"
+    );
+
+    let Some(TypeDeclaration::Newtype(destination)) =
+        schema.type_named("router:routed_object:Destination")
+    else {
+        panic!("Destination should lower to a namespaced newtype");
+    };
+    assert_eq!(
+        destination.reference,
+        TypeReference::Plain(schema_next::Name::new("ActorIdentifier")),
+        "namespaced declarations can still reference top-level shared types"
     );
 }
 

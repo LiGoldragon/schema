@@ -34,6 +34,19 @@ impl Name {
             .expect("split always yields at least one segment")
     }
 
+    pub fn has_namespace(&self) -> bool {
+        self.0.contains(':')
+    }
+
+    pub fn qualified_under(&self, namespace: Option<&Name>) -> Self {
+        match namespace {
+            Some(namespace) if !self.has_namespace() => {
+                Self::new(format!("{}:{}", namespace.as_str(), self.as_str()))
+            }
+            Some(_) | None => self.clone(),
+        }
+    }
+
     pub fn field_name(&self) -> String {
         let mut output = String::new();
         for (index, character) in self.local_part().chars().enumerate() {

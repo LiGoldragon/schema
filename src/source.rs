@@ -469,7 +469,7 @@ impl SourceRootBody {
 
     fn to_root(&self, name: Name, namespace: &SourceLoweredNamespace) -> Result<Root, SchemaError> {
         match self {
-            Self::Enum(body) => body.to_schema_enum(name, namespace).map(Root::Enum),
+            Self::Enum(body) => body.to_schema_enum(name, namespace, None).map(Root::Enum),
             Self::Application(reference) => {
                 let TypeReference::Application { head, arguments } = reference.to_type_reference()
                 else {
@@ -491,12 +491,29 @@ pub struct SourceNamespace {
     entries: Vec<SourceNamespaceEntry>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceStructSyntax {
+    FieldPairs,
+    Positional,
+}
+
 impl SourceNamespace {
     pub fn entries(&self) -> &[SourceNamespaceEntry] {
         &self.entries
     }
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        Self::from_block_with_struct_syntax(block, SourceStructSyntax::FieldPairs)
+    }
+
+    fn from_nested_block(block: &Block) -> Result<Self, SchemaError> {
+        Self::from_block_with_struct_syntax(block, SourceStructSyntax::Positional)
+    }
+
+    fn from_block_with_struct_syntax(
+        block: &Block,
+        struct_syntax: SourceStructSyntax,
+    ) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source namespace")?;
         if body.root_objects().len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
@@ -509,11 +526,12 @@ impl SourceNamespace {
             // parameterized `(| Name Param … |)` head introducing binders.
             // The value lowers the same way for either head.
             let (name, parameters) = DeclarationHead::from_block(&pair[0])?.into_parts();
-            entries.push(SourceNamespaceEntry {
+            entries.push(SourceNamespaceEntry::from_parts(
                 name,
                 parameters,
-                value: SourceDeclarationValue::from_block(&pair[1])?,
-            });
+                &pair[1],
+                struct_syntax,
+            )?);
         }
         Ok(Self { entries })
     }
@@ -531,9 +549,17 @@ impl SourceNamespace {
     }
 
     fn stream_declarations(&self) -> Result<Vec<StreamDeclaration>, SchemaError> {
+        self.stream_declarations_in_namespace(None)
+    }
+
+    fn stream_declarations_in_namespace(
+        &self,
+        namespace: Option<&Name>,
+    ) -> Result<Vec<StreamDeclaration>, SchemaError> {
         let mut streams = Vec::new();
         for entry in &self.entries {
-            if let Some(stream) = entry.to_stream_declaration() {
+            let entry_streams = entry.stream_declarations(namespace)?;
+            for stream in &entry_streams {
                 if streams
                     .iter()
                     .any(|existing: &StreamDeclaration| existing.name == stream.name)
@@ -542,16 +568,24 @@ impl SourceNamespace {
                         name: stream.name.as_str().to_owned(),
                     });
                 }
-                streams.push(stream);
             }
+            streams.extend(entry_streams);
         }
         Ok(streams)
     }
 
     fn family_declarations(&self) -> Result<Vec<FamilyDeclaration>, SchemaError> {
+        self.family_declarations_in_namespace(None)
+    }
+
+    fn family_declarations_in_namespace(
+        &self,
+        namespace: Option<&Name>,
+    ) -> Result<Vec<FamilyDeclaration>, SchemaError> {
         let mut families: Vec<FamilyDeclaration> = Vec::new();
         for entry in &self.entries {
-            if let Some(family) = entry.to_family_declaration() {
+            let entry_families = entry.family_declarations(namespace)?;
+            for family in &entry_families {
                 if families.iter().any(|existing| existing.name == family.name) {
                     return Err(SchemaError::DuplicateFamilyName {
                         name: family.name.as_str().to_owned(),
@@ -565,10 +599,21 @@ impl SourceNamespace {
                         table: family.table.as_str().to_owned(),
                     });
                 }
-                families.push(family);
             }
+            families.extend(entry_families);
         }
         Ok(families)
+    }
+
+    fn type_declaration_names(&self) -> Vec<Name> {
+        self.type_declaration_names_in_namespace(None)
+    }
+
+    fn type_declaration_names_in_namespace(&self, namespace: Option<&Name>) -> Vec<Name> {
+        self.entries
+            .iter()
+            .flat_map(|entry| entry.type_declaration_names(namespace))
+            .collect()
     }
 }
 
@@ -576,10 +621,33 @@ impl SourceNamespace {
 pub struct SourceNamespaceEntry {
     name: Name,
     parameters: Vec<Name>,
-    value: SourceDeclarationValue,
+    value: SourceNamespaceEntryValue,
 }
 
 impl SourceNamespaceEntry {
+    fn from_parts(
+        name: Name,
+        parameters: Vec<Name>,
+        value: &Block,
+        struct_syntax: SourceStructSyntax,
+    ) -> Result<Self, SchemaError> {
+        let value = if parameters.is_empty()
+            && SourceIdentifierCase::new(&name).is_namespace()
+            && value.is_brace()
+        {
+            SourceNamespaceEntryValue::Namespace(SourceNamespace::from_nested_block(value)?)
+        } else {
+            SourceNamespaceEntryValue::Declaration(
+                SourceDeclarationValue::from_block_with_struct_syntax(value, struct_syntax)?,
+            )
+        };
+        Ok(Self {
+            name,
+            parameters,
+            value,
+        })
+    }
+
     pub fn name(&self) -> &Name {
         &self.name
     }
@@ -590,8 +658,20 @@ impl SourceNamespaceEntry {
         &self.parameters
     }
 
-    pub fn value(&self) -> &SourceDeclarationValue {
-        &self.value
+    pub fn value(&self) -> Option<&SourceDeclarationValue> {
+        self.value.as_declaration()
+    }
+
+    pub fn namespace(&self) -> Option<&SourceNamespace> {
+        self.value.as_namespace()
+    }
+
+    fn namespace_name(&self, parent: Option<&Name>) -> Name {
+        self.name.qualified_under(parent)
+    }
+
+    fn declaration_name(&self, namespace: Option<&Name>) -> Name {
+        self.name.qualified_under(namespace)
     }
 
     fn to_schema_text(&self) -> String {
@@ -617,22 +697,134 @@ impl SourceNamespaceEntry {
     fn to_declaration_group(
         &self,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         self.value
-            .to_namespace_declaration_group(self.name.clone(), resolver)
+            .to_namespace_declaration_group(self.declaration_name(namespace), resolver, namespace)
             .map(|group| group.with_parameters(self.parameters.clone()))
     }
 
-    fn to_stream_declaration(&self) -> Option<StreamDeclaration> {
-        self.value.to_stream_declaration(self.name.clone())
+    fn stream_declarations(
+        &self,
+        namespace: Option<&Name>,
+    ) -> Result<Vec<StreamDeclaration>, SchemaError> {
+        self.value.stream_declarations(self, namespace)
     }
 
-    fn to_family_declaration(&self) -> Option<FamilyDeclaration> {
-        self.value.to_family_declaration(self.name.clone())
+    fn family_declarations(
+        &self,
+        namespace: Option<&Name>,
+    ) -> Result<Vec<FamilyDeclaration>, SchemaError> {
+        self.value.family_declarations(self, namespace)
     }
 
-    fn is_type_declaration(&self) -> bool {
-        self.value.is_type_declaration()
+    fn type_declaration_names(&self, namespace: Option<&Name>) -> Vec<Name> {
+        self.value.type_declaration_names(self, namespace)
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum SourceNamespaceEntryValue {
+    Declaration(#[rkyv(omit_bounds)] SourceDeclarationValue),
+    Namespace(#[rkyv(omit_bounds)] SourceNamespace),
+}
+
+impl SourceNamespaceEntryValue {
+    fn as_declaration(&self) -> Option<&SourceDeclarationValue> {
+        match self {
+            Self::Declaration(value) => Some(value),
+            Self::Namespace(_) => None,
+        }
+    }
+
+    fn as_namespace(&self) -> Option<&SourceNamespace> {
+        match self {
+            Self::Namespace(namespace) => Some(namespace),
+            Self::Declaration(_) => None,
+        }
+    }
+
+    fn to_schema_text(&self) -> String {
+        match self {
+            Self::Declaration(value) => value.to_schema_text(),
+            Self::Namespace(namespace) => namespace.to_schema_text(),
+        }
+    }
+
+    fn to_namespace_declaration_group(
+        &self,
+        name: Name,
+        resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
+    ) -> Result<SourceDeclarationGroup, SchemaError> {
+        match self {
+            Self::Declaration(value) => {
+                value.to_namespace_declaration_group(name, resolver, namespace)
+            }
+            Self::Namespace(_) => Ok(SourceDeclarationGroup::empty()),
+        }
+    }
+
+    fn stream_declarations(
+        &self,
+        entry: &SourceNamespaceEntry,
+        namespace: Option<&Name>,
+    ) -> Result<Vec<StreamDeclaration>, SchemaError> {
+        match self {
+            Self::Declaration(value) => Ok(value
+                .to_stream_declaration(entry.declaration_name(namespace))
+                .into_iter()
+                .collect()),
+            Self::Namespace(nested) => {
+                let nested_namespace = entry.namespace_name(namespace);
+                nested.stream_declarations_in_namespace(Some(&nested_namespace))
+            }
+        }
+    }
+
+    fn family_declarations(
+        &self,
+        entry: &SourceNamespaceEntry,
+        namespace: Option<&Name>,
+    ) -> Result<Vec<FamilyDeclaration>, SchemaError> {
+        match self {
+            Self::Declaration(value) => Ok(value
+                .to_family_declaration(entry.declaration_name(namespace))
+                .into_iter()
+                .collect()),
+            Self::Namespace(nested) => {
+                let nested_namespace = entry.namespace_name(namespace);
+                nested.family_declarations_in_namespace(Some(&nested_namespace))
+            }
+        }
+    }
+
+    fn type_declaration_names(
+        &self,
+        entry: &SourceNamespaceEntry,
+        namespace: Option<&Name>,
+    ) -> Vec<Name> {
+        match self {
+            Self::Declaration(value) if value.is_type_declaration() => {
+                vec![entry.declaration_name(namespace)]
+            }
+            Self::Declaration(_) => Vec::new(),
+            Self::Namespace(nested) => {
+                let nested_namespace = entry.namespace_name(namespace);
+                nested.type_declaration_names_in_namespace(Some(&nested_namespace))
+            }
+        }
     }
 }
 
@@ -820,6 +1012,13 @@ pub enum SourceDeclarationValue {
 
 impl SourceDeclarationValue {
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        Self::from_block_with_struct_syntax(block, SourceStructSyntax::FieldPairs)
+    }
+
+    fn from_block_with_struct_syntax(
+        block: &Block,
+        struct_syntax: SourceStructSyntax,
+    ) -> Result<Self, SchemaError> {
         match block {
             Block::Atom(_) => Ok(Self::Reference(SourceReference::from_block(block)?)),
             Block::Delimited {
@@ -833,7 +1032,10 @@ impl SourceDeclarationValue {
             Block::Delimited {
                 delimiter: Delimiter::Brace,
                 ..
-            } => Ok(Self::Struct(SourceStructBody::from_block(block)?)),
+            } => Ok(Self::Struct(SourceStructBody::from_block_with_syntax(
+                block,
+                struct_syntax,
+            )?)),
             Block::Delimited {
                 delimiter: Delimiter::SquareBracket,
                 ..
@@ -869,18 +1071,19 @@ impl SourceDeclarationValue {
         &self,
         name: Name,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self {
             Self::Reference(reference) => {
                 Ok(SourceDeclarationGroup::primary(TypeDeclaration::Newtype(
-                    NewtypeDeclaration::new(name, reference.to_type_reference()),
+                    NewtypeDeclaration::new(name, resolver.resolve_reference(namespace, reference)),
                 )))
             }
             Self::Text(_) => Err(SchemaError::ExpectedSyntaxDeclaration {
                 found: "text declaration".to_owned(),
             }),
-            Self::Struct(body) => body.to_declaration_group(name, resolver),
-            Self::Enum(body) => body.to_declaration_group(name, resolver),
+            Self::Struct(body) => body.to_declaration_group(name, resolver, namespace),
+            Self::Enum(body) => body.to_declaration_group(name, resolver, namespace),
             Self::Stream(_) | Self::Family(_) => Ok(SourceDeclarationGroup::empty()),
         }
     }
@@ -889,14 +1092,15 @@ impl SourceDeclarationValue {
         &self,
         name: Name,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self {
-            Self::Enum(body) => body.to_public_declaration_group(name, resolver),
+            Self::Enum(body) => body.to_public_declaration_group(name, resolver, namespace),
             Self::Reference(_)
             | Self::Text(_)
             | Self::Struct(_)
             | Self::Stream(_)
-            | Self::Family(_) => self.to_declaration_group(name, resolver),
+            | Self::Family(_) => self.to_declaration_group(name, resolver, namespace),
         }
     }
 
@@ -1219,8 +1423,21 @@ impl SourceStructBody {
         &self.fields
     }
 
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+    fn from_block_with_syntax(
+        block: &Block,
+        struct_syntax: SourceStructSyntax,
+    ) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source struct body")?;
+        if struct_syntax == SourceStructSyntax::Positional
+            && Self::uses_positional_fields(body.root_objects())
+        {
+            return body
+                .root_objects()
+                .iter()
+                .map(SourceField::from_positional_block)
+                .collect::<Result<Vec<_>, _>>()
+                .map(|fields| Self { fields });
+        }
         if body.root_objects().len() % 2 != 0 {
             return Err(SchemaError::ExpectedEvenMapEntries {
                 found: body.root_objects().len(),
@@ -1231,6 +1448,15 @@ impl SourceStructBody {
             fields.push(SourceField::from_pair(&pair[0], &pair[1])?);
         }
         Ok(Self { fields })
+    }
+
+    fn uses_positional_fields(blocks: &[Block]) -> bool {
+        !blocks.is_empty()
+            && blocks.iter().all(|block| {
+                block
+                    .schema_name()
+                    .is_ok_and(|name| SourceIdentifierCase::new(&name).is_type())
+            })
     }
 
     fn to_schema_text(&self) -> String {
@@ -1249,10 +1475,12 @@ impl SourceStructBody {
         &self,
         name: Name,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         self.to_declaration_group_with_visibility(
             name,
             resolver,
+            namespace,
             SourceInlineDeclarationVisibility::PrivateHelper,
         )
     }
@@ -1261,13 +1489,14 @@ impl SourceStructBody {
         &self,
         name: Name,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
         field_visibility: SourceInlineDeclarationVisibility,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         let mut private = Vec::new();
         let mut public = Vec::new();
         let mut fields = Vec::new();
         for field in &self.fields {
-            let lowered = field.to_lowered_field(resolver, field_visibility)?;
+            let lowered = field.to_lowered_field(resolver, namespace, field_visibility)?;
             public.extend(lowered.public_declarations);
             private.extend(lowered.private_declarations);
             fields.push(lowered.field);
@@ -1323,6 +1552,7 @@ impl SourceDelimitedText {
 pub struct SourceField {
     name: Name,
     value: SourceFieldValue,
+    positional: bool,
 }
 
 impl SourceField {
@@ -1335,19 +1565,38 @@ impl SourceField {
     }
 
     fn to_schema_text(&self) -> String {
-        format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
+        match (&self.value, self.positional) {
+            (SourceFieldValue::Derived, true) => self.name.to_nota(),
+            (SourceFieldValue::Derived, false) => {
+                format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
+            }
+            (SourceFieldValue::Reference(_) | SourceFieldValue::Declaration(_), _) => {
+                format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
+            }
+        }
     }
 
     fn from_pair(name: &Block, value: &Block) -> Result<Self, SchemaError> {
         Ok(Self {
             name: SourceAtom::from_block(name)?.into_name(),
             value: SourceFieldValue::from_block(value)?,
+            positional: false,
+        })
+    }
+
+    fn from_positional_block(block: &Block) -> Result<Self, SchemaError> {
+        let name = block.schema_name()?;
+        Ok(Self {
+            name,
+            value: SourceFieldValue::Derived,
+            positional: true,
         })
     }
 
     fn to_lowered_field(
         &self,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
         visibility: SourceInlineDeclarationVisibility,
     ) -> Result<SourceLoweredField, SchemaError> {
         match &self.value {
@@ -1356,15 +1605,15 @@ impl SourceField {
                 Vec::new(),
                 FieldDeclaration {
                     name: Name::new(self.name.field_name()),
-                    reference: TypeReference::from_name(self.name.clone()),
+                    reference: resolver.resolve_name(namespace, &self.name),
                 },
             )),
             SourceFieldValue::Reference(reference)
                 if SourceIdentifierCase::new(&self.name).is_type() =>
             {
                 let declaration = TypeDeclaration::Newtype(NewtypeDeclaration::new(
-                    self.name.clone(),
-                    reference.to_type_reference(),
+                    self.name.qualified_under(namespace),
+                    resolver.resolve_reference(namespace, reference),
                 ));
                 let declarations = SourceLoweredInlineDeclarations::new(visibility, declaration);
                 Ok(SourceLoweredField::new(
@@ -1372,7 +1621,7 @@ impl SourceField {
                     declarations.private,
                     FieldDeclaration {
                         name: Name::new(self.name.field_name()),
-                        reference: TypeReference::from_name(self.name.clone()),
+                        reference: resolver.resolve_name(namespace, &self.name),
                     },
                 ))
             }
@@ -1381,20 +1630,24 @@ impl SourceField {
                 Vec::new(),
                 FieldDeclaration {
                     name: Name::new(self.name.field_name()),
-                    reference: reference.to_type_reference(),
+                    reference: resolver.resolve_reference(namespace, reference),
                 },
             )),
             SourceFieldValue::Declaration(value)
                 if SourceIdentifierCase::new(&self.name).is_type() =>
             {
-                let group = value.to_declaration_group(self.name.clone(), resolver)?;
+                let group = value.to_declaration_group(
+                    self.name.qualified_under(namespace),
+                    resolver,
+                    namespace,
+                )?;
                 let declarations = group.into_field_declarations(visibility);
                 Ok(SourceLoweredField::new(
                     declarations.public,
                     declarations.private,
                     FieldDeclaration {
                         name: Name::new(self.name.field_name()),
-                        reference: TypeReference::from_name(self.name.clone()),
+                        reference: resolver.resolve_name(namespace, &self.name),
                     },
                 ))
             }
@@ -1505,17 +1758,20 @@ impl SourceEnumBody {
         &self,
         name: Name,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         let mut private = Vec::new();
         for variant in &self.variants {
-            private.extend(variant.private_inline_declarations(resolver)?);
+            private.extend(variant.private_inline_declarations(resolver, namespace)?);
         }
         Ok(SourceDeclarationGroup::new(
             Vec::new(),
             private,
-            TypeDeclaration::Enum(
-                self.to_schema_enum(name, &SourceVariantPayloadResolution::explicit_only())?,
-            ),
+            TypeDeclaration::Enum(self.to_schema_enum(
+                name,
+                &SourceVariantPayloadResolution::explicit_only(),
+                namespace,
+            )?),
         ))
     }
 
@@ -1523,21 +1779,24 @@ impl SourceEnumBody {
         &self,
         name: Name,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         let mut public = Vec::new();
         for variant in &self.variants {
             public.extend(
                 variant
-                    .public_inline_declaration(resolver)?
+                    .public_inline_declaration(resolver, namespace)?
                     .into_type_declarations(),
             );
         }
         Ok(SourceDeclarationGroup::new(
             public,
             Vec::new(),
-            TypeDeclaration::Enum(
-                self.to_schema_enum(name, &SourceVariantPayloadResolution::explicit_only())?,
-            ),
+            TypeDeclaration::Enum(self.to_schema_enum(
+                name,
+                &SourceVariantPayloadResolution::explicit_only(),
+                namespace,
+            )?),
         ))
     }
 
@@ -1547,7 +1806,7 @@ impl SourceEnumBody {
     ) -> Result<Vec<Declaration>, SchemaError> {
         let mut declarations = Vec::new();
         for variant in &self.variants {
-            let group = variant.public_inline_declaration(resolver)?;
+            let group = variant.public_inline_declaration(resolver, None)?;
             declarations.extend(group.into_public_declarations());
         }
         Ok(declarations)
@@ -1571,11 +1830,12 @@ impl SourceEnumBody {
         &self,
         name: Name,
         resolver: &impl SourceVariantResolver,
+        namespace: Option<&Name>,
     ) -> Result<EnumDeclaration, SchemaError> {
         let variants = self
             .variants
             .iter()
-            .map(|variant| variant.to_enum_variant(resolver))
+            .map(|variant| variant.to_enum_variant(resolver, namespace))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(EnumDeclaration::new(name, variants))
     }
@@ -1654,20 +1914,21 @@ impl SourceVariantSignature {
     fn to_enum_variant(
         &self,
         resolver: &impl SourceVariantResolver,
+        namespace: Option<&Name>,
     ) -> Result<EnumVariant, SchemaError> {
         let name = self.name().clone();
         let payload = match self {
-            Self::SelfTagged(_) => Some(TypeReference::from_name(name.clone())),
+            Self::SelfTagged(_) => Some(resolver.resolve_name(namespace, &name)),
             Self::Data(_, SourceVariantPayload::Reference(reference))
             | Self::Streaming(_, SourceVariantPayload::Reference(reference), _, _) => {
-                Some(reference.to_type_reference())
+                Some(resolver.resolve_reference(namespace, reference))
             }
             Self::Data(_, SourceVariantPayload::Declaration(_))
             | Self::Streaming(_, SourceVariantPayload::Declaration(_), _, _) => {
-                Some(TypeReference::from_name(name.clone()))
+                Some(resolver.resolve_name(namespace, &name))
             }
             Self::Unit(_) if resolver.resolves_variant_payload(&name) => {
-                Some(TypeReference::from_name(name.clone()))
+                Some(resolver.resolve_name(namespace, &name))
             }
             Self::Unit(_) => None,
         };
@@ -1681,17 +1942,21 @@ impl SourceVariantSignature {
     fn public_inline_declaration(
         &self,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         match self.payload_value() {
             Some(SourceVariantPayload::Declaration(SourceDeclarationValue::Struct(body))) => body
                 .to_declaration_group_with_visibility(
-                    self.name().clone(),
+                    self.name().qualified_under(namespace),
                     resolver,
+                    namespace,
                     SourceInlineDeclarationVisibility::PublicSourceScope,
                 ),
-            Some(SourceVariantPayload::Declaration(value)) => {
-                value.to_declaration_group(self.name().clone(), resolver)
-            }
+            Some(SourceVariantPayload::Declaration(value)) => value.to_declaration_group(
+                self.name().qualified_under(namespace),
+                resolver,
+                namespace,
+            ),
             Some(SourceVariantPayload::Reference(_)) | None => Ok(SourceDeclarationGroup::empty()),
         }
     }
@@ -1699,10 +1964,11 @@ impl SourceVariantSignature {
     fn private_inline_declarations(
         &self,
         resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
     ) -> Result<Vec<TypeDeclaration>, SchemaError> {
         match self.payload_value() {
             Some(SourceVariantPayload::Declaration(value)) => Ok(value
-                .to_declaration_group(self.name().clone(), resolver)?
+                .to_declaration_group(self.name().qualified_under(namespace), resolver, namespace)?
                 .into_type_declarations()),
             Some(SourceVariantPayload::Reference(_)) | None => Ok(Vec::new()),
         }
@@ -2059,6 +2325,70 @@ impl SourceReference {
 
 trait SourceVariantResolver {
     fn resolves_variant_payload(&self, name: &Name) -> bool;
+
+    fn resolves_type_name(&self, name: &Name) -> bool;
+
+    fn resolve_name(&self, namespace: Option<&Name>, name: &Name) -> TypeReference {
+        TypeReference::from_name(self.visible_name(namespace, name))
+    }
+
+    fn resolve_reference(
+        &self,
+        namespace: Option<&Name>,
+        reference: &SourceReference,
+    ) -> TypeReference {
+        match reference {
+            SourceReference::Plain(name) => self.resolve_name(namespace, name),
+            SourceReference::FixedBytes(width) => TypeReference::FixedBytes(*width),
+            SourceReference::Vector(reference) => {
+                TypeReference::Vector(Box::new(self.resolve_reference(namespace, reference)))
+            }
+            SourceReference::Optional(reference) => {
+                TypeReference::Optional(Box::new(self.resolve_reference(namespace, reference)))
+            }
+            SourceReference::ScopeOf(reference) => {
+                TypeReference::ScopeOf(Box::new(self.resolve_reference(namespace, reference)))
+            }
+            SourceReference::Map(key, value) => TypeReference::Map(
+                Box::new(self.resolve_reference(namespace, key)),
+                Box::new(self.resolve_reference(namespace, value)),
+            ),
+            SourceReference::Application { head, arguments } => TypeReference::Application {
+                head: crate::ApplicationHead::Local(self.visible_name(namespace, head)),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.resolve_reference(namespace, argument))
+                    .collect(),
+            },
+        }
+    }
+
+    fn visible_name(&self, namespace: Option<&Name>, name: &Name) -> Name {
+        if name.has_namespace() {
+            return name.clone();
+        }
+        if let Some(namespace) = namespace
+            && let Some(scoped_name) = self.deepest_visible_scoped_name(namespace, name)
+        {
+            return scoped_name;
+        }
+        name.clone()
+    }
+
+    fn deepest_visible_scoped_name(&self, namespace: &Name, name: &Name) -> Option<Name> {
+        let segments = namespace.namespace_segments();
+        for segment_count in (1..=segments.len()).rev() {
+            let candidate = Name::new(format!(
+                "{}:{}",
+                segments[..segment_count].join(":"),
+                name.as_str()
+            ));
+            if self.resolves_type_name(&candidate) {
+                return Some(candidate);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2078,6 +2408,10 @@ impl SourceVariantResolver for SourceVariantPayloadResolution {
     fn resolves_variant_payload(&self, _name: &Name) -> bool {
         self.resolves_bare_names
     }
+
+    fn resolves_type_name(&self, _name: &Name) -> bool {
+        false
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2087,13 +2421,7 @@ struct SourceTypeResolver {
 
 impl SourceTypeResolver {
     fn from_source(source: &SchemaSource) -> Self {
-        let mut names = source
-            .namespace()
-            .entries()
-            .iter()
-            .filter(|entry| entry.is_type_declaration())
-            .map(|entry| entry.name().clone())
-            .collect::<Vec<_>>();
+        let mut names = source.namespace().type_declaration_names();
         names.extend(source.input().body().inline_declaration_names());
         names.extend(source.output().body().inline_declaration_names());
         names.extend(
@@ -2120,6 +2448,10 @@ impl SourceVariantResolver for SourceTypeResolver {
     fn resolves_variant_payload(&self, name: &Name) -> bool {
         self.contains(name)
     }
+
+    fn resolves_type_name(&self, name: &Name) -> bool {
+        self.contains(name)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2135,10 +2467,28 @@ impl SourceLoweredNamespace {
         let mut namespace = Self {
             declarations: Vec::new(),
         };
-        for entry in source.entries() {
-            namespace.push_public_group(entry.to_declaration_group(resolver)?)?;
-        }
+        namespace.push_source_namespace(source, resolver, None)?;
         Ok(namespace)
+    }
+
+    fn push_source_namespace(
+        &mut self,
+        source: &SourceNamespace,
+        resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
+    ) -> Result<(), SchemaError> {
+        for entry in source.entries() {
+            match entry.namespace() {
+                Some(nested) => {
+                    let nested_namespace = entry.namespace_name(namespace);
+                    self.push_source_namespace(nested, resolver, Some(&nested_namespace))?;
+                }
+                None => {
+                    self.push_public_group(entry.to_declaration_group(resolver, namespace)?)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn push_public_group(&mut self, group: SourceDeclarationGroup) -> Result<(), SchemaError> {
@@ -2176,6 +2526,12 @@ impl SourceLoweredNamespace {
 
 impl SourceVariantResolver for SourceLoweredNamespace {
     fn resolves_variant_payload(&self, name: &Name) -> bool {
+        self.declarations
+            .iter()
+            .any(|declaration| declaration.name() == name)
+    }
+
+    fn resolves_type_name(&self, name: &Name) -> bool {
         self.declarations
             .iter()
             .any(|declaration| declaration.name() == name)
@@ -2339,6 +2695,14 @@ impl<'name> SourceIdentifierCase<'name> {
             .chars()
             .next()
             .is_some_and(|character| character.is_ascii_uppercase())
+    }
+
+    fn is_namespace(&self) -> bool {
+        self.0
+            .as_str()
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_lowercase())
     }
 }
 
