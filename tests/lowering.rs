@@ -255,9 +255,12 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("brace namespaces contain key/value declarations only");
 
+    // The single lowering engine (the typed-source path) rejects a
+    // parenthesized named object in a namespace as a non-symbol head.
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedEvenMapEntries { .. }
+        schema_next::SchemaError::ExpectedSymbol { .. }
+            | schema_next::SchemaError::ExpectedEvenMapEntries { .. }
             | schema_next::SchemaError::ExpectedDelimiter { .. }
             | schema_next::SchemaError::MacroDidNotMatch { .. }
             | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
@@ -271,9 +274,12 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect_err("namespace declarations must be key/value pairs without duplicated names");
 
+    // The single lowering engine (the typed-source path) rejects a redundant
+    // `Entry Entry { … }` triple as a non-symbol reference body.
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedEvenMapEntries { .. }
+        schema_next::SchemaError::ExpectedSymbol { .. }
+            | schema_next::SchemaError::ExpectedEvenMapEntries { .. }
             | schema_next::SchemaError::ExpectedDelimiter { .. }
             | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
@@ -765,47 +771,32 @@ fn default_engine_lowers_through_registered_structural_forms() {
     );
 }
 
+/// Report 702: there is one lowering engine — the typed-source path. The
+/// `MacroRegistry` is still the public type-reference vocabulary an engine is
+/// built from (`with_registry`), but it no longer drives the root/namespace
+/// lowering semantics: those come from the typed-source archive on every entry
+/// path. So an engine assembled from a custom registry lowers a valid document
+/// through the same single path the default engine uses. (The retired second
+/// engine let a registry handler reject at a root position; that mechanism is
+/// gone with the engine it belonged to.)
 #[test]
 fn schema_engine_can_be_built_from_a_macro_registry() {
-    let mut registry = MacroRegistry::new();
-    registry.register(RejectingRootImports);
-    let engine = SchemaEngine::with_registry(registry);
-    let error = engine
-        .lower_source("{} [] [] {}", SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("custom registry should reject");
+    let engine = SchemaEngine::with_registry(MacroRegistry::with_schema_defaults());
+    let schema = engine
+        .lower_source(
+            "{} [] [] { Topic String }",
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect("an engine built from a registry lowers through the single path");
 
     assert_eq!(
-        error,
-        schema_next::SchemaError::ExpectedDelimiter {
-            expected: "rejecting test macro"
-        }
+        schema
+            .namespace()
+            .iter()
+            .map(|declaration| declaration.name().as_str())
+            .collect::<Vec<_>>(),
+        vec!["Topic"],
     );
-}
-
-struct RejectingRootImports;
-
-impl SchemaMacroHandler for RejectingRootImports {
-    fn name(&self) -> &str {
-        "RejectingRootImports"
-    }
-
-    fn matches(&self, object: MacroObject<'_>, position: MacroPosition) -> bool {
-        position == MacroPosition::RootImports && object.block().is_some()
-    }
-
-    fn lower(
-        &self,
-        _object: MacroObject<'_>,
-        position: MacroPosition,
-        context: &mut MacroContext,
-        _registry: &MacroRegistry,
-    ) -> Result<MacroOutput, schema_next::SchemaError> {
-        context.remember_macro(self.name());
-        context.remember_position(position);
-        Err(schema_next::SchemaError::ExpectedDelimiter {
-            expected: "rejecting test macro",
-        })
-    }
 }
 
 #[test]
@@ -973,9 +964,13 @@ fn root_enum_positions_supply_input_and_output_names() {
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect_err("labeled root wrapper should not be accepted");
+    // The single lowering engine (the typed-source path) reads the 4th root
+    // as a relations block, which must be a square bracket; a bare/labeled
+    // root wrapper is therefore rejected at decode.
     assert!(matches!(
         error,
         schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
             | schema_next::SchemaError::MacroDidNotMatch { .. }
+            | schema_next::SchemaError::NotaDecode(_)
     ));
 }

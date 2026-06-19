@@ -3,13 +3,14 @@ use nota_next::{Block, Delimiter, Document, NotaBody, NotaEncode};
 use crate::{
     ImportResolver, SchemaSource,
     declarative::{MacroExpansionStructBody, MacroExpansionVariants},
+    expansion::MacroExpansionPass,
     macros::{
         MacroContext, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair, MacroPosition,
         MacroRegistry, SchemaBlockExt, SchemaMacroHandler,
     },
     schema::{
         Declaration, DeclarationHead, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, Root, RootApplication, Schema, TypeDeclaration, TypeReference,
+        NewtypeDeclaration, RootApplication, Schema, TypeDeclaration, TypeReference,
     },
 };
 
@@ -403,6 +404,21 @@ impl SchemaEngine {
     /// and the resolver turns each collected import declaration into a
     /// resolved import that the Rust emitter can use as a `pub use`
     /// alias instead of re-declaring the dependency's type.
+    ///
+    /// There is exactly one set of lowering semantics: the typed-source
+    /// path. The document entry point reparses the document into a
+    /// [`SchemaSource`] and lowers *that* — it does not carry a second
+    /// hand-mirrored lowerer. Report 702 confirmed a latent divergence
+    /// when two engines were kept in lockstep (the document path had no
+    /// nested-namespace case and rejected trailing relations, while the
+    /// source path handled both); delegating here collapses the two so a
+    /// document and its `SchemaSource` cannot lower to different schemas.
+    ///
+    /// The document entry point keeps its own *entry contract*, narrower
+    /// than the source archive's: it accepts 3 roots (input output
+    /// namespace) or 4 with leading imports, and rejects the trailing
+    /// relations form. Within that contract the `SchemaSource` it builds
+    /// carries no relations, so the single lowering is well-defined.
     pub fn lower_document_with_resolver(
         &self,
         document: &Document,
@@ -419,77 +435,28 @@ impl SchemaEngine {
             });
         }
 
-        let (imports, input_index, output_index, namespace_index) =
-            if document.holds_root_objects() == 4 {
-                (
-                    self.lower_imports(
-                        document.root_object_at(0).expect("checked root count"),
-                        context,
-                    )?,
-                    1,
-                    2,
-                    3,
-                )
-            } else {
-                (Vec::new(), 0, 1, 2)
-            };
-        let resolved_imports = resolver.resolve_all(&imports, self)?;
-        let input = self.lower_root_enum(
-            document
-                .root_object_at(input_index)
-                .expect("checked root count"),
-            MacroPosition::RootInput,
-            context,
-        )?;
-        let output = self.lower_root_enum(
-            document
-                .root_object_at(output_index)
-                .expect("checked root count"),
-            MacroPosition::RootOutput,
-            context,
-        )?;
-        let namespace_block = document
-            .root_object_at(namespace_index)
-            .expect("checked root count");
-        let mut namespace = self.lower_namespace(namespace_block, context)?;
-
-        // The typed source archive is the single source of truth for the impl
-        // catalog AND for stream/family metadata. The macro path used to drop
-        // the catalog (one schema text lowering to two different semantic
-        // schemas); reading the manifest here and attaching it closes that
-        // gap, so both lowering paths produce the same impls.
-        let source = SchemaSource::from_document(document)?;
-        let (streams, families) =
-            if NamespaceMetadataProbe::new(namespace_block).contains_metadata()? {
-                (source.stream_declarations()?, source.family_declarations()?)
-            } else {
-                (Vec::new(), Vec::new())
-            };
-        let (fused_impls, impl_blocks) = source.impl_manifest();
-        for (target, catalog) in fused_impls {
-            if let Some(declaration) = namespace
-                .iter_mut()
-                .find(|declaration| declaration.name() == &target)
-            {
-                declaration.attach_impls(catalog);
-            }
+        // The c2dc seam: run the macro-registry dispatch as a pre-expansion
+        // pass over the parsed document BEFORE the typed source archive is
+        // built. The pass records every structural-macro firing and capture
+        // binding into the context and rewrites user type-reference macro
+        // invocations into their expanded built-in bodies, so the archive the
+        // single source path lowers is already macro-expanded. The source path
+        // stays the sole lowering semantics — the registry is the front-end,
+        // not a rival lowerer.
+        let expanded = MacroExpansionPass::new(&self.registry).expand(document, context)?;
+        let source = SchemaSource::from_document(&expanded)?;
+        // The document entry path admits imports + input/output/namespace
+        // only; a trailing relations block is a source-archive-only form.
+        // `from_document` would read a non-brace 4th-or-later root as
+        // relations, so reject any relations the reparse produced rather
+        // than silently widening the document contract.
+        if !source.relations().is_empty() {
+            return Err(SchemaError::ExpectedRootObjectCount {
+                expected: "3 root values (input output namespace) or 4 with leading imports",
+                found: document.holds_root_objects(),
+            });
         }
-
-        Schema::new(
-            identity,
-            imports,
-            resolved_imports,
-            input,
-            output,
-            namespace,
-            streams,
-            families,
-            Vec::new(),
-        )
-        .with_impl_blocks(impl_blocks)
-        .families_verified()
-        .and_then(Schema::arities_verified)
-        .and_then(Schema::impls_verified)
+        self.lower_schema_source_with_resolver(&source, identity, resolver)
     }
 
     pub fn lower_source_with_resolver(
@@ -503,59 +470,14 @@ impl SchemaEngine {
         self.lower_document_with_resolver(&document, identity, context, resolver)
     }
 
-    fn lower_imports(
-        &self,
-        object: &Block,
-        context: &mut MacroContext,
-    ) -> Result<Vec<ImportDeclaration>, SchemaError> {
-        match self.registry.lower(
-            MacroObject::Block(object),
-            MacroPosition::RootImports,
-            context,
-        )? {
-            MacroOutput::Imports(imports) => Ok(imports),
-            _ => Err(SchemaError::UnexpectedMacroOutput {
-                macro_name: "RootImports".to_owned(),
-                expected: "imports",
-            }),
-        }
-    }
-
-    fn lower_root_enum(
-        &self,
-        object: &Block,
-        position: MacroPosition,
-        context: &mut MacroContext,
-    ) -> Result<Root, SchemaError> {
-        match self
-            .registry
-            .lower(MacroObject::Block(object), position, context)?
-        {
-            MacroOutput::RootEnum(declaration) => Ok(Root::Enum(declaration)),
-            MacroOutput::RootApplication(application) => Ok(Root::application(application)),
-            _ => Err(SchemaError::UnexpectedMacroOutput {
-                macro_name: "RootEnum".to_owned(),
-                expected: "root enum or root application",
-            }),
-        }
-    }
-
-    fn lower_namespace(
-        &self,
-        object: &Block,
-        context: &mut MacroContext,
-    ) -> Result<Vec<Declaration>, SchemaError> {
-        match self.registry.lower(
-            MacroObject::Block(object),
-            MacroPosition::RootNamespace,
-            context,
-        )? {
-            MacroOutput::Types(types) => Ok(types),
-            _ => Err(SchemaError::UnexpectedMacroOutput {
-                macro_name: "RootNamespace".to_owned(),
-                expected: "types",
-            }),
-        }
+    /// The engine's macro vocabulary. With the single-engine collapse (report
+    /// 702) the registry no longer drives root/namespace lowering — that comes
+    /// from the typed-source archive on every entry path — but it remains the
+    /// public macro set an engine is built from (`with_registry`,
+    /// `with_schema_defaults`) and the seam a future archive-time
+    /// type-reference-macro expansion would consult.
+    pub fn registry(&self) -> &MacroRegistry {
+        &self.registry
     }
 }
 
@@ -1035,37 +957,6 @@ impl<'schema> MetadataDefinitionProbe<'schema> {
             .first()
             .and_then(Block::demote_to_string)
             .is_some_and(|head| matches!(head, "Stream" | "Family"))
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct NamespaceMetadataProbe<'schema> {
-    namespace_block: &'schema Block,
-}
-
-impl<'schema> NamespaceMetadataProbe<'schema> {
-    fn new(namespace_block: &'schema Block) -> Self {
-        Self { namespace_block }
-    }
-
-    fn contains_metadata(&self) -> Result<bool, SchemaError> {
-        let body = NotaBody::from_delimited(
-            self.namespace_block,
-            Delimiter::Brace,
-            "namespace metadata probe",
-        )?;
-        // Segment with the same entry walk as lowering so a trailing
-        // `{| … |}` impl block never gets misread as a metadata definition.
-        let mut walk = NamespaceEntryWalk::new(body.root_objects());
-        while let Some(entry) = walk.next_entry()? {
-            if entry
-                .definition
-                .is_some_and(|definition| MetadataDefinitionProbe::new(definition).matches())
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 }
 

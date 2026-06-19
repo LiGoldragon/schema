@@ -8,7 +8,7 @@
 //! the declared-name shape, while reserved scalar names lower to
 //! scalar references instead of pretending to be user namespace types.
 
-use schema_next::{SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
+use schema_next::{Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
 
 fn lower(source: &str) -> schema_next::Schema {
     SchemaEngine::default()
@@ -98,20 +98,28 @@ fn scalar_references_nest_inside_collections() {
 
 #[test]
 fn explicit_structural_field_roles_lower_recursively() {
+    // The single lowering engine (the typed-source path) reads an explicit
+    // PascalCase-named field `(Topics (Vector Topic))` as an inline namespace
+    // declaration: a newtype `Topics` aliasing `Vector<Topic>` is minted into
+    // the namespace, and the struct field references that minted type by name.
     let schema = lower(&roots(
         "Topic String Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }",
     ));
     let fields = struct_fields(&schema, "Query");
 
     assert_eq!(fields[0].name.as_str(), "topics");
-    assert_eq!(
-        fields[0].reference,
-        TypeReference::Vector(Box::new(TypeReference::new("Topic")))
-    );
+    assert_eq!(fields[0].reference, TypeReference::Plain(Name::new("Topics")));
     assert_eq!(fields[1].name.as_str(), "limit");
+    assert_eq!(fields[1].reference, TypeReference::Plain(Name::new("Limit")));
+
+    // The inline-minted types carry the collection/option reference.
     assert_eq!(
-        fields[1].reference,
-        TypeReference::Optional(Box::new(TypeReference::Integer))
+        single_reference(&schema, "Topics"),
+        &TypeReference::Vector(Box::new(TypeReference::new("Topic")))
+    );
+    assert_eq!(
+        single_reference(&schema, "Limit"),
+        &TypeReference::Optional(Box::new(TypeReference::Integer))
     );
 }
 
@@ -162,11 +170,12 @@ fn square_bracket_field_is_not_vec_type_syntax() {
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw square bracket is not a Vec reference");
+    // The single lowering engine (the typed-source path) rejects a raw
+    // square-bracket block at a field position as a non-symbol reference.
     assert_eq!(
         error,
-        schema_next::SchemaError::UnknownTypeReferenceForm {
-            head: "SquareBracket".to_owned(),
-            argument_count: 1,
+        schema_next::SchemaError::ExpectedSymbol {
+            found: "square bracket block".to_owned(),
         }
     );
 }
@@ -179,11 +188,12 @@ fn brace_field_is_not_map_type_syntax() {
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw brace map is not a Map reference");
+    // The single lowering engine (the typed-source path) rejects a raw brace
+    // block at a field position as a non-symbol reference.
     assert_eq!(
         error,
-        schema_next::SchemaError::UnknownTypeReferenceForm {
-            head: "Brace".to_owned(),
-            argument_count: 2,
+        schema_next::SchemaError::ExpectedSymbol {
+            found: "brace block".to_owned(),
         }
     );
 }
@@ -283,11 +293,14 @@ fn map_with_wrong_argument_count_is_rejected() {
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("Map needs two arguments");
+    // The single lowering engine (the typed-source path) gates a built-in
+    // reference head against its declared arity.
     assert_eq!(
         error,
-        schema_next::SchemaError::UnknownTypeReferenceForm {
-            head: "Map".to_owned(),
-            argument_count: 1,
+        schema_next::SchemaError::ExpectedSyntaxReferenceArity {
+            form: "built-in reference head",
+            expected: "the head's declared arity",
+            found: 2,
         }
     );
 }

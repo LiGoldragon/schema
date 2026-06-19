@@ -738,6 +738,70 @@ fn both_lowering_paths_carry_fused_catalogs() {
     );
 }
 
+/// Report 702: the collapse to one lowering engine. A nested-namespace
+/// document must lower IDENTICALLY through the document entry point
+/// (`lower_source`) and the typed-source entry point. The retired second
+/// engine had NO nested-namespace case — it lowered a colon-keyed brace as a
+/// plain struct — so this exact document used to lower to two different
+/// schemas. Now the document path delegates to the source path, so a nested
+/// namespace flattens to fully-qualified type names on both entry points.
+#[test]
+fn both_lowering_paths_flatten_a_nested_namespace_identically() {
+    let source = "\
+{}
+[(Deliver router:routed_object:Envelope)]
+[]
+{
+  ActorIdentifier String
+  ContractName String
+  router:routed_object {
+    Destination ActorIdentifier
+    Contract ContractName
+    Envelope { Destination Contract }
+  }
+}";
+
+    let macro_schema = lower_via_macro_path(source);
+    let source_schema = lower_via_source_path(source);
+
+    // The nested local `Envelope` flattens to a fully-qualified name on both
+    // paths, and the bare local name leaks into neither top-level namespace.
+    for (label, schema) in [("document", &macro_schema), ("source", &source_schema)] {
+        assert!(
+            schema
+                .type_named("router:routed_object:Envelope")
+                .is_some(),
+            "{label} path flattens the nested Envelope to a qualified type"
+        );
+        assert!(
+            schema.type_named("Envelope").is_none(),
+            "{label} path must not leak the bare nested name"
+        );
+    }
+
+    // The full lowered type vocabulary is identical between the two entry
+    // points — the single load-bearing witness that there is one engine.
+    let macro_types: Vec<String> = macro_schema
+        .namespace()
+        .iter()
+        .map(|declaration| declaration.name().as_str().to_owned())
+        .collect();
+    let source_types: Vec<String> = source_schema
+        .namespace()
+        .iter()
+        .map(|declaration| declaration.name().as_str().to_owned())
+        .collect();
+    assert_eq!(
+        macro_types, source_types,
+        "both entry points must lower the nested namespace to the same types"
+    );
+    assert_eq!(
+        macro_schema.content_hash(),
+        source_schema.content_hash(),
+        "one schema text lowers to one content identity regardless of entry path"
+    );
+}
+
 // ---- STEP B, Fix 4: trait-name validation ----
 
 /// Fix 4: a trait atom inside `{| … |}` must be a PascalCase type name, like

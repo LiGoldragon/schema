@@ -128,20 +128,6 @@ impl SchemaSource {
         self.namespace.family_declarations()
     }
 
-    /// The lowered impl manifest: the fused catalogs keyed by declaration
-    /// name, and the standalone body-optional [`ImplBlock`]s. The macro path
-    /// reads this so it attaches the *same* catalog the typed-source path
-    /// does — closing the lowering-path-parity gap where the macro path
-    /// dropped impls while the source path carried them.
-    pub(crate) fn impl_manifest(&self) -> (Vec<(Name, ImplCatalog)>, Vec<ImplBlock>) {
-        let resolver = SourceTypeResolver::from_source(self);
-        let mut fused = Vec::new();
-        let mut blocks = Vec::new();
-        self.namespace
-            .collect_impl_manifest(&resolver, None, &mut fused, &mut blocks);
-        (fused, blocks)
-    }
-
     pub fn to_schema_text(&self) -> String {
         let mut roots = vec![
             self.imports.to_schema_text(),
@@ -512,41 +498,6 @@ pub struct SourceNamespace {
 impl SourceNamespace {
     pub fn entries(&self) -> &[SourceNamespaceEntry] {
         &self.entries
-    }
-
-    /// Walk the namespace recursively, collecting every entry's lowered impl
-    /// catalog: the fused catalogs keyed by their declaration name (a
-    /// body-bearing `TypeName Body {| … |}`) and the standalone
-    /// [`ImplBlock`]s (a body-optional `TypeName {| … |}`). This is the single
-    /// source of impl lowering the macro/document path reuses so its catalog
-    /// is byte-for-byte the same one the typed-source path attaches — the
-    /// load-bearing parity seam. Entries with no trailing block contribute
-    /// nothing.
-    fn collect_impl_manifest(
-        &self,
-        resolver: &SourceTypeResolver,
-        namespace: Option<&Name>,
-        fused: &mut Vec<(Name, ImplCatalog)>,
-        blocks: &mut Vec<ImplBlock>,
-    ) {
-        for entry in &self.entries {
-            match entry.namespace() {
-                Some(nested) => {
-                    let nested_namespace = entry.namespace_name(namespace);
-                    nested.collect_impl_manifest(resolver, Some(&nested_namespace), fused, blocks);
-                }
-                None => {
-                    if let Some(block) = entry.to_impl_block(resolver, namespace) {
-                        blocks.push(block);
-                    } else {
-                        let catalog = entry.lower_impls(resolver, namespace);
-                        if !catalog.is_empty() {
-                            fused.push((entry.declaration_name(namespace), catalog));
-                        }
-                    }
-                }
-            }
-        }
     }
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
@@ -3149,6 +3100,17 @@ impl SourceLoweredNamespace {
                     self.push_source_namespace(nested, resolver, Some(&nested_namespace))?;
                 }
                 None => {
+                    // A reserved scalar name (`String`, `Integer`, …) cannot be
+                    // user-declared at the namespace declaration position. The
+                    // field-position machinery already gates these names; this
+                    // is the matching declaration-position gate, so the single
+                    // lowering path rejects `{ String Integer }` the same way
+                    // the retired second engine did.
+                    if SourceField::is_reserved_scalar_name(entry.name()) {
+                        return Err(SchemaError::ReservedScalarTypeName {
+                            name: entry.name().as_str().to_owned(),
+                        });
+                    }
                     if let Some(block) = entry.to_impl_block(resolver, namespace) {
                         self.impl_blocks.push(block);
                     }

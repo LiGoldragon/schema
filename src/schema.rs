@@ -1114,14 +1114,6 @@ impl Declaration {
         self
     }
 
-    /// Attach the lowered catalog in place — the `&mut self` form of
-    /// [`Self::with_impls`], used by the macro lowering path to enrich a
-    /// declaration it already produced (rather than rebuilding it) so both
-    /// lowering paths carry the same catalog.
-    pub(crate) fn attach_impls(&mut self, impls: ImplCatalog) {
-        self.impls = impls;
-    }
-
     /// The lowered impl catalog referenced by this declaration's trailing
     /// `{| … |}` block. Empty for a declaration with no impl block. This is
     /// the per-type reach of the enumerable manifest; the schema-wide walk

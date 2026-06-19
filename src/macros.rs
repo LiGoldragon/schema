@@ -298,6 +298,23 @@ impl MacroRegistry {
         })
     }
 
+    /// The c2dc dispatch over the ordered macro list: return the name of the
+    /// first registered macro that matches `object` at `position`, first-match
+    /// wins. This is the front-end pre-expansion pass's window into the same
+    /// ordered-list dispatch [`Self::lower`] uses, but it answers *which* macro
+    /// fires without running its lowering — the pass records the firing and
+    /// (for type-reference macros) expands the captured body separately.
+    pub fn matching_macro_name(
+        &self,
+        object: MacroObject<'_>,
+        position: MacroPosition,
+    ) -> Option<&str> {
+        self.macros
+            .iter()
+            .find(|schema_macro| schema_macro.matches(object, position))
+            .map(|schema_macro| schema_macro.name())
+    }
+
     pub fn macro_names(&self) -> Vec<String> {
         self.macros
             .iter()

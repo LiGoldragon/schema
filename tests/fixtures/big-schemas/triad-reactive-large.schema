@@ -19,7 +19,7 @@
   SemaOut SemaReply
   AdminOut AdminReply
   Event RuntimeEvent
-  Rejected Rejected
+  Rejected RejectedReply
   CommitSequence Integer
   DatabaseDigest Integer
   ActorIdentifier String
@@ -33,7 +33,7 @@
   AdminRequest [Drain Pause Resume (Snapshot)]
   AdminReply [Drained Paused Resumed (SnapshotReady)]
   RuntimeEvent [(MailSent) (MessageAccepted) (MessageCommitted) (MessageFailed)]
-  Rejected { RejectionReason }
+  RejectedReply { RejectionReason }
   RejectionReason [Malformed Unauthorized Conflict Unsupported StaleVersion InternalError]
   RecordIntent { ActorIdentifier Entry }
   ObserveIntent { Query }

@@ -1,5 +1,6 @@
 mod declarative;
 mod engine;
+mod expansion;
 mod identity;
 mod macros;
 mod module;
