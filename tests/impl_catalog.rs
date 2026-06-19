@@ -140,9 +140,18 @@ fn impl_catalog_decodes_each_entry_kind() {
         SchemaSourceArtifact::from_schema_text(&impl_catalog_fixture("body-optional"))
             .expect("schema source decodes");
     let entries = namespace_entries(&body_optional);
-    let [statement_text] = entries.as_slice() else {
-        panic!("expected one namespace entry, found {}", entries.len());
-    };
+    // Two entries share the name `StatementText`: the body-bearing declaration
+    // and the body-optional impl block (Ruling 1: the impl target is declared
+    // elsewhere). The catalog rides on the body-optional entry.
+    assert_eq!(
+        entries.len(),
+        2,
+        "a declaration entry plus a body-optional impl entry"
+    );
+    let statement_text = entries
+        .iter()
+        .find(|entry| !entry.impls().is_empty())
+        .expect("the body-optional entry carries the catalog");
     let catalog = statement_text.impls().entries();
     assert_eq!(catalog.len(), 2, "one marker plus one inherent method");
     assert!(matches!(&catalog[0], SourceImplEntry::Marker(name) if name.as_str() == "Display"));
@@ -195,7 +204,9 @@ fn impl_catalog_decodes_each_entry_kind() {
 /// identically — the boundary the plan flags as the riskiest divergence.
 #[test]
 fn engine_namespace_walk_accepts_fused_and_body_optional_entries() {
-    let source = "[] [] { RecordIdentifier String {| Display Ord |} StatementText {| Display |} Topic String }";
+    // The body-optional `StatementText {| … |}` references a `StatementText`
+    // declared by a separate body-bearing entry (Ruling 1).
+    let source = "[] [] { RecordIdentifier String {| Display Ord |} StatementText String StatementText {| Display |} Topic String }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("engine lowers fused and body-optional entries");
@@ -216,10 +227,41 @@ fn engine_namespace_walk_accepts_fused_and_body_optional_entries() {
     };
     assert_eq!(topic.reference, TypeReference::String);
 
-    assert!(
-        schema.type_named("StatementText").is_none(),
-        "a body-optional entry mints no type declaration on the engine path"
+    // The body-optional entry mints no *second* declaration; the target is
+    // the one declared by the body-bearing entry.
+    assert_eq!(
+        schema
+            .namespace()
+            .iter()
+            .filter(|declaration| declaration.name().as_str() == "StatementText")
+            .count(),
+        1,
+        "the body-optional target is declared once, by its body-bearing entry"
     );
+
+    // The macro/engine path now carries the impl catalog too (Ruling/Fix 3
+    // parity): the fused markers ride on RecordIdentifier, and the
+    // body-optional block targets StatementText.
+    let record_identifier_impls = schema
+        .namespace()
+        .iter()
+        .find(|declaration| declaration.name().as_str() == "RecordIdentifier")
+        .expect("RecordIdentifier declared")
+        .impls()
+        .entries();
+    assert_eq!(
+        record_identifier_impls.len(),
+        2,
+        "the engine path carries the fused marker catalog"
+    );
+
+    let [block] = schema.impl_blocks() else {
+        panic!(
+            "expected one standalone impl block on the engine path, found {:?}",
+            schema.impl_blocks()
+        );
+    };
+    assert_eq!(block.target().as_str(), "StatementText");
 }
 
 /// A `{| … |}` impl block must trail a type name — a leading impl block with
@@ -304,19 +346,25 @@ fn trait_method_signatures_lower_with_resolved_references() {
     );
 }
 
-/// A body-optional `StatementText {| … |}` mints no type declaration but
-/// surfaces as a standalone `ImplBlock` targeting `StatementText`, with its
-/// catalog enumerable through the schema-wide manifest.
+/// A body-optional `StatementText {| … |}` mints no type declaration of its
+/// own but surfaces as a standalone `ImplBlock` targeting `StatementText` —
+/// the type declared by a separate body-bearing entry (Ruling 1: the target
+/// must resolve to a type declared elsewhere in the same schema). Its catalog
+/// is enumerable through the schema-wide manifest.
 #[test]
 fn body_optional_lowers_to_a_standalone_impl_block() {
     let schema = lower_fixture("body-optional");
 
-    assert!(
+    // The target is declared exactly once, by the body-bearing entry — the
+    // body-optional impl entry adds no second declaration.
+    assert_eq!(
         schema
             .namespace()
             .iter()
-            .all(|declaration| declaration.name().as_str() != "StatementText"),
-        "a body-optional entry mints no type declaration"
+            .filter(|declaration| declaration.name().as_str() == "StatementText")
+            .count(),
+        1,
+        "the body-optional target is declared by a separate entry, not minted twice"
     );
 
     let [block] = schema.impl_blocks() else {
@@ -415,9 +463,14 @@ fn absent_method_signature_fails_verification() {
     };
     assert_eq!(target, "NodeQuery");
     assert_eq!(*kind, "method signature");
-    assert_eq!(
-        signature, "matches",
-        "the error names the exact unverified method signature"
+    // Fix 5: the error carries the FULL signature, not just the method name —
+    // name plus parameter (candidate.Node) plus return type (Boolean).
+    assert!(
+        signature.contains("matches")
+            && signature.contains("candidate")
+            && signature.contains("Node")
+            && signature.contains("Boolean"),
+        "the error names the full unverified method signature, got: {signature}"
     );
 }
 
@@ -447,4 +500,333 @@ fn absent_trait_impl_fails_verification() {
     assert_eq!(target, "RecordIdentifier");
     assert_eq!(*kind, "trait impl");
     assert_eq!(signature, "Ord", "the error names the absent trait");
+}
+
+// ---- STEP A, Fix 1: impl-target resolution ----
+
+/// Project a schema's whole impl manifest to comparable owned data: each
+/// `(target, entry)` pair from `referenced_impls`, cloned so it outlives the
+/// borrowed schema. The order is the manifest's walk order (declarations
+/// first, then standalone blocks), which both lowering paths share.
+fn manifest_pairs(schema: &Schema) -> Vec<(String, ImplReference)> {
+    schema
+        .referenced_impls()
+        .into_iter()
+        .map(|reference| {
+            (
+                reference.target().as_str().to_owned(),
+                reference.entry().clone(),
+            )
+        })
+        .collect()
+}
+
+/// Lower a schema text through the macro/document path (`lower_source`).
+fn lower_via_macro_path(source: &str) -> Schema {
+    SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect("macro path lowers")
+}
+
+/// Lower a schema text through the typed-source path (`lower_schema_source`).
+fn lower_via_source_path(source: &str) -> Schema {
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
+    SchemaEngine::default()
+        .lower_schema_source(artifact.source(), SchemaIdentity::new("example", "0.1.0"))
+        .expect("source path lowers")
+}
+
+/// Ruling 1: a body-optional `TypeName {| … |}` whose target is NOT declared
+/// anywhere in the schema is a typed error — not an accepted free-standing
+/// impl over an arbitrary name. The fixture references `StatementText`, which
+/// is never declared (only `Topic` is), so lowering rejects it.
+#[test]
+fn unresolved_impl_target_is_rejected() {
+    let artifact =
+        SchemaSourceArtifact::from_schema_text(&impl_catalog_fixture("unresolved-target"))
+            .expect("source decodes");
+    let error = SchemaEngine::default()
+        .lower_schema_source(artifact.source(), SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("an impl block over an undeclared type must be rejected");
+
+    let SchemaError::UnresolvedImplTarget { name } = &error else {
+        panic!("expected an UnresolvedImplTarget error, got: {error}");
+    };
+    assert_eq!(
+        name, "StatementText",
+        "the error names the undeclared target"
+    );
+}
+
+/// The same unresolved-target rejection holds on the macro/document path —
+/// neither path silently accepts an impl over an undeclared type.
+#[test]
+fn unresolved_impl_target_is_rejected_on_both_paths() {
+    let source = impl_catalog_fixture("unresolved-target");
+    let error = SchemaEngine::default()
+        .lower_source(&source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("the macro path must reject an impl over an undeclared type");
+    assert!(
+        matches!(&error, SchemaError::UnresolvedImplTarget { name } if name == "StatementText"),
+        "macro path names the undeclared target, got: {error}"
+    );
+}
+
+// ---- STEP A, Fix 2: duplicate vs. composing impl blocks ----
+
+/// Ruling 2: multiple impl blocks for the SAME target COMPOSE — their
+/// distinct entries union. Here two body-optional blocks target the
+/// elsewhere-declared `StatementText`, one carrying `Display`, the other
+/// `Ord`; the manifest enumerates both.
+#[test]
+fn distinct_impl_blocks_for_one_target_compose() {
+    let source =
+        "[] [] { StatementText String StatementText {| Display |} StatementText {| Ord |} }";
+    let schema = lower_via_source_path(source);
+
+    let pairs = manifest_pairs(&schema);
+    assert_eq!(pairs.len(), 2, "two distinct entries union onto one target");
+    assert!(
+        pairs.iter().all(|(target, _)| target == "StatementText"),
+        "both entries target StatementText"
+    );
+    let traits: Vec<&str> = pairs
+        .iter()
+        .filter_map(|(_, entry)| match entry {
+            ImplReference::Marker(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(traits, vec!["Display", "Ord"], "the two markers compose");
+}
+
+/// Ruling 2: a TRUE duplicate — the same trait marker twice on one target,
+/// across two blocks — is a typed error. Distinct entries compose; an
+/// identical entry collides.
+#[test]
+fn duplicate_marker_across_blocks_is_rejected() {
+    let source =
+        "[] [] { StatementText String StatementText {| Display |} StatementText {| Display |} }";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
+    let error = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect_err("the same marker twice on one target must be rejected");
+
+    let SchemaError::DuplicateImplEntry { target, entry } = &error else {
+        panic!("expected a DuplicateImplEntry error, got: {error}");
+    };
+    assert_eq!(target, "StatementText");
+    assert_eq!(entry, "Display", "the error names the duplicated marker");
+}
+
+/// A true duplicate of the same method SIGNATURE on one target is rejected —
+/// here the same inherent method appears in a fused catalog and again in a
+/// separate body-optional block.
+#[test]
+fn duplicate_method_signature_on_one_target_is_rejected() {
+    let source = "[] [] { StatementText String {| (word_count {} Integer) |} StatementText {| (word_count {} Integer) |} }";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
+    let error = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example", "0.1.0"),
+        )
+        .expect_err("the same method signature twice on one target must be rejected");
+
+    let SchemaError::DuplicateImplEntry { target, entry } = &error else {
+        panic!("expected a DuplicateImplEntry error, got: {error}");
+    };
+    assert_eq!(target, "StatementText");
+    assert!(
+        entry.contains("word_count") && entry.contains("Integer"),
+        "the error carries the full signature, got: {entry}"
+    );
+}
+
+/// Two methods with the SAME name but DIFFERENT signatures are distinct, not a
+/// duplicate — they compose. This guards the composition key against
+/// collapsing on the method name alone.
+#[test]
+fn distinct_method_signatures_same_name_compose() {
+    let source = "[] [] { Topic String StatementText String {| (length {} Integer) (length { unit.Topic } Integer) |} }";
+    let schema = lower_via_source_path(source);
+    let pairs = manifest_pairs(&schema);
+    assert_eq!(
+        pairs.len(),
+        2,
+        "two same-named methods with different signatures compose"
+    );
+}
+
+// ---- STEP A, Fix 3: lowering-path parity ----
+
+/// The load-bearing correctness witness: one schema text lowered through the
+/// macro/document path and through the typed-source path must produce the SAME
+/// impl manifest AND the same standalone impl blocks. Before the fix the macro
+/// path dropped the catalog entirely; now both carry it identically.
+#[test]
+fn both_lowering_paths_produce_the_same_impls() {
+    let source = "[] [] { RecordIdentifier String {| Display Ord |} StatementText String StatementText {| Display (word_count {} Integer) |} }";
+
+    let macro_schema = lower_via_macro_path(source);
+    let source_schema = lower_via_source_path(source);
+
+    assert_eq!(
+        manifest_pairs(&macro_schema),
+        manifest_pairs(&source_schema),
+        "the two lowering paths must enumerate the same impl manifest"
+    );
+
+    let macro_blocks: Vec<(String, usize)> = macro_schema
+        .impl_blocks()
+        .iter()
+        .map(|block| {
+            (
+                block.target().as_str().to_owned(),
+                block.catalog().entries().len(),
+            )
+        })
+        .collect();
+    let source_blocks: Vec<(String, usize)> = source_schema
+        .impl_blocks()
+        .iter()
+        .map(|block| {
+            (
+                block.target().as_str().to_owned(),
+                block.catalog().entries().len(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        macro_blocks, source_blocks,
+        "the two paths must surface the same standalone impl blocks"
+    );
+
+    // And the manifest is non-empty — the witness would be vacuous if both
+    // paths simply produced no impls.
+    assert!(
+        !manifest_pairs(&macro_schema).is_empty(),
+        "the parity witness must compare a non-empty manifest"
+    );
+}
+
+/// Parity also holds for the fused-only shape (no standalone blocks): the
+/// markers ride on the declaration's `impls()` identically on both paths.
+#[test]
+fn both_lowering_paths_carry_fused_catalogs() {
+    let source = "[] [] { RecordIdentifier String {| Display Ord |} }";
+    let macro_schema = lower_via_macro_path(source);
+    let source_schema = lower_via_source_path(source);
+
+    assert_eq!(
+        manifest_pairs(&macro_schema),
+        manifest_pairs(&source_schema)
+    );
+    assert_eq!(
+        manifest_pairs(&macro_schema).len(),
+        2,
+        "both paths carry the two fused markers"
+    );
+    assert!(
+        macro_schema.impl_blocks().is_empty() && source_schema.impl_blocks().is_empty(),
+        "a fused-only schema mints no standalone blocks on either path"
+    );
+}
+
+// ---- STEP B, Fix 4: trait-name validation ----
+
+/// Fix 4: a trait atom inside `{| … |}` must be a PascalCase type name, like
+/// every other type reference. A lowercase trait atom is a typed error, not a
+/// silently-accepted trait marker.
+#[test]
+fn lowercase_trait_name_is_rejected() {
+    let source = "[] [] { RecordIdentifier String {| display |} }";
+    let error =
+        SchemaSourceArtifact::from_schema_text(source).expect_err("a lowercase trait is rejected");
+
+    let SchemaError::NonTypeNameTrait { found } = &error else {
+        panic!("expected a NonTypeNameTrait error, got: {error}");
+    };
+    assert_eq!(found, "display", "the error names the non-type-name trait");
+}
+
+/// The same trait-name gate holds on a body-bearing trait impl entry — a
+/// lowercase trait carrying a method-signature vector is still rejected, so the
+/// validation is not limited to bare markers.
+#[test]
+fn lowercase_trait_name_with_methods_is_rejected() {
+    let source =
+        "[] [] { NodeQuery String {| queryMatcher [ (matches { candidate.Node } Boolean) ] |} }";
+    let error =
+        SchemaSourceArtifact::from_schema_text(source).expect_err("a lowercase trait is rejected");
+    assert!(
+        matches!(&error, SchemaError::NonTypeNameTrait { found } if found == "queryMatcher"),
+        "the body-bearing trait impl path also rejects a non-type-name trait, got: {error}"
+    );
+}
+
+// ---- STEP B, Fix 5: full signature in the unverified-reference error ----
+
+/// Fix 5: a reference whose method NAME matches a present method but whose
+/// PARAMETERS or RETURN type differ is a real mismatch. The verification error
+/// must carry the full referenced signature — name, parameters, and return —
+/// so the mismatch is legible, not a bare "missing `matches`". Here the surface
+/// provides `matches(candidate: Node) -> Boolean` but the catalog references
+/// `matches(candidate: Node) -> Boolean`'s name with a different return type on
+/// the schema side, so verification fails against the surface's signature.
+#[test]
+fn signature_mismatch_reports_the_full_signature() {
+    let schema = lower_fixture("trait-method-sigs");
+
+    // The surface implements the trait and a `matches` method, but with a
+    // DIFFERENT signature than the catalog references: the surface returns a
+    // `Node`, while the catalog references the `Boolean`-returning `matches`.
+    // Same name, wrong return type — a mismatch, not a missing method.
+    let surface = RustSurface::new(vec![
+        ImplFact::trait_impl(Name::new("NodeQuery"), Name::new("QueryMatcher")),
+        ImplFact::method(
+            Name::new("NodeQuery"),
+            MethodSignature::new(
+                Name::new("matches"),
+                vec![MethodParameter::new(
+                    Name::new("candidate"),
+                    TypeReference::Plain(Name::new("Node")),
+                )],
+                TypeReference::Plain(Name::new("Node")),
+            ),
+        ),
+    ]);
+
+    let error = surface
+        .verify_catalog(&schema)
+        .expect_err("a present name with a mismatched signature must fail verification");
+
+    let SchemaError::UnverifiedImplReference {
+        target,
+        kind,
+        signature,
+    } = &error
+    else {
+        panic!("expected an UnverifiedImplReference error, got: {error}");
+    };
+    assert_eq!(target, "NodeQuery");
+    assert_eq!(*kind, "method signature");
+    // The error reports the FULL referenced signature, not just `matches`: the
+    // method name, the `candidate.Node` parameter, and the `Boolean` return.
+    assert!(
+        signature.contains("matches")
+            && signature.contains("candidate")
+            && signature.contains("Node")
+            && signature.contains("Boolean"),
+        "the error carries the full mismatched signature, got: {signature}"
+    );
+    assert_ne!(
+        signature, "matches",
+        "the error must not report the bare method name alone"
+    );
 }

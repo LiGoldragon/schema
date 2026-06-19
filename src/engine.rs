@@ -209,6 +209,25 @@ pub enum SchemaError {
         kind: &'static str,
         signature: String,
     },
+    /// A body-optional `TypeName {| … |}` impl block names a target type that
+    /// is not declared anywhere in the schema. A standalone impl block must
+    /// attach its catalog to a type declared by a separate entry; an
+    /// unresolved target is not an accepted free-standing impl over an
+    /// arbitrary name.
+    #[error("impl block targets type `{name}`, which is not declared in this schema")]
+    UnresolvedImplTarget { name: String },
+    /// A target type carries the same impl entry twice — the same trait
+    /// marker repeated, or the same method signature repeated — across one or
+    /// more `{| … |}` blocks. Distinct entries for one target compose; an
+    /// identical entry is a true duplicate and a typed error.
+    #[error("impl catalog for type `{target}` carries duplicate entry `{entry}`")]
+    DuplicateImplEntry { target: String, entry: String },
+    /// A trait atom inside a `{| … |}` impl block is not a PascalCase
+    /// type-name. Trait references obey the same naming gate as every other
+    /// type reference: a lowercase or otherwise non-type-name atom in a trait
+    /// position is a typed error, not a silently-accepted trait.
+    #[error("impl block trait `{found}` is not a PascalCase type name")]
+    NonTypeNameTrait { found: String },
 }
 
 impl From<nota_next::MacroError> for SchemaError {
@@ -432,14 +451,29 @@ impl SchemaEngine {
         let namespace_block = document
             .root_object_at(namespace_index)
             .expect("checked root count");
-        let namespace = self.lower_namespace(namespace_block, context)?;
+        let mut namespace = self.lower_namespace(namespace_block, context)?;
+
+        // The typed source archive is the single source of truth for the impl
+        // catalog AND for stream/family metadata. The macro path used to drop
+        // the catalog (one schema text lowering to two different semantic
+        // schemas); reading the manifest here and attaching it closes that
+        // gap, so both lowering paths produce the same impls.
+        let source = SchemaSource::from_document(document)?;
         let (streams, families) =
             if NamespaceMetadataProbe::new(namespace_block).contains_metadata()? {
-                let source = SchemaSource::from_document(document)?;
                 (source.stream_declarations()?, source.family_declarations()?)
             } else {
                 (Vec::new(), Vec::new())
             };
+        let (fused_impls, impl_blocks) = source.impl_manifest();
+        for (target, catalog) in fused_impls {
+            if let Some(declaration) = namespace
+                .iter_mut()
+                .find(|declaration| declaration.name() == &target)
+            {
+                declaration.attach_impls(catalog);
+            }
+        }
 
         Schema::new(
             identity,
@@ -452,8 +486,10 @@ impl SchemaEngine {
             families,
             Vec::new(),
         )
+        .with_impl_blocks(impl_blocks)
         .families_verified()
         .and_then(Schema::arities_verified)
+        .and_then(Schema::impls_verified)
     }
 
     pub fn lower_source_with_resolver(

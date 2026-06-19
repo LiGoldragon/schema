@@ -766,6 +766,47 @@ impl Schema {
         Ok(self)
     }
 
+    /// Verify the impl manifest: every standalone (body-optional) impl block
+    /// targets a type declared elsewhere in this schema, and no target carries
+    /// a true-duplicate entry. Distinct entries on one target compose; an
+    /// identical trait marker or method signature repeated on a target is a
+    /// typed error. Both lowering paths call this after assembly, so the
+    /// macro/document path and the typed-source path validate the catalog
+    /// identically.
+    pub(crate) fn impls_verified(self) -> Result<Self, SchemaError> {
+        for block in &self.impl_blocks {
+            if self.type_named(block.target().as_str()).is_none() {
+                return Err(SchemaError::UnresolvedImplTarget {
+                    name: block.target().as_str().to_owned(),
+                });
+            }
+        }
+        self.impl_entries_distinct()?;
+        Ok(self)
+    }
+
+    /// Walk the unioned manifest grouped by target; the first target that
+    /// carries the same composition key twice is a duplicate. A `&` borrow
+    /// holding the `ReferencedImpl` views is fine — the check is read-only.
+    fn impl_entries_distinct(&self) -> Result<(), SchemaError> {
+        let mut seen: Vec<(String, ImplCompositionKey)> = Vec::new();
+        for reference in self.referenced_impls() {
+            let target = reference.target().as_str().to_owned();
+            let key = reference.entry().composition_key();
+            let duplicate = seen.iter().any(|(existing_target, existing_key)| {
+                *existing_target == target && *existing_key == key
+            });
+            if duplicate {
+                return Err(SchemaError::DuplicateImplEntry {
+                    target,
+                    entry: reference.entry().label(),
+                });
+            }
+            seen.push((target, key));
+        }
+        Ok(())
+    }
+
     /// Arity-verify a root in either shape: an enum root verifies each
     /// variant payload; an application root verifies the application
     /// reference it projects to, so a wrong argument count against a
@@ -1073,6 +1114,14 @@ impl Declaration {
         self
     }
 
+    /// Attach the lowered catalog in place — the `&mut self` form of
+    /// [`Self::with_impls`], used by the macro lowering path to enrich a
+    /// declaration it already produced (rather than rebuilding it) so both
+    /// lowering paths carry the same catalog.
+    pub(crate) fn attach_impls(&mut self, impls: ImplCatalog) {
+        self.impls = impls;
+    }
+
     /// The lowered impl catalog referenced by this declaration's trailing
     /// `{| … |}` block. Empty for a declaration with no impl block. This is
     /// the per-type reach of the enumerable manifest; the schema-wide walk
@@ -1191,6 +1240,43 @@ impl ImplReference {
             Self::InherentMethod(signature) => std::slice::from_ref(signature),
         }
     }
+
+    /// The composition identity of this entry — the key that decides whether
+    /// two entries on one target *compose* (distinct keys union) or *collide*
+    /// (identical keys are a true duplicate). A trait entry (marker or
+    /// body-bearing) keys on its trait name, so `Display` and `Display [ … ]`
+    /// are the same impl; an inherent method keys on its full signature, so
+    /// two methods collide only when their whole signature matches.
+    pub fn composition_key(&self) -> ImplCompositionKey {
+        match self {
+            Self::Marker(trait_name) | Self::TraitImpl(trait_name, _) => {
+                ImplCompositionKey::Trait(trait_name.as_str().to_owned())
+            }
+            Self::InherentMethod(signature) => ImplCompositionKey::Method(signature.render()),
+        }
+    }
+
+    /// A short legible label naming this entry, for the duplicate-entry
+    /// error: the trait name for a trait/marker entry, the full signature
+    /// rendering for an inherent method.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Marker(trait_name) | Self::TraitImpl(trait_name, _) => {
+                trait_name.as_str().to_owned()
+            }
+            Self::InherentMethod(signature) => signature.render(),
+        }
+    }
+}
+
+/// The composition identity of an [`ImplReference`] under one target type —
+/// distinct keys compose (union), identical keys are a true duplicate. A
+/// trait entry keys on its trait name; an inherent method keys on its full
+/// signature rendering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImplCompositionKey {
+    Trait(String),
+    Method(String),
 }
 
 /// A lowered callable method signature `(name { params } Return)` — the
@@ -1237,6 +1323,33 @@ impl MethodSignature {
 
     pub fn return_reference(&self) -> &TypeReference {
         &self.return_reference
+    }
+
+    /// A canonical, full rendering of this signature — name, parameter
+    /// names and types, and the return type. Two signatures render equal
+    /// exactly when they are `Eq`, so the rendering is the identity used
+    /// both for duplicate detection and for the legible signature carried
+    /// in an unverified-reference error (so a name-matches-but-params-differ
+    /// mismatch reads as a full signature, not a bare method name).
+    pub fn render(&self) -> String {
+        let parameters = self
+            .parameters
+            .iter()
+            .map(|parameter| {
+                format!(
+                    "{}.{}",
+                    parameter.name().as_str(),
+                    parameter.reference().to_nota()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "{} {{ {} }} {}",
+            self.name.as_str(),
+            parameters,
+            self.return_reference.to_nota()
+        )
     }
 }
 
@@ -1429,10 +1542,15 @@ impl RustSurface {
         if present {
             return Ok(());
         }
+        // Report the FULL signature, not the bare method name: a reference
+        // whose name matches a present method but whose parameters or return
+        // type differ is a real mismatch, and only the full rendering makes
+        // that legible. `MethodSignature::render` is the same canonical
+        // rendering the duplicate-entry check keys on.
         Err(SchemaError::UnverifiedImplReference {
             target: target.as_str().to_owned(),
             kind: "method signature",
-            signature: signature.name().as_str().to_owned(),
+            signature: signature.render(),
         })
     }
 }

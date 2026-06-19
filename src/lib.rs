@@ -30,12 +30,12 @@ pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
     ApplicationHead, Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration,
-    FamilyKey, FieldDeclaration, ImplBlock, ImplCatalog, ImplFact, ImplReference,
-    ImportDeclaration, MethodParameter, MethodSignature, Name, NewtypeDeclaration, ReferenceHead,
-    ReferencedImpl, RelationDeclaration, RelationValue, Root, RootApplication, RustSurface, Schema,
-    SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
-    StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap, SymbolPath,
-    SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
+    FamilyKey, FieldDeclaration, ImplBlock, ImplCatalog, ImplCompositionKey, ImplFact,
+    ImplReference, ImportDeclaration, MethodParameter, MethodSignature, Name, NewtypeDeclaration,
+    ReferenceHead, ReferencedImpl, RelationDeclaration, RelationValue, Root, RootApplication,
+    RustSurface, Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair,
+    SchemaNodeValue, StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap,
+    SymbolPath, SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody,
