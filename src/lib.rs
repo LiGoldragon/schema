@@ -30,17 +30,19 @@ pub use raw::{RawDatatypeEntry, RawDatatypeMap, RawNotaDatatype, RawNotaSequence
 pub use resolution::{ImportResolver, ImportSource, ResolvedImport};
 pub use schema::{
     ApplicationHead, Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration,
-    FamilyKey, FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, ReferenceHead,
-    RelationDeclaration, RelationValue, Root, RootApplication, Schema, SchemaDeclaredType,
-    SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue, StreamDeclaration, StreamRelation,
-    StructDeclaration, StructFieldMap, SymbolPath, SymbolPathPosition, TableName, TypeDeclaration,
-    TypeReference, Visibility,
+    FamilyKey, FieldDeclaration, ImplBlock, ImplCatalog, ImplFact, ImplReference,
+    ImportDeclaration, MethodParameter, MethodSignature, Name, NewtypeDeclaration, ReferenceHead,
+    ReferencedImpl, RelationDeclaration, RelationValue, Root, RootApplication, RustSurface, Schema,
+    SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
+    StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap, SymbolPath,
+    SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody,
-    SourceField, SourceFieldValue, SourceImport, SourceImports, SourceNamespace,
-    SourceNamespaceEntry, SourceReference, SourceRelation, SourceRelationValue, SourceRelations,
-    SourceRootBody, SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
+    SourceField, SourceFieldValue, SourceImplCatalog, SourceImplEntry, SourceImport, SourceImports,
+    SourceMethodParameter, SourceMethodSignature, SourceNamespace, SourceNamespaceEntry,
+    SourceReference, SourceRelation, SourceRelationValue, SourceRelations, SourceRootBody,
+    SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
     SourceVariantSignature, StreamRelationKeyword,
 };
 pub use upgrade::{

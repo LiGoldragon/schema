@@ -441,6 +441,7 @@ pub struct Schema {
     streams: Vec<StreamDeclaration>,
     families: Vec<FamilyDeclaration>,
     relations: Vec<RelationDeclaration>,
+    impl_blocks: Vec<ImplBlock>,
 }
 
 impl Schema {
@@ -470,7 +471,17 @@ impl Schema {
             streams,
             families,
             relations,
+            impl_blocks: Vec::new(),
         }
+    }
+
+    /// Attach the standalone impl blocks lowered from body-optional
+    /// `TypeName {| … |}` entries — impls for types declared elsewhere. The
+    /// fused-form catalogs ride on their own `Declaration::impls`; these are
+    /// the catalogs whose target type is declared by a separate entry.
+    pub(crate) fn with_impl_blocks(mut self, impl_blocks: Vec<ImplBlock>) -> Self {
+        self.impl_blocks = impl_blocks;
+        self
     }
 
     pub fn identity(&self) -> &super::SchemaIdentity {
@@ -521,6 +532,39 @@ impl Schema {
 
     pub fn namespace(&self) -> &[Declaration] {
         &self.namespace
+    }
+
+    /// The standalone impl blocks lowered from body-optional
+    /// `TypeName {| … |}` entries (impls for elsewhere-declared types).
+    pub fn impl_blocks(&self) -> &[ImplBlock] {
+        &self.impl_blocks
+    }
+
+    /// The single enumerable impl manifest report 695 specifies: every
+    /// referenced impl entry across the schema, each paired with the type it
+    /// targets. It unions the fused catalogs carried on each `Declaration`
+    /// with the standalone body-optional [`ImplBlock`]s. This is the walk
+    /// the out-of-band trust boundary ([`RustSurface::verify_catalog`])
+    /// consumes.
+    pub fn referenced_impls(&self) -> Vec<ReferencedImpl<'_>> {
+        let mut references = Vec::new();
+        for declaration in &self.namespace {
+            for entry in declaration.impls().entries() {
+                references.push(ReferencedImpl {
+                    target: declaration.name(),
+                    entry,
+                });
+            }
+        }
+        for block in &self.impl_blocks {
+            for entry in block.catalog().entries() {
+                references.push(ReferencedImpl {
+                    target: block.target(),
+                    entry,
+                });
+            }
+        }
+        references
     }
 
     pub fn streams(&self) -> &[StreamDeclaration] {
@@ -986,6 +1030,7 @@ pub struct Declaration {
     name: Name,
     parameters: Vec<Name>,
     value: TypeDeclaration,
+    impls: ImplCatalog,
 }
 
 impl Declaration {
@@ -1004,6 +1049,7 @@ impl Declaration {
             name,
             parameters: Vec::new(),
             value,
+            impls: ImplCatalog::empty(),
         }
     }
 
@@ -1015,6 +1061,25 @@ impl Declaration {
     pub fn with_parameters(mut self, parameters: Vec<Name>) -> Self {
         self.parameters = parameters;
         self
+    }
+
+    /// Attach the lowered `{| … |}` impl catalog to this declaration. The
+    /// catalog is a *reference* to impls/methods that already exist on the
+    /// Rust side — markers and callable method signatures — not a generated
+    /// body. A declaration with no trailing impl block carries
+    /// `ImplCatalog::empty()`.
+    pub fn with_impls(mut self, impls: ImplCatalog) -> Self {
+        self.impls = impls;
+        self
+    }
+
+    /// The lowered impl catalog referenced by this declaration's trailing
+    /// `{| … |}` block. Empty for a declaration with no impl block. This is
+    /// the per-type reach of the enumerable manifest; the schema-wide walk
+    /// ([`Schema::referenced_impls`]) unions these with the standalone
+    /// body-optional impl blocks.
+    pub fn impls(&self) -> &ImplCatalog {
+        &self.impls
     }
 
     pub fn name(&self) -> &Name {
@@ -1038,6 +1103,337 @@ impl Declaration {
 
     pub fn value(&self) -> &TypeDeclaration {
         &self.value
+    }
+}
+
+/// The lowered `{| … |}` impl catalog: an enumerable list of impl
+/// *references* — markers, body-bearing trait impls, and inherent method
+/// signatures — that name impls/methods already present on the Rust side.
+/// It carries no generated body; it is the data the out-of-band trust
+/// boundary ([`RustSurface::verify_catalog`]) checks against a real crate
+/// surface.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+)]
+pub struct ImplCatalog {
+    entries: Vec<ImplReference>,
+}
+
+impl ImplCatalog {
+    pub fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn new(entries: Vec<ImplReference>) -> Self {
+        Self { entries }
+    }
+
+    pub fn entries(&self) -> &[ImplReference] {
+        &self.entries
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+/// One entry inside a lowered impl catalog. A marker is a bare trait impl
+/// with no methods; a trait impl carries the method signatures the trait
+/// requires; an inherent method is a single callable signature on the
+/// target type.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum ImplReference {
+    /// A bare trait atom — a marker impl with no method signatures.
+    Marker(Name),
+    /// A trait atom plus the method signatures it requires.
+    TraitImpl(Name, Vec<MethodSignature>),
+    /// A single inherent method signature.
+    InherentMethod(MethodSignature),
+}
+
+impl ImplReference {
+    /// The trait this entry names, if any. Inherent methods name no trait.
+    pub fn trait_name(&self) -> Option<&Name> {
+        match self {
+            Self::Marker(trait_name) | Self::TraitImpl(trait_name, _) => Some(trait_name),
+            Self::InherentMethod(_) => None,
+        }
+    }
+
+    /// The method signatures this entry references. A marker references
+    /// none; a trait impl references its required methods; an inherent
+    /// method references exactly itself.
+    pub fn methods(&self) -> &[MethodSignature] {
+        match self {
+            Self::Marker(_) => &[],
+            Self::TraitImpl(_, methods) => methods,
+            Self::InherentMethod(signature) => std::slice::from_ref(signature),
+        }
+    }
+}
+
+/// A lowered callable method signature `(name { params } Return)` — the
+/// Work-frame-leg shape, with parameter and return types resolved to
+/// [`TypeReference`]s. It names a signature that must exist on the Rust
+/// side; the body is not generated.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct MethodSignature {
+    name: Name,
+    parameters: Vec<MethodParameter>,
+    return_reference: TypeReference,
+}
+
+impl MethodSignature {
+    pub fn new(
+        name: Name,
+        parameters: Vec<MethodParameter>,
+        return_reference: TypeReference,
+    ) -> Self {
+        Self {
+            name,
+            parameters,
+            return_reference,
+        }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn parameters(&self) -> &[MethodParameter] {
+        &self.parameters
+    }
+
+    pub fn return_reference(&self) -> &TypeReference {
+        &self.return_reference
+    }
+}
+
+/// One lowered method parameter: a name and its resolved type reference.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct MethodParameter {
+    name: Name,
+    reference: TypeReference,
+}
+
+impl MethodParameter {
+    pub fn new(name: Name, reference: TypeReference) -> Self {
+        Self { name, reference }
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn reference(&self) -> &TypeReference {
+        &self.reference
+    }
+}
+
+/// A standalone lowered impl block for a type declared elsewhere — the
+/// lowered form of a body-optional `TypeName {| … |}` entry. The named
+/// `target` is resolved by ordinary symbol lookup; this block mints no
+/// type declaration, it only attaches a catalog to the existing type.
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota_next::NotaDecode,
+    nota_next::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct ImplBlock {
+    target: Name,
+    catalog: ImplCatalog,
+}
+
+impl ImplBlock {
+    pub fn new(target: Name, catalog: ImplCatalog) -> Self {
+        Self { target, catalog }
+    }
+
+    pub fn target(&self) -> &Name {
+        &self.target
+    }
+
+    pub fn catalog(&self) -> &ImplCatalog {
+        &self.catalog
+    }
+}
+
+/// A single impl entry from the schema-wide manifest, paired with the type
+/// it targets. Borrowed view produced by [`Schema::referenced_impls`]; the
+/// `target` is the declaring (fused) type or the body-optional block's
+/// referenced type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReferencedImpl<'schema> {
+    target: &'schema Name,
+    entry: &'schema ImplReference,
+}
+
+impl<'schema> ReferencedImpl<'schema> {
+    pub fn target(&self) -> &Name {
+        self.target
+    }
+
+    pub fn entry(&self) -> &ImplReference {
+        self.entry
+    }
+}
+
+/// One fact about the impls/methods actually present on the Rust side: a
+/// trait (or marker) implemented for a type, or an inherent method with a
+/// specific signature. A [`RustSurface`] is a set of these; it is the
+/// out-of-band catalog the schema's impl references are verified against,
+/// declared from a real crate scan (or, in tests, by hand).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImplFact {
+    /// A trait (or marker trait) implemented for the named type.
+    Trait { type_name: Name, trait_name: Name },
+    /// A method present on the named type, identified by its canonical
+    /// signature rendering (name, parameter types, return type) so that a
+    /// signature mismatch counts as absent.
+    Method {
+        type_name: Name,
+        signature: MethodSignature,
+    },
+}
+
+impl ImplFact {
+    pub fn trait_impl(type_name: Name, trait_name: Name) -> Self {
+        Self::Trait {
+            type_name,
+            trait_name,
+        }
+    }
+
+    pub fn method(type_name: Name, signature: MethodSignature) -> Self {
+        Self::Method {
+            type_name,
+            signature,
+        }
+    }
+}
+
+/// The available Rust surface: the set of [`ImplFact`]s a real crate
+/// exposes. The schema's impl catalog is *out of band* from the crate, so
+/// the trust boundary is verifying that every referenced trait/method
+/// signature is actually present here before any code trusts the catalog.
+/// [`Self::verify_catalog`] is that boundary check.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RustSurface {
+    facts: Vec<ImplFact>,
+}
+
+impl RustSurface {
+    pub fn new(facts: Vec<ImplFact>) -> Self {
+        Self { facts }
+    }
+
+    /// Verify every impl reference in the schema against this surface. A
+    /// marker or trait impl must find a matching trait fact for its target
+    /// type; every method signature (a trait impl's required methods, or an
+    /// inherent method) must find a matching method fact. The first
+    /// reference with no matching fact fails with
+    /// [`SchemaError::UnverifiedImplReference`] naming the exact target and
+    /// signature; an all-present catalog returns `Ok(())`. This proves the
+    /// out-of-band catalog can be checked without parsing a real crate.
+    pub fn verify_catalog(&self, schema: &Schema) -> Result<(), SchemaError> {
+        for reference in schema.referenced_impls() {
+            self.verify_reference(reference)?;
+        }
+        Ok(())
+    }
+
+    fn verify_reference(&self, reference: ReferencedImpl<'_>) -> Result<(), SchemaError> {
+        let target = reference.target();
+        if let Some(trait_name) = reference.entry().trait_name() {
+            self.verify_trait(target, trait_name)?;
+        }
+        for signature in reference.entry().methods() {
+            self.verify_method(target, signature)?;
+        }
+        Ok(())
+    }
+
+    fn verify_trait(&self, target: &Name, trait_name: &Name) -> Result<(), SchemaError> {
+        let present = self.facts.iter().any(|fact| {
+            matches!(
+                fact,
+                ImplFact::Trait { type_name, trait_name: present }
+                    if type_name == target && present == trait_name
+            )
+        });
+        if present {
+            return Ok(());
+        }
+        Err(SchemaError::UnverifiedImplReference {
+            target: target.as_str().to_owned(),
+            kind: "trait impl",
+            signature: trait_name.as_str().to_owned(),
+        })
+    }
+
+    fn verify_method(&self, target: &Name, signature: &MethodSignature) -> Result<(), SchemaError> {
+        let present = self.facts.iter().any(|fact| {
+            matches!(
+                fact,
+                ImplFact::Method { type_name, signature: present }
+                    if type_name == target && present == signature
+            )
+        });
+        if present {
+            return Ok(());
+        }
+        Err(SchemaError::UnverifiedImplReference {
+            target: target.as_str().to_owned(),
+            kind: "method signature",
+            signature: signature.name().as_str().to_owned(),
+        })
     }
 }
 

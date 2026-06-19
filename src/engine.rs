@@ -201,6 +201,14 @@ pub enum SchemaError {
         position: &'static str,
         found: String,
     },
+    #[error(
+        "impl catalog references {kind} `{signature}` on type `{target}`, which is absent from the available Rust surface"
+    )]
+    UnverifiedImplReference {
+        target: String,
+        kind: &'static str,
+        signature: String,
+    },
 }
 
 impl From<nota_next::MacroError> for SchemaError {
@@ -655,6 +663,10 @@ impl<'schema> KeyValueDeclaration<'schema> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
+        // A `{| … |}` impl block is segmented off as a trailing block by the
+        // namespace entry walk, so it never arrives as a newtype definition.
+        // A `(| … |)` pipe-parenthesis is a head-position binder list and is
+        // still illegal at a value position.
         if matches!(
             definition,
             Block::Delimited {
@@ -837,21 +849,26 @@ impl<'schema> NamespaceBlock<'schema> {
         Ok(declarations)
     }
 
+    /// Segment the namespace body into key/value pairs the macro lowerer
+    /// understands. The body is no longer a flat `chunks_exact(2)` map: an
+    /// entry is a head, an optional inline body, and an optional trailing
+    /// `{| … |}` impl block (a separate root object). Body-bearing entries
+    /// become a [`MacroPair`]; body-optional entries (`TypeName {| … |}`)
+    /// mint no type declaration on the macro path and are dropped here — the
+    /// typed source archive carries their impls. This walk mirrors
+    /// `SourceNamespaceWalk` in `source.rs`; the two must stay in lockstep.
     fn key_value_pairs(&self) -> Result<Vec<MacroPair<'schema>>, SchemaError> {
-        if self.body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: self.body.root_objects().len(),
-            });
+        let mut pairs = Vec::new();
+        let mut walk = NamespaceEntryWalk::new(self.body.root_objects());
+        while let Some(entry) = walk.next_entry()? {
+            if let Some(definition) = entry.definition {
+                pairs.push(MacroPair {
+                    name: entry.name,
+                    definition,
+                });
+            }
         }
-        Ok(self
-            .body
-            .root_objects()
-            .chunks_exact(2)
-            .map(|chunk| MacroPair {
-                name: &chunk[0],
-                definition: &chunk[1],
-            })
-            .collect())
+        Ok(pairs)
     }
 
     fn push_declaration(
@@ -885,6 +902,73 @@ impl<'schema> NamespaceBlock<'schema> {
             }
         }
         Ok(())
+    }
+}
+
+/// One segmented namespace entry on the macro path: a head block and an
+/// optional inline body (the `definition`). The trailing `{| … |}` impl
+/// block is recognised and skipped by the walk — the macro lowerer consumes
+/// only the body; the typed source archive (`SourceNamespaceEntry`) is what
+/// carries the impl catalog.
+#[derive(Clone, Copy, Debug)]
+struct NamespaceEntry<'schema> {
+    name: &'schema Block,
+    definition: Option<&'schema Block>,
+}
+
+/// A cursor over a namespace body that segments it into [`NamespaceEntry`]s
+/// using the same head / optional-body / optional-pipe-brace grammar as
+/// `source.rs`'s `SourceNamespaceWalk`. Keeping the two walks identical is
+/// what stops the macro lowering and the typed-source lowering from
+/// diverging.
+#[derive(Clone, Copy, Debug)]
+struct NamespaceEntryWalk<'schema> {
+    objects: &'schema [Block],
+    cursor: usize,
+}
+
+impl<'schema> NamespaceEntryWalk<'schema> {
+    fn new(objects: &'schema [Block]) -> Self {
+        Self { objects, cursor: 0 }
+    }
+
+    fn next_entry(&mut self) -> Result<Option<NamespaceEntry<'schema>>, SchemaError> {
+        let Some(head) = self.objects.get(self.cursor) else {
+            return Ok(None);
+        };
+        if head.is_pipe_brace() {
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: "a type name before a {| … |} impl block, not a leading impl block",
+            });
+        }
+        self.cursor += 1;
+
+        let definition = match self.objects.get(self.cursor) {
+            Some(next) if !next.is_pipe_brace() => {
+                self.cursor += 1;
+                Some(next)
+            }
+            _ => None,
+        };
+
+        let has_impls = match self.objects.get(self.cursor) {
+            Some(next) if next.is_pipe_brace() => {
+                self.cursor += 1;
+                true
+            }
+            _ => false,
+        };
+
+        if definition.is_none() && !has_impls {
+            return Err(SchemaError::ExpectedDelimiter {
+                expected: "a namespace entry body or a {| … |} impl block",
+            });
+        }
+
+        Ok(Some(NamespaceEntry {
+            name: head,
+            definition,
+        }))
     }
 }
 
@@ -934,15 +1018,18 @@ impl<'schema> NamespaceMetadataProbe<'schema> {
             Delimiter::Brace,
             "namespace metadata probe",
         )?;
-        if body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: body.root_objects().len(),
-            });
+        // Segment with the same entry walk as lowering so a trailing
+        // `{| … |}` impl block never gets misread as a metadata definition.
+        let mut walk = NamespaceEntryWalk::new(body.root_objects());
+        while let Some(entry) = walk.next_entry()? {
+            if entry
+                .definition
+                .is_some_and(|definition| MetadataDefinitionProbe::new(definition).matches())
+            {
+                return Ok(true);
+            }
         }
-        Ok(body
-            .root_objects()
-            .chunks_exact(2)
-            .any(|pair| MetadataDefinitionProbe::new(&pair[1]).matches()))
+        Ok(false)
     }
 }
 

@@ -10,9 +10,10 @@ use nota_next::{
 
 use crate::{
     Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey,
-    FieldDeclaration, ImportDeclaration, Name, NewtypeDeclaration, RawNotaDatatype,
-    RawNotaSequence, RelationDeclaration, RelationValue, ResolvedImport, Root, RootApplication,
-    Schema, SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
+    FieldDeclaration, ImplBlock, ImplCatalog, ImplReference, ImportDeclaration, MethodParameter,
+    MethodSignature, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence,
+    RelationDeclaration, RelationValue, ResolvedImport, Root, RootApplication, Schema,
+    SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
     StructDeclaration, TableName, TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
 };
@@ -172,6 +173,7 @@ impl SchemaSource {
         let families = self.namespace.family_declarations()?;
         let input = self.input.to_root(&namespace)?;
         let output = self.output.to_root(&namespace)?;
+        let impl_blocks = namespace.impl_blocks().to_vec();
         Schema::new(
             identity,
             imports,
@@ -183,6 +185,7 @@ impl SchemaSource {
             families,
             self.relations.to_schema_relations(),
         )
+        .with_impl_blocks(impl_blocks)
         .families_verified()
         .and_then(Schema::arities_verified)
     }
@@ -498,20 +501,10 @@ impl SourceNamespace {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source namespace")?;
-        if body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: body.root_objects().len(),
-            });
-        }
         let mut entries = Vec::new();
-        for pair in body.root_objects().chunks_exact(2) {
-            // The entry key is a declaration head: a bare name, or a
-            // parameterized `(| Name Param … |)` head introducing binders.
-            // The value lowers the same way for either head.
-            let (name, parameters) = DeclarationHead::from_block(&pair[0])?.into_parts();
-            entries.push(SourceNamespaceEntry::from_parts(
-                name, parameters, &pair[1],
-            )?);
+        let mut walk = SourceNamespaceWalk::new(body.root_objects());
+        while let Some(entry) = walk.next_entry()? {
+            entries.push(entry);
         }
         Ok(Self { entries })
     }
@@ -597,28 +590,144 @@ impl SourceNamespace {
     }
 }
 
+/// A cursor over a namespace body's root objects that segments them into
+/// entries. Each entry is a head (declaration-head block), an optional inline
+/// body (any non-pipe-brace block), and an optional trailing `{| … |}` impl
+/// block. The trailing pipe-brace is a *separate* root object — it never
+/// nests inside the body — so the classic `chunks_exact(2)` map-pairing
+/// cannot see it; this stateful walk is what replaces it. The same grammar is
+/// mirrored on the engine/macro path by [`crate::engine`]'s entry walk.
+struct SourceNamespaceWalk<'block> {
+    objects: &'block [Block],
+    cursor: usize,
+}
+
+impl<'block> SourceNamespaceWalk<'block> {
+    fn new(objects: &'block [Block]) -> Self {
+        Self { objects, cursor: 0 }
+    }
+
+    /// Read the next entry, or `None` at the end of the body. An entry head
+    /// is always present; a pipe-brace head is illegal (an impl block must
+    /// trail a type name). After the head, an inline body is taken when the
+    /// next object is a non-pipe-brace, then a trailing pipe-brace impl block
+    /// is taken when present. At least one of body/impl-block is guaranteed
+    /// because a lone head with neither is a missing value.
+    fn next_entry(&mut self) -> Result<Option<SourceNamespaceEntry>, SchemaError> {
+        let Some(head) = self.objects.get(self.cursor) else {
+            return Ok(None);
+        };
+        if head.is_pipe_brace() {
+            return Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: format!(
+                    "leading impl block {}; a {{| … |}} block must trail a type name",
+                    head.reemit_fallback()
+                ),
+            });
+        }
+        self.cursor += 1;
+        let (name, parameters) = DeclarationHead::from_block(head)?.into_parts();
+
+        let body = match self.objects.get(self.cursor) {
+            Some(next) if !next.is_pipe_brace() => {
+                self.cursor += 1;
+                Some(next)
+            }
+            _ => None,
+        };
+
+        let impls = match self.objects.get(self.cursor) {
+            Some(next) if next.is_pipe_brace() => {
+                self.cursor += 1;
+                Some(next)
+            }
+            _ => None,
+        };
+
+        if body.is_none() && impls.is_none() {
+            return Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: format!(
+                    "namespace entry {} with neither a body nor a {{| … |}} impl block",
+                    name.to_nota()
+                ),
+            });
+        }
+
+        SourceNamespaceEntry::from_parts(name, parameters, body, impls).map(Some)
+    }
+}
+
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
 pub struct SourceNamespaceEntry {
     name: Name,
     parameters: Vec<Name>,
+    #[rkyv(omit_bounds)]
     value: SourceNamespaceEntryValue,
+    #[rkyv(omit_bounds)]
+    impls: SourceImplCatalog,
 }
 
 impl SourceNamespaceEntry {
-    fn from_parts(name: Name, parameters: Vec<Name>, value: &Block) -> Result<Self, SchemaError> {
-        let value = if parameters.is_empty()
-            && SourceIdentifierCase::new(&name).is_namespace()
-            && value.is_brace()
-        {
-            SourceNamespaceEntryValue::Namespace(SourceNamespace::from_block(value)?)
-        } else {
-            SourceNamespaceEntryValue::Declaration(SourceDeclarationValue::from_block(value)?)
+    /// Build an entry from its parsed parts. `body` is the optional inline
+    /// body block (`String`, `{ … }`, `[ … ]`, …); `impls` is the optional
+    /// trailing `{| … |}` block. At least one must be present — the
+    /// stateful namespace walk guarantees that. A body-optional entry
+    /// (`TypeName {| … |}`, no inline body) carries only impls and
+    /// references the type declared elsewhere by name.
+    fn from_parts(
+        name: Name,
+        parameters: Vec<Name>,
+        body: Option<&Block>,
+        impls: Option<&Block>,
+    ) -> Result<Self, SchemaError> {
+        let value = match body {
+            Some(body) => Self::value_from_body(&name, &parameters, body)?,
+            None => SourceNamespaceEntryValue::ImplsOnly,
+        };
+        let impls = match impls {
+            Some(block) => SourceImplCatalog::from_block(block)?,
+            None => SourceImplCatalog::empty(),
         };
         Ok(Self {
             name,
             parameters,
             value,
+            impls,
         })
+    }
+
+    fn value_from_body(
+        name: &Name,
+        parameters: &[Name],
+        body: &Block,
+    ) -> Result<SourceNamespaceEntryValue, SchemaError> {
+        if parameters.is_empty()
+            && SourceIdentifierCase::new(name).is_namespace()
+            && body.is_brace()
+        {
+            Ok(SourceNamespaceEntryValue::Namespace(
+                SourceNamespace::from_block(body)?,
+            ))
+        } else {
+            Ok(SourceNamespaceEntryValue::Declaration(
+                SourceDeclarationValue::from_block(body)?,
+            ))
+        }
+    }
+
+    pub fn impls(&self) -> &SourceImplCatalog {
+        &self.impls
     }
 
     pub fn name(&self) -> &Name {
@@ -648,11 +757,14 @@ impl SourceNamespaceEntry {
     }
 
     fn to_schema_text(&self) -> String {
-        format!(
-            "{} {}",
-            self.head_schema_text(),
-            self.value.to_schema_text()
-        )
+        let mut parts = vec![self.head_schema_text()];
+        if let Some(body) = self.value.to_schema_text() {
+            parts.push(body);
+        }
+        if !self.impls.is_empty() {
+            parts.push(self.impls.to_schema_text());
+        }
+        parts.join(" ")
     }
 
     /// Project the entry's key position back to source text: a bare name,
@@ -674,7 +786,37 @@ impl SourceNamespaceEntry {
     ) -> Result<SourceDeclarationGroup, SchemaError> {
         self.value
             .to_namespace_declaration_group(self.declaration_name(namespace), resolver, namespace)
-            .map(|group| group.with_parameters(self.parameters.clone()))
+            .map(|group| {
+                group
+                    .with_parameters(self.parameters.clone())
+                    .with_impls(self.lower_impls(resolver, namespace))
+            })
+    }
+
+    /// Lower this entry's trailing `{| … |}` catalog to the enumerable
+    /// schema-side [`ImplCatalog`]. Method references resolve under the
+    /// entry's namespace like every other reference.
+    fn lower_impls(&self, resolver: &SourceTypeResolver, namespace: Option<&Name>) -> ImplCatalog {
+        self.impls.lower(resolver, namespace)
+    }
+
+    /// A body-optional `TypeName {| … |}` entry has no inline body — it
+    /// references a type declared elsewhere. Lower it to a standalone
+    /// [`ImplBlock`] keyed by that type name; the schema-wide manifest
+    /// unions it with the fused catalogs. Entries with an inline body, or an
+    /// empty trailing catalog, contribute no standalone block.
+    fn to_impl_block(
+        &self,
+        resolver: &SourceTypeResolver,
+        namespace: Option<&Name>,
+    ) -> Option<ImplBlock> {
+        if !matches!(self.value, SourceNamespaceEntryValue::ImplsOnly) || self.impls.is_empty() {
+            return None;
+        }
+        Some(ImplBlock::new(
+            self.declaration_name(namespace),
+            self.lower_impls(resolver, namespace),
+        ))
     }
 
     fn stream_declarations(
@@ -711,27 +853,32 @@ impl SourceNamespaceEntry {
 pub enum SourceNamespaceEntryValue {
     Declaration(#[rkyv(omit_bounds)] SourceDeclarationValue),
     Namespace(#[rkyv(omit_bounds)] SourceNamespace),
+    /// A body-optional entry `TypeName {| … |}`: no inline body, only a
+    /// trailing impl catalog. The named type is declared elsewhere; this
+    /// entry references it and carries impls. It mints no type declaration.
+    ImplsOnly,
 }
 
 impl SourceNamespaceEntryValue {
     fn as_declaration(&self) -> Option<&SourceDeclarationValue> {
         match self {
             Self::Declaration(value) => Some(value),
-            Self::Namespace(_) => None,
+            Self::Namespace(_) | Self::ImplsOnly => None,
         }
     }
 
     fn as_namespace(&self) -> Option<&SourceNamespace> {
         match self {
             Self::Namespace(namespace) => Some(namespace),
-            Self::Declaration(_) => None,
+            Self::Declaration(_) | Self::ImplsOnly => None,
         }
     }
 
-    fn to_schema_text(&self) -> String {
+    fn to_schema_text(&self) -> Option<String> {
         match self {
-            Self::Declaration(value) => value.to_schema_text(),
-            Self::Namespace(namespace) => namespace.to_schema_text(),
+            Self::Declaration(value) => Some(value.to_schema_text()),
+            Self::Namespace(namespace) => Some(namespace.to_schema_text()),
+            Self::ImplsOnly => None,
         }
     }
 
@@ -745,7 +892,7 @@ impl SourceNamespaceEntryValue {
             Self::Declaration(value) => {
                 value.to_namespace_declaration_group(name, resolver, namespace)
             }
-            Self::Namespace(_) => Ok(SourceDeclarationGroup::empty()),
+            Self::Namespace(_) | Self::ImplsOnly => Ok(SourceDeclarationGroup::empty()),
         }
     }
 
@@ -763,6 +910,7 @@ impl SourceNamespaceEntryValue {
                 let nested_namespace = entry.namespace_name(namespace);
                 nested.stream_declarations_in_namespace(Some(&nested_namespace))
             }
+            Self::ImplsOnly => Ok(Vec::new()),
         }
     }
 
@@ -780,6 +928,7 @@ impl SourceNamespaceEntryValue {
                 let nested_namespace = entry.namespace_name(namespace);
                 nested.family_declarations_in_namespace(Some(&nested_namespace))
             }
+            Self::ImplsOnly => Ok(Vec::new()),
         }
     }
 
@@ -792,12 +941,401 @@ impl SourceNamespaceEntryValue {
             Self::Declaration(value) if value.is_type_declaration() => {
                 vec![entry.declaration_name(namespace)]
             }
-            Self::Declaration(_) => Vec::new(),
+            Self::Declaration(_) | Self::ImplsOnly => Vec::new(),
             Self::Namespace(nested) => {
                 let nested_namespace = entry.namespace_name(namespace);
                 nested.type_declaration_names_in_namespace(Some(&nested_namespace))
             }
         }
+    }
+}
+
+/// The decoded `{| … |}` pipe-brace impl block that trails a type
+/// declaration. It is a *catalog* of impl references, not a generated body:
+/// each entry names an impl/trait/method that already exists on the Rust
+/// side. An empty catalog is the absence of a trailing block — a plain
+/// declaration carries `SourceImplCatalog::empty()`.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub struct SourceImplCatalog {
+    #[rkyv(omit_bounds)]
+    entries: Vec<SourceImplEntry>,
+}
+
+impl SourceImplCatalog {
+    fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn entries(&self) -> &[SourceImplEntry] {
+        &self.entries
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Decode a `Block::Delimited { delimiter: PipeBrace, .. }`. Each root
+    /// object inside the pipe-brace is exactly one impl entry — a bare trait
+    /// atom (marker), a trait atom followed by a `[ method-sigs ]` vector,
+    /// or a bare `(name { params } Return)` inherent method signature.
+    /// Unlike a namespace body, entries are NOT paired: the walk reads one
+    /// object, then peeks the next to decide whether it is the trait's
+    /// `[ method-sigs ]` partner.
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::PipeBrace, "impl catalog")?;
+        let objects = body.root_objects();
+        let mut entries = Vec::new();
+        let mut index = 0;
+        while index < objects.len() {
+            let head = &objects[index];
+            // An inherent method signature is a bare parenthesis record
+            // `(name { params } Return)`; consume it alone.
+            if head.is_parenthesis() {
+                entries.push(SourceImplEntry::InherentMethod(
+                    SourceMethodSignature::from_block(head)?,
+                ));
+                index += 1;
+                continue;
+            }
+            // Otherwise the head is a trait atom. A following square-bracket
+            // vector is its method-signature list (body-bearing trait impl);
+            // its absence is a marker impl.
+            let trait_name = SourceAtom::from_block(head)?.into_name();
+            if let Some(next) = objects.get(index + 1)
+                && next.is_square_bracket()
+            {
+                entries.push(SourceImplEntry::TraitImpl(
+                    trait_name,
+                    SourceMethodSignature::from_vector_block(next)?,
+                ));
+                index += 2;
+            } else {
+                entries.push(SourceImplEntry::Marker(trait_name));
+                index += 1;
+            }
+        }
+        Ok(Self { entries })
+    }
+
+    fn to_schema_text(&self) -> String {
+        SourceDelimitedText::new(
+            Delimiter::PipeBrace,
+            self.entries
+                .iter()
+                .map(SourceImplEntry::to_schema_text)
+                .collect(),
+        )
+        .inline()
+    }
+
+    /// Lower the source catalog into the enumerable schema-side
+    /// [`ImplCatalog`], resolving every method parameter and return type
+    /// reference through the namespace's type resolver so impl references
+    /// obey namespace qualification like every other reference.
+    fn lower(&self, resolver: &SourceTypeResolver, namespace: Option<&Name>) -> ImplCatalog {
+        ImplCatalog::new(
+            self.entries
+                .iter()
+                .map(|entry| entry.lower(resolver, namespace))
+                .collect(),
+        )
+    }
+}
+
+/// One entry inside a `{| … |}` impl catalog.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub enum SourceImplEntry {
+    /// A bare trait atom — a marker impl with no method signatures
+    /// (`Display`, `Ord`).
+    Marker(Name),
+    /// A trait atom plus its `[ method-sigs ]` vector — a body-bearing
+    /// trait impl (`QueryMatcher [ (matches { candidate.Node } Boolean) ]`).
+    TraitImpl(Name, #[rkyv(omit_bounds)] Vec<SourceMethodSignature>),
+    /// A bare `(name { params } Return)` — an inherent method signature.
+    InherentMethod(#[rkyv(omit_bounds)] SourceMethodSignature),
+}
+
+impl SourceImplEntry {
+    fn to_schema_text(&self) -> String {
+        match self {
+            Self::Marker(trait_name) => trait_name.to_nota(),
+            Self::TraitImpl(trait_name, signatures) => {
+                let signatures = SourceDelimitedText::new(
+                    Delimiter::SquareBracket,
+                    signatures
+                        .iter()
+                        .map(SourceMethodSignature::to_schema_text)
+                        .collect(),
+                )
+                .inline();
+                format!("{} {}", trait_name.to_nota(), signatures)
+            }
+            Self::InherentMethod(signature) => signature.to_schema_text(),
+        }
+    }
+
+    fn lower(&self, resolver: &SourceTypeResolver, namespace: Option<&Name>) -> ImplReference {
+        match self {
+            Self::Marker(trait_name) => ImplReference::Marker(trait_name.clone()),
+            Self::TraitImpl(trait_name, signatures) => ImplReference::TraitImpl(
+                trait_name.clone(),
+                signatures
+                    .iter()
+                    .map(|signature| signature.lower(resolver, namespace))
+                    .collect(),
+            ),
+            Self::InherentMethod(signature) => {
+                ImplReference::InherentMethod(signature.lower(resolver, namespace))
+            }
+        }
+    }
+}
+
+/// A method signature `(name { params } Return)` — the same surface as a
+/// Work-frame leg. It names a *callable signature* of an impl that exists on
+/// the Rust side, not a generated body. `name` is a camel-case method name,
+/// `parameters` are positional `paramName.Type` fields (nullary `{}` is
+/// allowed), and `return_reference` is the return type at a reference
+/// position.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub struct SourceMethodSignature {
+    name: Name,
+    #[rkyv(omit_bounds)]
+    parameters: Vec<SourceMethodParameter>,
+    #[rkyv(omit_bounds)]
+    return_reference: SourceReference,
+}
+
+impl SourceMethodSignature {
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn parameters(&self) -> &[SourceMethodParameter] {
+        &self.parameters
+    }
+
+    pub fn return_reference(&self) -> &SourceReference {
+        &self.return_reference
+    }
+
+    /// Decode a `(name { params } Return)` parenthesis record. The three
+    /// positional slots are the camel method name, the brace parameter
+    /// block, and the trailing return reference.
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "method signature")?;
+        let objects = body.root_objects();
+        let [name_block, params_block, return_block] = objects else {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form: "method signature (name { params } Return)",
+                expected: "a name, a brace parameter block, and a return reference",
+                found: objects.len(),
+            });
+        };
+        let name = SourceAtom::from_block(name_block)?.into_name();
+        if !SourceIdentifierCase::new(&name).is_method() {
+            return Err(SchemaError::ExpectedSyntaxReference {
+                found: format!("method name {}", name.to_nota()),
+            });
+        }
+        let parameters = SourceMethodParameter::from_brace_block(params_block)?;
+        let return_reference = SourceReference::from_block(return_block)?;
+        Ok(Self {
+            name,
+            parameters,
+            return_reference,
+        })
+    }
+
+    /// Decode a `[ sig sig … ]` square-bracket vector of method signatures —
+    /// the trait-impl entry's method list.
+    fn from_vector_block(block: &Block) -> Result<Vec<Self>, SchemaError> {
+        let body = NotaBody::from_delimited(
+            block,
+            Delimiter::SquareBracket,
+            "trait impl method signatures",
+        )?;
+        body.root_objects()
+            .iter()
+            .map(Self::from_block)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    fn to_schema_text(&self) -> String {
+        let params = if self.parameters.is_empty() {
+            "{}".to_owned()
+        } else {
+            SourceDelimitedText::new(
+                Delimiter::Brace,
+                self.parameters
+                    .iter()
+                    .map(SourceMethodParameter::to_schema_text)
+                    .collect(),
+            )
+            .inline()
+        };
+        Delimiter::Parenthesis.wrap([
+            self.name.to_nota(),
+            params,
+            self.return_reference.to_schema_text(),
+        ])
+    }
+
+    fn lower(&self, resolver: &SourceTypeResolver, namespace: Option<&Name>) -> MethodSignature {
+        MethodSignature::new(
+            self.name.clone(),
+            self.parameters
+                .iter()
+                .map(|parameter| parameter.lower(resolver, namespace))
+                .collect(),
+            resolver.resolve_reference(namespace, &self.return_reference),
+        )
+    }
+}
+
+/// One positional parameter of a method signature: a `paramName.Type` field
+/// inside the `{ params }` block, mirroring a positional struct field. The
+/// `name` is the camel parameter name; `reference` is its type at a
+/// reference position.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub struct SourceMethodParameter {
+    name: Name,
+    #[rkyv(omit_bounds)]
+    reference: SourceReference,
+}
+
+impl SourceMethodParameter {
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn reference(&self) -> &SourceReference {
+        &self.reference
+    }
+
+    /// Decode a `{ paramName.Type … }` brace block into the ordered
+    /// parameter list. A nullary `{}` yields no parameters.
+    fn from_brace_block(block: &Block) -> Result<Vec<Self>, SchemaError> {
+        let body =
+            NotaBody::from_delimited(block, Delimiter::Brace, "method signature parameters")?;
+        body.root_objects()
+            .iter()
+            .map(Self::from_block)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// Decode one parameter. A bare `paramName.Type` atom splits into a
+    /// camel name and a reference; a parenthesised `(paramName Type)` carries
+    /// a structured reference for compound types like `(Vector Node)`.
+    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        if block.is_parenthesis() {
+            let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "method parameter")?;
+            let objects = body.root_objects();
+            let [name_block, type_block] = objects else {
+                return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                    form: "method parameter (name Type)",
+                    expected: "a parameter name and a type reference",
+                    found: objects.len(),
+                });
+            };
+            let name = SourceAtom::from_block(name_block)?.into_name();
+            Self::validate_name(&name)?;
+            return Ok(Self {
+                name,
+                reference: SourceReference::from_block(type_block)?,
+            });
+        }
+        let atom = SourceAtom::from_block(block)?;
+        let Some((param_name, type_name)) = atom.0.split_once('.') else {
+            return Err(SchemaError::ExpectedSyntaxReference {
+                found: format!("method parameter {}", atom.0),
+            });
+        };
+        let name = Name::new(param_name);
+        Self::validate_name(&name)?;
+        let reference = Name::new(type_name);
+        if !SourceIdentifierCase::new(&reference).is_type() {
+            return Err(SchemaError::ExpectedSyntaxReference {
+                found: format!("method parameter type {type_name}"),
+            });
+        }
+        Ok(Self {
+            name,
+            reference: SourceReference::Plain(reference),
+        })
+    }
+
+    fn validate_name(name: &Name) -> Result<(), SchemaError> {
+        if name.as_str().is_empty() || !SourceIdentifierCase::new(name).is_method() {
+            return Err(SchemaError::ExpectedSyntaxReference {
+                found: format!("method parameter name {}", name.to_nota()),
+            });
+        }
+        Ok(())
+    }
+
+    fn to_schema_text(&self) -> String {
+        match &self.reference {
+            SourceReference::Plain(reference) => {
+                format!("{}.{}", self.name.to_nota(), reference.to_nota())
+            }
+            reference => {
+                Delimiter::Parenthesis.wrap([self.name.to_nota(), reference.to_schema_text()])
+            }
+        }
+    }
+
+    fn lower(&self, resolver: &SourceTypeResolver, namespace: Option<&Name>) -> MethodParameter {
+        MethodParameter::new(
+            self.name.clone(),
+            resolver.resolve_reference(namespace, &self.reference),
+        )
     }
 }
 
@@ -1003,8 +1541,23 @@ impl SourceDeclarationValue {
                 delimiter: Delimiter::SquareBracket,
                 ..
             } => Ok(Self::Enum(SourceEnumBody::from_block(block)?)),
+            // A pipe-brace at a value position is consumed by the namespace
+            // entry walk (`SourceNamespaceWalk`) as a trailing impl block, so
+            // it never reaches the value path. If one does, the head it
+            // should have trailed is missing its type body.
             Block::Delimited {
-                delimiter: Delimiter::PipeParenthesis | Delimiter::PipeBrace,
+                delimiter: Delimiter::PipeBrace,
+                ..
+            } => Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: format!(
+                    "stray impl block {} at a value position",
+                    block.reemit_fallback()
+                ),
+            }),
+            // A pipe-parenthesis declares type-parameter binders at a head
+            // position, never a value; still rejected here.
+            Block::Delimited {
+                delimiter: Delimiter::PipeParenthesis,
                 ..
             } => Err(SchemaError::ExpectedSyntaxDeclaration {
                 found: block.reemit_fallback(),
@@ -2507,6 +3060,10 @@ impl SourceVariantResolver for SourceTypeResolver {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SourceLoweredNamespace {
     declarations: Vec<Declaration>,
+    /// Standalone impl blocks lowered from body-optional `TypeName {| … |}`
+    /// entries. They mint no type declaration; they attach a catalog to a
+    /// type declared elsewhere, surfaced through `Schema::impl_blocks`.
+    impl_blocks: Vec<ImplBlock>,
 }
 
 impl SourceLoweredNamespace {
@@ -2516,6 +3073,7 @@ impl SourceLoweredNamespace {
     ) -> Result<Self, SchemaError> {
         let mut namespace = Self {
             declarations: Vec::new(),
+            impl_blocks: Vec::new(),
         };
         namespace.push_source_namespace(source, resolver, None)?;
         Ok(namespace)
@@ -2534,6 +3092,9 @@ impl SourceLoweredNamespace {
                     self.push_source_namespace(nested, resolver, Some(&nested_namespace))?;
                 }
                 None => {
+                    if let Some(block) = entry.to_impl_block(resolver, namespace) {
+                        self.impl_blocks.push(block);
+                    }
                     self.push_public_group(entry.to_declaration_group(resolver, namespace)?)?;
                 }
             }
@@ -2572,6 +3133,10 @@ impl SourceLoweredNamespace {
     fn into_declarations(self) -> Vec<Declaration> {
         self.declarations
     }
+
+    fn impl_blocks(&self) -> &[ImplBlock] {
+        &self.impl_blocks
+    }
 }
 
 impl SourceVariantResolver for SourceLoweredNamespace {
@@ -2597,6 +3162,10 @@ struct SourceDeclarationGroup {
     /// They attach to the group's primary declaration; the inline helper
     /// declarations (public / private) are not parameterized.
     parameters: Vec<Name>,
+    /// The lowered trailing `{| … |}` catalog. It attaches to the group's
+    /// primary declaration, beside the parameters. Empty for an entry with
+    /// no trailing impl block.
+    impls: ImplCatalog,
 }
 
 impl SourceDeclarationGroup {
@@ -2606,6 +3175,7 @@ impl SourceDeclarationGroup {
             private: Vec::new(),
             primary: None,
             parameters: Vec::new(),
+            impls: ImplCatalog::empty(),
         }
     }
 
@@ -2615,6 +3185,7 @@ impl SourceDeclarationGroup {
             private: Vec::new(),
             primary: Some(primary),
             parameters: Vec::new(),
+            impls: ImplCatalog::empty(),
         }
     }
 
@@ -2628,6 +3199,7 @@ impl SourceDeclarationGroup {
             private,
             primary: Some(primary),
             parameters: Vec::new(),
+            impls: ImplCatalog::empty(),
         }
     }
 
@@ -2639,6 +3211,14 @@ impl SourceDeclarationGroup {
         self
     }
 
+    /// Attach the lowered impl catalog to the group's primary declaration.
+    /// Like parameters, the catalog belongs to the named declaration the
+    /// entry head introduced, not to its inline helpers.
+    fn with_impls(mut self, impls: ImplCatalog) -> Self {
+        self.impls = impls;
+        self
+    }
+
     fn into_public_declarations(self) -> Vec<Declaration> {
         let mut declarations = self
             .public
@@ -2647,7 +3227,11 @@ impl SourceDeclarationGroup {
             .collect::<Vec<_>>();
         declarations.extend(self.private.into_iter().map(Declaration::private));
         if let Some(primary) = self.primary {
-            declarations.push(Declaration::public(primary).with_parameters(self.parameters));
+            declarations.push(
+                Declaration::public(primary)
+                    .with_parameters(self.parameters)
+                    .with_impls(self.impls),
+            );
         }
         declarations
     }
@@ -2748,6 +3332,17 @@ impl<'name> SourceIdentifierCase<'name> {
     }
 
     fn is_namespace(&self) -> bool {
+        self.0
+            .as_str()
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_lowercase())
+    }
+
+    /// A method name or method-parameter name — a camel-case (lowercase-led)
+    /// identifier, the same casing rule as a namespace name but read at a
+    /// method-signature position.
+    fn is_method(&self) -> bool {
         self.0
             .as_str()
             .chars()
