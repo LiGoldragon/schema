@@ -1580,7 +1580,7 @@ impl SourceDeclarationValue {
         SourceFamilyBody::from_block(block).map(|body| body.map(Self::Family))
     }
 
-    fn to_schema_text(&self) -> String {
+    pub fn to_schema_text(&self) -> String {
         match self {
             Self::Reference(reference) => reference.to_schema_text(),
             Self::Text(text) => NotaString::new(text).format(),
@@ -2275,7 +2275,7 @@ pub enum SourceFieldValue {
 }
 
 impl SourceFieldValue {
-    fn to_schema_text(&self) -> String {
+    pub fn to_schema_text(&self) -> String {
         match self {
             Self::Derived => "*".to_owned(),
             Self::Reference(reference) => reference.to_schema_text(),
@@ -2470,6 +2470,10 @@ impl SourceVariantSignature {
         }
     }
 
+    pub fn payload_source(&self) -> Option<&SourceVariantPayload> {
+        self.payload_value()
+    }
+
     pub fn stream_relation(&self) -> Option<StreamRelation> {
         match self {
             Self::Streaming(_, _, keyword, stream_name) => {
@@ -2654,7 +2658,7 @@ pub enum SourceVariantPayload {
 }
 
 impl SourceVariantPayload {
-    fn to_schema_text(&self) -> String {
+    pub fn to_schema_text(&self) -> String {
         match self {
             Self::Reference(reference) => reference.to_schema_text(),
             Self::Declaration(value) => value.to_schema_text(),
@@ -2844,7 +2848,7 @@ impl SourceReference {
         Ok(Self::FixedBytes(width))
     }
 
-    fn to_schema_text(&self) -> String {
+    pub fn to_schema_text(&self) -> String {
         match self {
             Self::Plain(name) => name.to_nota(),
             Self::FixedBytes(width) => {

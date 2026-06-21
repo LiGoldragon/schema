@@ -108,6 +108,44 @@ fn schema_source_explicit_structural_fields_round_trip() {
 }
 
 #[test]
+fn schema_source_exposes_one_level_help_projection_inputs() {
+    let source = "{}\n[(Record { Entry Justification })]\n[RecordAccepted]\n{\n  Entry { Domains Kind Description }\n  Domains (Vector Domain)\n  Description String\n  Kind [Decision Principle]\n  RecordIdentifier String\n}";
+    let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
+    let input = artifact
+        .source()
+        .input()
+        .body()
+        .as_enum()
+        .expect("input root enum");
+    let record = &input.variants()[0];
+    let Some(schema_next::SourceVariantPayload::Declaration(
+        schema_next::SourceDeclarationValue::Struct(record_payload),
+    )) = record.payload_source()
+    else {
+        panic!("Record should expose its inline struct payload source");
+    };
+    let field_text = record_payload
+        .fields()
+        .iter()
+        .map(|field| field.value().to_schema_text())
+        .collect::<Vec<_>>();
+
+    assert_eq!(field_text, vec!["*", "*"]);
+
+    let namespace = artifact.source().namespace();
+    let domains = namespace
+        .entries()
+        .iter()
+        .find(|entry| entry.name().as_str() == "Domains")
+        .expect("Domains declaration");
+    let Some(schema_next::SourceDeclarationValue::Reference(reference)) = domains.value() else {
+        panic!("Domains should expose its reference body");
+    };
+
+    assert_eq!(reference.to_schema_text(), "(Vector Domain)");
+}
+
+#[test]
 fn nested_namespace_router_envelope_round_trips_and_lowers() {
     let source = source_codec_fixture("nested-router-namespace");
     let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
