@@ -108,9 +108,15 @@ fn explicit_structural_field_roles_lower_recursively() {
     let fields = struct_fields(&schema, "Query");
 
     assert_eq!(fields[0].name.as_str(), "topics");
-    assert_eq!(fields[0].reference, TypeReference::Plain(Name::new("Topics")));
+    assert_eq!(
+        fields[0].reference,
+        TypeReference::Plain(Name::new("Topics"))
+    );
     assert_eq!(fields[1].name.as_str(), "limit");
-    assert_eq!(fields[1].reference, TypeReference::Plain(Name::new("Limit")));
+    assert_eq!(
+        fields[1].reference,
+        TypeReference::Plain(Name::new("Limit"))
+    );
 
     // The inline-minted types carry the collection/option reference.
     assert_eq!(

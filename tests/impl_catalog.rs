@@ -768,9 +768,7 @@ fn both_lowering_paths_flatten_a_nested_namespace_identically() {
     // paths, and the bare local name leaks into neither top-level namespace.
     for (label, schema) in [("document", &macro_schema), ("source", &source_schema)] {
         assert!(
-            schema
-                .type_named("router:routed_object:Envelope")
-                .is_some(),
+            schema.type_named("router:routed_object:Envelope").is_some(),
             "{label} path flattens the nested Envelope to a qualified type"
         );
         assert!(

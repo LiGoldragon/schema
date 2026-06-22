@@ -259,6 +259,140 @@ impl SchemaSourceArtifactPath {
 }
 
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub struct SourceDeclarations {
+    #[rkyv(omit_bounds)]
+    declarations: Vec<SourceDeclaration>,
+}
+
+impl SourceDeclarations {
+    pub fn new(declarations: Vec<SourceDeclaration>) -> Self {
+        Self { declarations }
+    }
+
+    pub fn from_schema_text(source: &str) -> Result<Self, SchemaError> {
+        let document = Document::parse(source)?;
+        Self::from_document(&document)
+    }
+
+    pub fn from_document(document: &Document) -> Result<Self, SchemaError> {
+        document
+            .root_objects()
+            .iter()
+            .map(SourceDeclaration::from_block)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self::new)
+    }
+
+    pub fn declarations(&self) -> &[SourceDeclaration] {
+        &self.declarations
+    }
+
+    pub fn to_schema_text(&self) -> String {
+        self.declarations
+            .iter()
+            .map(SourceDeclaration::to_schema_text)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[rkyv(
+    bytecheck(bounds(
+        __C: rkyv::validation::ArchiveContext,
+        __C::Error: rkyv::rancor::Source
+    )),
+    serialize_bounds(
+        __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+        __S::Error: rkyv::rancor::Source
+    ),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source)
+)]
+pub struct SourceDeclaration {
+    name: Name,
+    #[rkyv(omit_bounds)]
+    value: Option<SourceDeclarationValue>,
+}
+
+impl SourceDeclaration {
+    pub fn new(name: Name, value: Option<SourceDeclarationValue>) -> Self {
+        Self { name, value }
+    }
+
+    pub fn from_schema_text(source: &str) -> Result<Self, SchemaError> {
+        let document = Document::parse(source)?;
+        if document.holds_root_objects() != 1 {
+            return Err(SchemaError::ExpectedRootObjectCount {
+                expected: "one re-headed schema declaration",
+                found: document.holds_root_objects(),
+            });
+        }
+        Self::from_block(
+            document
+                .root_object_at(0)
+                .expect("checked root object count"),
+        )
+    }
+
+    pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
+        let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "source declaration")?;
+        let objects = body.root_objects();
+        let Some((head, tail)) = objects.split_first() else {
+            return Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: "empty source declaration".to_owned(),
+            });
+        };
+        let (name, parameters) = DeclarationHead::from_block(head)?.into_parts();
+        if !parameters.is_empty() {
+            return Err(SchemaError::ExpectedSyntaxDeclaration {
+                found: format!(
+                    "parameterized help declaration head {}",
+                    head.reemit_fallback()
+                ),
+            });
+        }
+        let value = match tail {
+            [] => None,
+            [body] => Some(SourceDeclarationValue::from_block(body)?),
+            _ => {
+                return Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: block.reemit_fallback(),
+                });
+            }
+        };
+        Ok(Self::new(name, value))
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn value(&self) -> Option<&SourceDeclarationValue> {
+        self.value.as_ref()
+    }
+
+    pub fn to_schema_text(&self) -> String {
+        match &self.value {
+            Some(value) => {
+                Delimiter::Parenthesis.wrap([self.name.to_nota(), value.to_schema_text()])
+            }
+            None => Delimiter::Parenthesis.wrap([self.name.to_nota()]),
+        }
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceImports {
     entries: Vec<SourceImport>,
 }
@@ -1530,6 +1664,21 @@ pub enum SourceDeclarationValue {
 }
 
 impl SourceDeclarationValue {
+    pub fn from_schema_text(source: &str) -> Result<Self, SchemaError> {
+        let document = Document::parse(source)?;
+        if document.holds_root_objects() != 1 {
+            return Err(SchemaError::ExpectedRootObjectCount {
+                expected: "one schema declaration body",
+                found: document.holds_root_objects(),
+            });
+        }
+        Self::from_block(
+            document
+                .root_object_at(0)
+                .expect("checked root object count"),
+        )
+    }
+
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         match block {
             Block::Atom(_) => Ok(Self::Reference(SourceReference::from_block(block)?)),
@@ -1943,6 +2092,10 @@ pub struct SourceStructBody {
 }
 
 impl SourceStructBody {
+    pub fn new(fields: Vec<SourceField>) -> Self {
+        Self { fields }
+    }
+
     pub fn fields(&self) -> &[SourceField] {
         &self.fields
     }
@@ -2053,6 +2206,22 @@ pub struct SourceField {
 }
 
 impl SourceField {
+    pub fn derived(name: Name) -> Self {
+        Self {
+            name,
+            value: SourceFieldValue::Derived,
+            positional: true,
+        }
+    }
+
+    pub fn from_reference(name: Name, reference: SourceReference) -> Self {
+        Self {
+            name,
+            value: SourceFieldValue::Reference(reference),
+            positional: true,
+        }
+    }
+
     pub fn name(&self) -> &Name {
         &self.name
     }
@@ -2302,6 +2471,10 @@ pub struct SourceEnumBody {
 }
 
 impl SourceEnumBody {
+    pub fn new(variants: Vec<SourceVariantSignature>) -> Self {
+        Self { variants }
+    }
+
     pub fn variants(&self) -> &[SourceVariantSignature] {
         &self.variants
     }
@@ -2454,6 +2627,14 @@ pub enum SourceVariantSignature {
 }
 
 impl SourceVariantSignature {
+    pub fn from_name(name: Name) -> Self {
+        Self::Unit(SourceVariantName::new(name))
+    }
+
+    pub fn from_payload(name: Name, payload: SourceVariantPayload) -> Self {
+        Self::Data(SourceVariantName::new(name), payload)
+    }
+
     pub fn name(&self) -> &Name {
         match self {
             Self::Unit(name)
@@ -2579,6 +2760,10 @@ impl SourceVariantSignature {
 pub struct SourceVariantName(Name);
 
 impl SourceVariantName {
+    pub fn new(name: Name) -> Self {
+        Self(name)
+    }
+
     fn name(&self) -> &Name {
         &self.0
     }

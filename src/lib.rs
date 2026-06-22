@@ -39,12 +39,12 @@ pub use schema::{
     SymbolPath, SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
 };
 pub use source::{
-    SchemaSource, SchemaSourceArtifact, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody,
-    SourceField, SourceFieldValue, SourceImplCatalog, SourceImplEntry, SourceImport, SourceImports,
-    SourceMethodParameter, SourceMethodSignature, SourceNamespace, SourceNamespaceEntry,
-    SourceReference, SourceRelation, SourceRelationValue, SourceRelations, SourceRootBody,
-    SourceRootEnum, SourceStructBody, SourceVariantName, SourceVariantPayload,
-    SourceVariantSignature, StreamRelationKeyword,
+    SchemaSource, SchemaSourceArtifact, SourceDeclaration, SourceDeclarationValue,
+    SourceDeclarations, SourceEnumBody, SourceFamilyBody, SourceField, SourceFieldValue,
+    SourceImplCatalog, SourceImplEntry, SourceImport, SourceImports, SourceMethodParameter,
+    SourceMethodSignature, SourceNamespace, SourceNamespaceEntry, SourceReference, SourceRelation,
+    SourceRelationValue, SourceRelations, SourceRootBody, SourceRootEnum, SourceStructBody,
+    SourceVariantName, SourceVariantPayload, SourceVariantSignature, StreamRelationKeyword,
 };
 pub use upgrade::{
     AddField, AddVariant, ChangeFieldType, DefaultValue, FieldMigration, MigrationSpec, SchemaEdit,

@@ -1,8 +1,9 @@
 use std::fs;
 
 use schema_next::{
-    RelationDeclaration, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
-    TypeDeclaration, TypeReference,
+    Name, RelationDeclaration, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
+    SourceDeclaration, SourceDeclarationValue, SourceDeclarations, SourceField, SourceReference,
+    SourceStructBody, SourceVariantSignature, TypeDeclaration, TypeReference,
 };
 
 fn source_codec_fixture(name: &str) -> String {
@@ -51,6 +52,51 @@ fn schema_source_lowers_through_engine_schema_source_endpoint() {
     assert_eq!(
         through_endpoint, through_object,
         "schema source object and engine endpoint should lower the same typed schema"
+    );
+}
+
+#[test]
+fn reheaded_source_declarations_round_trip_help_forms() {
+    let declarations = SourceDeclarations::from_schema_text(
+        "(Record { Entry Justification })\n(IntentEventStream (Stream { token SubscriptionToken opened SubscriptionStarted event IntentEvent close SubscriptionToken }))",
+    )
+    .expect("help declaration document decodes");
+    assert_eq!(
+        declarations.to_schema_text(),
+        "(Record { Entry Justification })\n(IntentEventStream (Stream { token SubscriptionToken opened SubscriptionStarted event IntentEvent close SubscriptionToken }))"
+    );
+
+    let record = SourceDeclaration::new(
+        Name::new("Record"),
+        Some(SourceDeclarationValue::Struct(SourceStructBody::new(vec![
+            SourceField::derived(Name::new("Entry")),
+            SourceField::derived(Name::new("Justification")),
+        ]))),
+    );
+    let kind = SourceDeclaration::new(
+        Name::new("Kind"),
+        Some(SourceDeclarationValue::Enum(
+            schema_next::SourceEnumBody::new(vec![
+                SourceVariantSignature::from_name(Name::new("Decision")),
+                SourceVariantSignature::from_name(Name::new("Principle")),
+            ]),
+        )),
+    );
+    let domains = SourceDeclaration::new(
+        Name::new("Domains"),
+        Some(SourceDeclarationValue::Reference(SourceReference::Vector(
+            Box::new(SourceReference::Plain(Name::new("Domain"))),
+        ))),
+    );
+    let version = SourceDeclaration::new(Name::new("Version"), None);
+    let encoded = SourceDeclarations::new(vec![record, kind, domains, version]).to_schema_text();
+    let decoded =
+        SourceDeclarations::from_schema_text(&encoded).expect("encoded declarations decode");
+
+    assert_eq!(decoded.to_schema_text(), encoded);
+    assert_eq!(
+        encoded,
+        "(Record { Entry Justification })\n(Kind [Decision Principle])\n(Domains (Vector Domain))\n(Version)"
     );
 }
 
