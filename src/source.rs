@@ -2764,6 +2764,35 @@ impl SourceReference {
         Self::from_raw(&RawNotaDatatype::from_block(block)?)
     }
 
+    /// Render this reference through the schema encoder. This is the public
+    /// entry the per-instance schema projection uses so that every reference
+    /// token it emits comes from the one schema encoder, never a hand-written
+    /// printer.
+    pub fn rendered_schema_text(&self) -> String {
+        self.to_schema_text()
+    }
+
+    /// Project a nota-next instance-schema [`TypeReference`] into a source
+    /// reference. The per-instance trace captured by the decoder carries
+    /// nota-next references; this lifts them into schema-next's reference
+    /// vocabulary so they render through the same encoder as the contract.
+    pub fn from_instance_reference(reference: &nota_next::TypeReference) -> Self {
+        match reference {
+            nota_next::TypeReference::Named(name) => Self::Plain(Name::new(*name)),
+            nota_next::TypeReference::Vector(element) => {
+                Self::Vector(Box::new(Self::from_instance_reference(element)))
+            }
+            nota_next::TypeReference::Optional(inner) => {
+                Self::Optional(Box::new(Self::from_instance_reference(inner)))
+            }
+            nota_next::TypeReference::Map(key, value) => Self::Map(
+                Box::new(Self::from_instance_reference(key)),
+                Box::new(Self::from_instance_reference(value)),
+            ),
+            nota_next::TypeReference::FixedBytes(width) => Self::FixedBytes(*width as u64),
+        }
+    }
+
     fn from_raw(raw: &RawNotaDatatype) -> Result<Self, SchemaError> {
         match raw {
             RawNotaDatatype::Atom(name) => Ok(Self::Plain(Name::new(name))),
