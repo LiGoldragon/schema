@@ -2435,7 +2435,7 @@ impl SourceField {
             });
         }
         let derived = reference.derived_field_name();
-        if name.field_name() == derived.as_str() {
+        if !SourceIdentifierCase::new(&name).is_type() && name.field_name() == derived.as_str() {
             return Err(SchemaError::RedundantExplicitFieldRole {
                 found: format!("{}.{}", name.to_nota(), reference.to_schema_text()),
                 type_name: reference.to_schema_text(),

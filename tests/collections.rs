@@ -148,6 +148,22 @@ fn lower_case_dot_composite_field_lowers_directly() {
 }
 
 #[test]
+fn pascal_case_dot_composite_field_can_match_derived_composite_name() {
+    let schema = lower(&roots(
+        "Antecedent String Quote { OptionalAntecedent.(Optional Antecedent) }",
+    ));
+
+    assert_eq!(
+        single_reference(&schema, "OptionalAntecedent"),
+        &TypeReference::Optional(Box::new(TypeReference::new("Antecedent")))
+    );
+    assert_eq!(
+        single_reference(&schema, "Quote"),
+        &TypeReference::Plain(Name::new("OptionalAntecedent"))
+    );
+}
+
+#[test]
 fn parenthesized_explicit_composite_field_syntax_is_retired() {
     let error = SchemaEngine::default()
         .lower_source(
