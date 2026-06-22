@@ -2,6 +2,7 @@ mod declarative;
 mod engine;
 mod expansion;
 mod identity;
+mod instance;
 mod macros;
 mod module;
 mod raw;
@@ -9,6 +10,8 @@ mod resolution;
 mod schema;
 mod source;
 mod upgrade;
+
+pub use instance::InstanceSchemaText;
 
 pub use declarative::{
     MacroDelimiter, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroPattern,
