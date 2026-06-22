@@ -99,11 +99,11 @@ fn scalar_references_nest_inside_collections() {
 #[test]
 fn explicit_structural_field_roles_lower_recursively() {
     // The single lowering engine (the typed-source path) reads an explicit
-    // PascalCase-named field `(Topics (Vector Topic))` as an inline namespace
+    // PascalCase-named field `Topics.(Vector Topic)` as an inline namespace
     // declaration: a newtype `Topics` aliasing `Vector<Topic>` is minted into
     // the namespace, and the struct field references that minted type by name.
     let schema = lower(&roots(
-        "Topic String Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }",
+        "Topic String Query { Topics.(Vector Topic) Limit.(Optional Integer) }",
     ));
     let fields = struct_fields(&schema, "Query");
 
@@ -127,6 +127,39 @@ fn explicit_structural_field_roles_lower_recursively() {
         single_reference(&schema, "Limit"),
         &TypeReference::Optional(Box::new(TypeReference::Integer))
     );
+}
+
+#[test]
+fn lower_case_dot_composite_field_lowers_directly() {
+    let schema = lower(&roots(
+        "Topic String Description String Query { topics.(Vector Topic) Description }",
+    ));
+    let fields = struct_fields(&schema, "Query");
+
+    assert_eq!(fields[0].name.as_str(), "topics");
+    assert_eq!(
+        fields[0].reference,
+        TypeReference::Vector(Box::new(TypeReference::new("Topic")))
+    );
+    assert!(
+        schema.type_named("Topics").is_none(),
+        "lower-case explicit roles do not mint a role newtype"
+    );
+}
+
+#[test]
+fn parenthesized_explicit_composite_field_syntax_is_retired() {
+    let error = SchemaEngine::default()
+        .lower_source(
+            &roots("Topic String Query { (Topics (Vector Topic)) }"),
+            schema_next::SchemaIdentity::new("example:lib", "0.1.0"),
+        )
+        .expect_err("old parenthesized explicit field syntax is retired");
+
+    assert!(matches!(
+        error,
+        schema_next::SchemaError::RetiredStructFieldSyntax { .. }
+    ));
 }
 
 #[test]

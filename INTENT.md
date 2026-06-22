@@ -60,8 +60,8 @@ Data-carrying variants may also declare stream lifecycle relations:
 `(Delta DeltaPayload belongs StreamName)`.
 
 *Streams are schema metadata, not namespace data types.* A stream declaration
-is authored as `StreamName (Stream { token Token opened Snapshot event Event
-close Close })` inside the namespace map. It lowers to semantic
+is authored as `StreamName (Stream { token.Token opened.Snapshot event.Event
+close.Close })` inside the namespace map. It lowers to semantic
 `StreamDeclaration` data and is excluded from namespace type declarations.
 The `opens` and `belongs` variant relations point at these stream
 declarations so subscription features are visible in schema before daemon
@@ -131,7 +131,7 @@ the diff between addresses, and derives the migration operations ... from the
 diff.] The schema names what is stored before any version-control machinery
 reads it: a family declaration is authored in the namespace map on the
 stream-declaration precedent —
-`EntryFamily (Family { record Entry table entries key Domain })` — and lowers
+`EntryFamily (Family { record.Entry table.entries key.Domain })` — and lowers
 to semantic `FamilyDeclaration` data on `Schema::families()`, excluded from
 namespace type declarations. The family name is the stable identity, the
 record type must resolve to a declared type (its `family_closure` hash is the

@@ -58,12 +58,12 @@ fn schema_source_lowers_through_engine_schema_source_endpoint() {
 #[test]
 fn reheaded_source_declarations_round_trip_help_forms() {
     let declarations = SourceDeclarations::from_schema_text(
-        "(Record { Entry Justification })\n(IntentEventStream (Stream { token SubscriptionToken opened SubscriptionStarted event IntentEvent close SubscriptionToken }))",
+        "(Record { Entry Justification })\n(IntentEventStream (Stream { token.SubscriptionToken opened.SubscriptionStarted event.IntentEvent close.SubscriptionToken }))",
     )
     .expect("help declaration document decodes");
     assert_eq!(
         declarations.to_schema_text(),
-        "(Record { Entry Justification })\n(IntentEventStream (Stream { token SubscriptionToken opened SubscriptionStarted event IntentEvent close SubscriptionToken }))"
+        "(Record { Entry Justification })\n(IntentEventStream (Stream { token.SubscriptionToken opened.SubscriptionStarted event.IntentEvent close.SubscriptionToken }))"
     );
 
     let record = SourceDeclaration::new(
@@ -129,7 +129,7 @@ fn schema_source_reference_fields_lower_to_canonical_field_names() {
 
 #[test]
 fn schema_source_explicit_structural_fields_round_trip() {
-    let source = "{}\n[]\n[]\n{\n  Topic String\n  Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }\n}";
+    let source = "{}\n[]\n[]\n{\n  Topic String\n  Query { Topics.(Vector Topic) Limit.(Optional Integer) }\n}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
     let canonical = artifact.to_schema_text();
     let recovered = SchemaSourceArtifact::from_schema_text(&canonical)
@@ -147,7 +147,7 @@ fn schema_source_explicit_structural_fields_round_trip() {
 
     assert_eq!(
         canonical,
-        "{}\n[]\n[]\n{\n  Topic String\n  Query { (Topics (Vector Topic)) (Limit (Optional Integer)) }\n}"
+        "{}\n[]\n[]\n{\n  Topic String\n  Query { Topics.(Vector Topic) Limit.(Optional Integer) }\n}"
     );
     assert_eq!(query.fields[0].name.as_str(), "topics");
     assert_eq!(query.fields[1].name.as_str(), "limit");

@@ -179,7 +179,9 @@ fn entry_renders_its_field_type_names() {
 
 #[test]
 fn domain_match_partial_renders_enum_name_with_payload_reference() {
-    let schema = schema_of::<DomainMatch>("(Partial [(Technology (Software (Programming CodeGeneration)))])");
+    let schema = schema_of::<DomainMatch>(
+        "(Partial [(Technology (Software (Programming CodeGeneration)))])",
+    );
     // The aligned enum payload collapses the transparent `Partial` wrapper to
     // its inner `DomainScopes` newtype name.
     let rendered = InstanceSchemaText::new(&schema).aligned();

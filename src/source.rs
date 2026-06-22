@@ -1406,33 +1406,29 @@ impl SourceMethodParameter {
     fn from_brace_block(block: &Block) -> Result<Vec<Self>, SchemaError> {
         let body =
             NotaBody::from_delimited(block, Delimiter::Brace, "method signature parameters")?;
-        body.root_objects()
-            .iter()
-            .map(Self::from_block)
-            .collect::<Result<Vec<_>, _>>()
+        let mut parameters = Vec::new();
+        let mut index = 0;
+        let objects = body.root_objects();
+        while index < objects.len() {
+            parameters.push(Self::from_blocks_at(objects, &mut index)?);
+        }
+        Ok(parameters)
     }
 
     /// Decode one parameter. A bare `paramName.Type` atom splits into a
-    /// camel name and a reference; a parenthesised `(paramName Type)` carries
-    /// a structured reference for compound types like `(Vector Node)`.
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        if block.is_parenthesis() {
-            let body = NotaBody::from_delimited(block, Delimiter::Parenthesis, "method parameter")?;
-            let objects = body.root_objects();
-            let [name_block, type_block] = objects else {
-                return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                    form: "method parameter (name Type)",
-                    expected: "a parameter name and a type reference",
-                    found: objects.len(),
-                });
-            };
-            let name = SourceAtom::from_block(name_block)?.into_name();
+    /// camel name and a plain reference. A composite reference is written as
+    /// two sibling objects, `paramName.` followed by the reference object.
+    fn from_blocks_at(blocks: &[Block], index: &mut usize) -> Result<Self, SchemaError> {
+        if let Some(named) = SourceNamedBlock::from_blocks_if_trailing_dot(blocks, index)? {
+            let name = named.name;
             Self::validate_name(&name)?;
             return Ok(Self {
                 name,
-                reference: SourceReference::from_block(type_block)?,
+                reference: SourceReference::from_block(named.value)?,
             });
         }
+        let block = &blocks[*index];
+        *index += 1;
         let atom = SourceAtom::from_block(block)?;
         let Some((param_name, type_name)) = atom.0.split_once('.') else {
             return Err(SchemaError::ExpectedSyntaxReference {
@@ -1467,9 +1463,7 @@ impl SourceMethodParameter {
             SourceReference::Plain(reference) => {
                 format!("{}.{}", self.name.to_nota(), reference.to_nota())
             }
-            reference => {
-                Delimiter::Parenthesis.wrap([self.name.to_nota(), reference.to_schema_text()])
-            }
+            reference => format!("{}.{}", self.name.to_nota(), reference.to_schema_text()),
         }
     }
 
@@ -1860,10 +1854,10 @@ impl SourceStreamBody {
             SourceDelimitedText::new(
                 Delimiter::Brace,
                 vec![
-                    format!("token {}", self.token.to_schema_text()),
-                    format!("opened {}", self.opened.to_schema_text()),
-                    format!("event {}", self.event.to_schema_text()),
-                    format!("close {}", self.close.to_schema_text()),
+                    format!("token.{}", self.token.to_schema_text()),
+                    format!("opened.{}", self.opened.to_schema_text()),
+                    format!("event.{}", self.event.to_schema_text()),
+                    format!("close.{}", self.close.to_schema_text()),
                 ],
             )
             .inline(),
@@ -1901,26 +1895,32 @@ impl SourceStreamFields {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "stream declaration fields")?;
-        if body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: body.root_objects().len(),
-            });
-        }
         let mut fields = Self::empty();
-        for pair in body.root_objects().chunks_exact(2) {
-            let field = SourceAtom::from_block(&pair[0])?;
-            let reference = SourceReference::from_block(&pair[1])?;
-            fields.insert(field, reference)?;
+        let mut index = 0;
+        let objects = body.root_objects();
+        while index < objects.len() {
+            if let Some(named) = SourceNamedBlock::from_blocks_if_trailing_dot(objects, &mut index)?
+            {
+                fields.insert(
+                    named.name.as_str(),
+                    SourceReference::from_block(named.value)?,
+                )?;
+                continue;
+            }
+            let atom = SourceAtom::from_block(&objects[index])?;
+            index += 1;
+            let Some((field, reference)) = atom.0.split_once('.') else {
+                return Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: format!("stream field {}", atom.0),
+                });
+            };
+            fields.insert(field, SourceReference::Plain(Name::new(reference)))?;
         }
         Ok(fields)
     }
 
-    fn insert(
-        &mut self,
-        field: SourceAtom<'_>,
-        reference: SourceReference,
-    ) -> Result<(), SchemaError> {
-        match field.0 {
+    fn insert(&mut self, field: &str, reference: SourceReference) -> Result<(), SchemaError> {
+        match field {
             "token" => self.token = Some(reference),
             "opened" => self.opened = Some(reference),
             "event" => self.event = Some(reference),
@@ -2003,9 +2003,9 @@ impl SourceFamilyBody {
             SourceDelimitedText::new(
                 Delimiter::Brace,
                 vec![
-                    format!("record {}", self.record.to_nota()),
-                    format!("table {}", self.table.to_nota()),
-                    format!("key {}", self.key.to_structural_nota()),
+                    format!("record.{}", self.record.to_nota()),
+                    format!("table.{}", self.table.to_nota()),
+                    format!("key.{}", self.key.to_structural_nota()),
                 ],
             )
             .inline(),
@@ -2035,25 +2035,57 @@ impl SourceFamilyFields {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "family declaration fields")?;
-        if body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: body.root_objects().len(),
-            });
-        }
         let mut fields = Self::empty();
-        for pair in body.root_objects().chunks_exact(2) {
-            let field = SourceAtom::from_block(&pair[0])?;
-            fields.insert(field, &pair[1])?;
+        let mut index = 0;
+        let objects = body.root_objects();
+        while index < objects.len() {
+            if let Some(named) = SourceNamedBlock::from_blocks_if_trailing_dot(objects, &mut index)?
+            {
+                fields.insert_block(named.name.as_str(), named.value)?;
+                continue;
+            }
+            let atom = SourceAtom::from_block(&objects[index])?;
+            index += 1;
+            let Some((field, value)) = atom.0.split_once('.') else {
+                return Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: format!("family field {}", atom.0),
+                });
+            };
+            fields.insert_atom(field, value)?;
         }
         Ok(fields)
     }
 
-    fn insert(&mut self, field: SourceAtom<'_>, value: &Block) -> Result<(), SchemaError> {
-        match field.0 {
+    fn insert_block(&mut self, field: &str, value: &Block) -> Result<(), SchemaError> {
+        match field {
             "record" => self.record = Some(SourceAtom::from_block(value)?.into_name()),
             "table" => self.table = Some(TableName::new(SourceAtom::from_block(value)?.0)),
             "key" => {
                 self.key = Some(FamilyKey::from_structural_block(value).map_err(SchemaError::from)?)
+            }
+            other => {
+                return Err(SchemaError::ExpectedSyntaxDeclaration {
+                    found: format!("family field {other}"),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn insert_atom(&mut self, field: &str, value: &str) -> Result<(), SchemaError> {
+        match field {
+            "record" => self.record = Some(Name::new(value)),
+            "table" => self.table = Some(TableName::new(value)),
+            "key" => {
+                self.key = Some(match value {
+                    "Domain" => FamilyKey::Domain,
+                    "Identified" => FamilyKey::Identified,
+                    other => {
+                        return Err(SchemaError::ExpectedSyntaxDeclaration {
+                            found: format!("family key {other}"),
+                        });
+                    }
+                })
             }
             other => {
                 return Err(SchemaError::ExpectedSyntaxDeclaration {
@@ -2107,11 +2139,7 @@ impl SourceStructBody {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source struct body")?;
-        body.root_objects()
-            .iter()
-            .map(SourceField::from_positional_block)
-            .collect::<Result<Vec<_>, _>>()
-            .map(|fields| Self { fields })
+        SourceField::from_positional_blocks(body.root_objects()).map(|fields| Self { fields })
     }
 
     fn to_schema_text(&self) -> String {
@@ -2203,6 +2231,44 @@ impl SourceDelimitedText {
     }
 }
 
+#[derive(Clone, Debug)]
+struct SourceNamedBlock<'source> {
+    name: Name,
+    value: &'source Block,
+}
+
+impl<'source> SourceNamedBlock<'source> {
+    fn from_blocks_if_trailing_dot(
+        blocks: &'source [Block],
+        index: &mut usize,
+    ) -> Result<Option<Self>, SchemaError> {
+        let Some(Block::Atom(atom)) = blocks.get(*index) else {
+            return Ok(None);
+        };
+        let Some(name_text) = atom.text().strip_suffix('.') else {
+            return Ok(None);
+        };
+        if name_text.is_empty() {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: atom.text().to_owned(),
+            });
+        }
+        let value =
+            blocks
+                .get(*index + 1)
+                .ok_or_else(|| SchemaError::ExpectedSyntaxReferenceArity {
+                    form: "named schema field",
+                    expected: "a trailing-dot field name and a following value",
+                    found: 1,
+                })?;
+        *index += 2;
+        Ok(Some(Self {
+            name: Name::new(name_text),
+            value,
+        }))
+    }
+}
+
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceField {
     name: Name,
@@ -2245,7 +2311,7 @@ impl SourceField {
                 format!("{}.{}", self.name.to_nota(), reference.to_nota())
             }
             (SourceFieldValue::Reference(reference), true) => {
-                Delimiter::Parenthesis.wrap([self.name.to_nota(), reference.to_schema_text()])
+                format!("{}.{}", self.name.to_nota(), reference.to_schema_text())
             }
             (SourceFieldValue::Reference(reference), false) => {
                 format!("{} {}", self.name.to_nota(), reference.to_schema_text())
@@ -2256,10 +2322,33 @@ impl SourceField {
         }
     }
 
+    fn from_positional_blocks(blocks: &[Block]) -> Result<Vec<Self>, SchemaError> {
+        let mut fields = Vec::new();
+        let mut index = 0;
+        while index < blocks.len() {
+            fields.push(Self::from_positional_blocks_at(blocks, &mut index)?);
+        }
+        Ok(fields)
+    }
+
+    fn from_positional_blocks_at(blocks: &[Block], index: &mut usize) -> Result<Self, SchemaError> {
+        if let Some(named) = SourceNamedBlock::from_blocks_if_trailing_dot(blocks, index)? {
+            return Self::from_explicit_reference(
+                named.name,
+                SourceReference::from_block(named.value)?,
+            );
+        }
+        let block = &blocks[*index];
+        *index += 1;
+        Self::from_positional_block(block)
+    }
+
     fn from_positional_block(block: &Block) -> Result<Self, SchemaError> {
         if block.is_parenthesis() {
-            if let Some(field) = Self::from_explicit_structural_field(block)? {
-                return Ok(field);
+            if Self::is_retired_explicit_structural_field(block)? {
+                return Err(SchemaError::RetiredStructFieldSyntax {
+                    found: block.reemit_fallback(),
+                });
             }
             let reference = SourceReference::from_block(block)?;
             return Ok(Self {
@@ -2290,27 +2379,18 @@ impl SourceField {
         })
     }
 
-    fn from_explicit_structural_field(block: &Block) -> Result<Option<Self>, SchemaError> {
+    fn is_retired_explicit_structural_field(block: &Block) -> Result<bool, SchemaError> {
         let body =
             NotaBody::from_delimited(block, Delimiter::Parenthesis, "explicit structural field")?;
         let objects = body.root_objects();
         if objects.len() != 2 || matches!(objects[1], Block::Atom(_)) {
-            return Ok(None);
+            return Ok(false);
         }
         let name = SourceAtom::from_block(&objects[0])?.into_name();
         if crate::ReferenceHead::classify(name.as_str()).is_some() {
-            return Ok(None);
+            return Ok(false);
         }
-        if !SourceIdentifierCase::new(&name).is_type() || Self::is_reserved_scalar_name(&name) {
-            return Err(SchemaError::RetiredStructFieldSyntax {
-                found: block.reemit_fallback(),
-            });
-        }
-        Ok(Some(Self {
-            name,
-            value: SourceFieldValue::Reference(SourceReference::from_block(&objects[1])?),
-            positional: true,
-        }))
+        Ok(SourceIdentifierCase::new(&name).is_type() && !Self::is_reserved_scalar_name(&name))
     }
 
     fn from_explicit_field_reference(
@@ -2341,6 +2421,29 @@ impl SourceField {
         Ok(Self {
             name,
             value: SourceFieldValue::Reference(SourceReference::Plain(reference)),
+            positional: true,
+        })
+    }
+
+    fn from_explicit_reference(
+        name: Name,
+        reference: SourceReference,
+    ) -> Result<Self, SchemaError> {
+        if name.as_str().is_empty() || !name.qualifies_as_symbol_name() {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: format!("{}.{}", name.to_nota(), reference.to_schema_text()),
+            });
+        }
+        let derived = reference.derived_field_name();
+        if name.field_name() == derived.as_str() {
+            return Err(SchemaError::RedundantExplicitFieldRole {
+                found: format!("{}.{}", name.to_nota(), reference.to_schema_text()),
+                type_name: reference.to_schema_text(),
+            });
+        }
+        Ok(Self {
+            name,
+            value: SourceFieldValue::Reference(reference),
             positional: true,
         })
     }

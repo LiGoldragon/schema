@@ -1739,10 +1739,51 @@ impl<'template> MacroExpansionFields<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Vec<FieldDeclaration>, SchemaError> {
-        self.objects
-            .iter()
-            .map(|object| MacroExpansionField::new(*object).lower(registry, context))
-            .collect()
+        let mut fields = Vec::new();
+        let mut index = 0;
+        while index < self.objects.len() {
+            if let Some(field) = self.explicit_trailing_dot_field(&mut index, registry, context)? {
+                fields.push(field);
+                continue;
+            }
+            let object = self.objects[index];
+            index += 1;
+            fields.push(MacroExpansionField::new(object).lower(registry, context)?);
+        }
+        Ok(fields)
+    }
+
+    fn explicit_trailing_dot_field(
+        &self,
+        index: &mut usize,
+        registry: &MacroRegistry,
+        context: &mut MacroContext,
+    ) -> Result<Option<FieldDeclaration>, SchemaError> {
+        let object = self.objects[*index];
+        let Some(text) = object.demote_to_string() else {
+            return Ok(None);
+        };
+        let Some(field_name) = text.strip_suffix('.') else {
+            return Ok(None);
+        };
+        if field_name.is_empty() {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: text.to_owned(),
+            });
+        }
+        let Some(reference_object) = self.objects.get(*index + 1).copied() else {
+            return Err(SchemaError::ExpectedSyntaxReferenceArity {
+                form: "explicit composite field",
+                expected: "a trailing-dot field name and a following type reference",
+                found: 1,
+            });
+        };
+        *index += 2;
+        MacroExpansionField::explicit_reference_field(
+            field_name,
+            reference_object.type_reference(registry, context)?,
+        )
+        .map(Some)
     }
 }
 
@@ -1785,7 +1826,7 @@ impl<'template> MacroExpansionField<'template> {
         if self.object.demote_to_string().is_none() {
             let reference = self.object.type_reference(registry, context)?;
             return Ok(FieldDeclaration {
-                name: self.derived_name_for_reference(&reference),
+                name: Self::derived_name_for_reference(&reference),
                 reference,
             });
         }
@@ -1847,6 +1888,29 @@ impl<'template> MacroExpansionField<'template> {
         })
     }
 
+    fn explicit_reference_field(
+        field_name: &str,
+        reference: TypeReference,
+    ) -> Result<FieldDeclaration, SchemaError> {
+        let name = Name::new(field_name);
+        if field_name.is_empty() || field_name.contains('.') || !name.qualifies_as_symbol_name() {
+            return Err(SchemaError::RetiredStructFieldSyntax {
+                found: format!("{field_name}.<reference>"),
+            });
+        }
+        let derived = Self::derived_name_for_reference(&reference);
+        if name.field_name() == derived.as_str() {
+            return Err(SchemaError::RedundantExplicitFieldRole {
+                found: format!("{field_name}.<reference>"),
+                type_name: derived.to_nota(),
+            });
+        }
+        Ok(FieldDeclaration {
+            name: Name::new(name.field_name()),
+            reference,
+        })
+    }
+
     fn explicit_structural_field(
         &self,
         registry: &MacroRegistry,
@@ -1870,19 +1934,14 @@ impl<'template> MacroExpansionField<'template> {
         if ReferenceHead::classify(name.as_str()).is_some() {
             return Ok(None);
         }
-        if Self::is_reserved_scalar_name(&name) {
-            return Err(SchemaError::RetiredStructFieldSyntax {
-                found: self
-                    .object
-                    .demote_to_string()
-                    .unwrap_or("parenthesized structural field")
-                    .to_owned(),
-            });
-        }
-        Ok(Some(FieldDeclaration {
-            name: Name::new(name.field_name()),
-            reference: reference_object.type_reference(registry, context)?,
-        }))
+        let _ = (registry, context, reference_object);
+        Err(SchemaError::RetiredStructFieldSyntax {
+            found: self
+                .object
+                .demote_to_string()
+                .unwrap_or("parenthesized structural field")
+                .to_owned(),
+        })
     }
 
     fn is_explicit_field_pair(&self) -> bool {
@@ -1906,7 +1965,7 @@ impl<'template> MacroExpansionField<'template> {
         )
     }
 
-    fn derived_name_for_reference(&self, reference: &TypeReference) -> Name {
+    fn derived_name_for_reference(reference: &TypeReference) -> Name {
         match reference {
             TypeReference::String => Name::new("string"),
             TypeReference::Integer => Name::new("integer"),
@@ -1915,26 +1974,27 @@ impl<'template> MacroExpansionField<'template> {
             TypeReference::Bytes => Name::new("bytes"),
             TypeReference::FixedBytes(_) => Name::new("bytes"),
             TypeReference::Plain(name) => Name::new(name.field_name()),
-            TypeReference::Vector(inner) => {
-                Name::new(format!("{}_vector", self.derived_name_for_reference(inner)))
-            }
+            TypeReference::Vector(inner) => Name::new(format!(
+                "{}_vector",
+                Self::derived_name_for_reference(inner)
+            )),
             TypeReference::Map(key, value) => Name::new(format!(
                 "{}_by_{}",
-                self.derived_name_for_reference(value),
-                self.derived_name_for_reference(key)
+                Self::derived_name_for_reference(value),
+                Self::derived_name_for_reference(key)
             )),
             TypeReference::Optional(inner) => Name::new(format!(
                 "optional_{}",
-                self.derived_name_for_reference(inner)
+                Self::derived_name_for_reference(inner)
             )),
             TypeReference::ScopeOf(inner) => {
-                Name::new(format!("{}_scope", self.derived_name_for_reference(inner)))
+                Name::new(format!("{}_scope", Self::derived_name_for_reference(inner)))
             }
             TypeReference::Application { head, arguments } => {
                 let mut derived = Name::new(head.name().field_name()).as_str().to_owned();
                 for argument in arguments {
                     derived.push('_');
-                    derived.push_str(self.derived_name_for_reference(argument).as_str());
+                    derived.push_str(Self::derived_name_for_reference(argument).as_str());
                 }
                 Name::new(derived)
             }
