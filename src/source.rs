@@ -1679,7 +1679,12 @@ impl SourceDeclarationValue {
         )
     }
 
-    fn from_block(block: &Block) -> Result<Self, SchemaError> {
+    /// Decode a single declaration body block into the typed value, the
+    /// inverse of [`Self::to_schema_text`]. The body's delimiter is the
+    /// discriminant — `{ }` is a struct, `[ ]` an enum, a bare atom or
+    /// application a reference — so this is the schema declaration decoder a
+    /// re-headed help declaration round-trips through, with no parallel codec.
+    pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         match block {
             Block::Atom(_) => Ok(Self::Reference(SourceReference::from_block(block)?)),
             Block::Delimited {
