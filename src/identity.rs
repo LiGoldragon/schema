@@ -24,10 +24,13 @@ use std::fmt;
 use crate::{
     SchemaError,
     schema::{
-        Declaration, EnumDeclaration, ImportDeclaration, Name, Schema, StreamDeclaration,
-        TypeDeclaration, TypeReference,
+        Declaration, EnumDeclaration, ImplCatalog, ImportDeclaration, Name, Schema,
+        StreamDeclaration, TypeDeclaration, TypeReference, Visibility,
     },
-    specified::SpecifiedSchema,
+    specified::{
+        SpecifiedDeclaration, SpecifiedDeclarationBody, SpecifiedRoot, SpecifiedSchema,
+        SpecifiedVariant,
+    },
 };
 
 /// The hash domains content identity is derived under. Each domain
@@ -123,6 +126,47 @@ pub struct FamilyClosure {
     streams: Vec<StreamDeclaration>,
 }
 
+/// The transitive declaration closure of one named record family over the
+/// fully specified schema value.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub struct SpecifiedFamilyClosure {
+    root: Name,
+    root_application: Option<TypeReference>,
+    declarations: Vec<SpecifiedDeclaration>,
+    imports: Vec<ImportDeclaration>,
+    streams: Vec<StreamDeclaration>,
+}
+
+impl SpecifiedFamilyClosure {
+    pub fn root(&self) -> &Name {
+        &self.root
+    }
+
+    pub fn root_application(&self) -> Option<&TypeReference> {
+        self.root_application.as_ref()
+    }
+
+    pub fn declarations(&self) -> &[SpecifiedDeclaration] {
+        &self.declarations
+    }
+
+    pub fn imports(&self) -> &[ImportDeclaration] {
+        &self.imports
+    }
+
+    pub fn streams(&self) -> &[StreamDeclaration] {
+        &self.streams
+    }
+
+    /// The specified family's content address: blake3 over the closure's
+    /// canonical rkyv bytes, under the family-closure hash domain.
+    pub fn content_hash(&self) -> Result<ContentHash, SchemaError> {
+        let bytes =
+            rkyv::to_bytes::<rkyv::rancor::Error>(self).map_err(|_| SchemaError::ArchiveEncode)?;
+        Ok(ContentHash::derive(HashDomain::FamilyClosure, &bytes))
+    }
+}
+
 impl FamilyClosure {
     pub fn root(&self) -> &Name {
         &self.root
@@ -182,6 +226,263 @@ impl SpecifiedSchema {
     pub fn content_hash(&self) -> Result<ContentHash, SchemaError> {
         let bytes = self.to_binary_bytes()?;
         Ok(ContentHash::derive(HashDomain::Schema, &bytes))
+    }
+
+    /// The specified declaration closure of the named family. This is the
+    /// family identity surface for the fully specified schema value.
+    pub fn family_closure(&self, family_name: &str) -> Result<SpecifiedFamilyClosure, SchemaError> {
+        SpecifiedClosureWalk::new(self, family_name).into_closure()
+    }
+}
+
+enum SpecifiedFamilyRoot {
+    Declaration(SpecifiedDeclaration),
+    Application {
+        name: Name,
+        reference: TypeReference,
+    },
+}
+
+impl SpecifiedFamilyRoot {
+    fn name(&self) -> &Name {
+        match self {
+            Self::Declaration(declaration) => declaration.name(),
+            Self::Application { name, .. } => name,
+        }
+    }
+}
+
+struct SpecifiedClosureWalk<'schema> {
+    schema: &'schema SpecifiedSchema,
+    family: &'schema str,
+    declarations: Vec<(String, SpecifiedDeclaration)>,
+    imports: Vec<(String, ImportDeclaration)>,
+    streams: Vec<(String, StreamDeclaration)>,
+    binders: BTreeSet<String>,
+}
+
+impl<'schema> SpecifiedClosureWalk<'schema> {
+    fn new(schema: &'schema SpecifiedSchema, family: &'schema str) -> Self {
+        Self {
+            schema,
+            family,
+            declarations: Vec::new(),
+            imports: Vec::new(),
+            streams: Vec::new(),
+            binders: BTreeSet::new(),
+        }
+    }
+
+    fn into_closure(mut self) -> Result<SpecifiedFamilyClosure, SchemaError> {
+        let root =
+            self.family_root(self.family)
+                .ok_or_else(|| SchemaError::FamilyRootNotFound {
+                    name: self.family.to_owned(),
+                })?;
+        let name = root.name().clone();
+        let root_application = match &root {
+            SpecifiedFamilyRoot::Declaration(declaration) => {
+                self.visit_declaration(declaration.clone())?;
+                None
+            }
+            SpecifiedFamilyRoot::Application { reference, .. } => {
+                self.visit_reference(reference)?;
+                Some(reference.clone())
+            }
+        };
+        self.declarations
+            .sort_by(|left, right| left.0.cmp(&right.0));
+        self.imports.sort_by(|left, right| left.0.cmp(&right.0));
+        self.streams.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(SpecifiedFamilyClosure {
+            root: name,
+            root_application,
+            declarations: self
+                .declarations
+                .into_iter()
+                .map(|(_, declaration)| declaration)
+                .collect(),
+            imports: self.imports.into_iter().map(|(_, import)| import).collect(),
+            streams: self.streams.into_iter().map(|(_, stream)| stream).collect(),
+        })
+    }
+
+    fn family_root(&self, family_name: &str) -> Option<SpecifiedFamilyRoot> {
+        if let Some(declaration) = self.namespace_declaration(family_name) {
+            return Some(SpecifiedFamilyRoot::Declaration(declaration.clone()));
+        }
+        for root in [self.schema.input(), self.schema.output()] {
+            if root.name().as_str() != family_name {
+                continue;
+            }
+            return match root {
+                SpecifiedRoot::Application(application) => Some(SpecifiedFamilyRoot::Application {
+                    name: application.name().clone(),
+                    reference: application.reference().clone(),
+                }),
+                SpecifiedRoot::Enum(enumeration) => {
+                    Some(SpecifiedFamilyRoot::Declaration(SpecifiedDeclaration::new(
+                        Visibility::Public,
+                        enumeration.name().clone(),
+                        Vec::new(),
+                        SpecifiedDeclarationBody::Enum(enumeration.variants().to_vec()),
+                        ImplCatalog::empty(),
+                    )))
+                }
+            };
+        }
+        None
+    }
+
+    fn namespace_declaration(&self, name: &str) -> Option<&'schema SpecifiedDeclaration> {
+        self.schema
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_str() == name)
+    }
+
+    fn visit_declaration(&mut self, declaration: SpecifiedDeclaration) -> Result<(), SchemaError> {
+        let name = declaration.name().as_str().to_owned();
+        if self
+            .declarations
+            .iter()
+            .any(|(existing, _)| existing == &name)
+        {
+            return Ok(());
+        }
+        let body = declaration.body().clone();
+        let outer_binders = std::mem::replace(
+            &mut self.binders,
+            declaration
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.as_str().to_owned())
+                .collect(),
+        );
+        self.declarations.push((name, declaration));
+        let result = match body {
+            SpecifiedDeclarationBody::Struct(fields) => {
+                for field in fields {
+                    self.visit_reference(field.reference())?;
+                }
+                Ok(())
+            }
+            SpecifiedDeclarationBody::Newtype(reference) => self.visit_reference(&reference),
+            SpecifiedDeclarationBody::Enum(variants) => self.visit_variants(&variants),
+        };
+        self.binders = outer_binders;
+        result
+    }
+
+    fn visit_variants(&mut self, variants: &[SpecifiedVariant]) -> Result<(), SchemaError> {
+        for variant in variants {
+            if let Some(payload) = variant.payload() {
+                self.visit_reference(payload.reference())?;
+            }
+            if let Some(relation) = variant.stream_relation() {
+                self.visit_stream(relation.stream_name())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_stream(&mut self, stream_name: &Name) -> Result<(), SchemaError> {
+        if self
+            .streams
+            .iter()
+            .any(|(existing, _)| existing == stream_name.as_str())
+        {
+            return Ok(());
+        }
+        let stream = self
+            .schema
+            .streams()
+            .iter()
+            .find(|stream| &stream.name == stream_name)
+            .ok_or_else(|| SchemaError::FamilyReferenceNotFound {
+                family: self.family.to_owned(),
+                name: stream_name.as_str().to_owned(),
+            })?
+            .clone();
+        self.streams
+            .push((stream_name.as_str().to_owned(), stream.clone()));
+        self.visit_reference(&stream.token)?;
+        self.visit_reference(&stream.opened)?;
+        self.visit_reference(&stream.event)?;
+        self.visit_reference(&stream.close)
+    }
+
+    fn visit_reference(&mut self, reference: &TypeReference) -> Result<(), SchemaError> {
+        match reference {
+            TypeReference::String
+            | TypeReference::Integer
+            | TypeReference::Boolean
+            | TypeReference::Path
+            | TypeReference::Bytes
+            | TypeReference::FixedBytes(_) => Ok(()),
+            TypeReference::Plain(name) => self.visit_name(name),
+            TypeReference::Vector(inner)
+            | TypeReference::Optional(inner)
+            | TypeReference::ScopeOf(inner) => self.visit_reference(inner),
+            TypeReference::Map(key, value) => {
+                self.visit_reference(key)?;
+                self.visit_reference(value)
+            }
+            TypeReference::Application { head, arguments } => {
+                self.visit_name(head.name())?;
+                for argument in arguments {
+                    self.visit_reference(argument)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn visit_name(&mut self, name: &Name) -> Result<(), SchemaError> {
+        if self.binders.contains(name.as_str()) {
+            return Ok(());
+        }
+        if self
+            .declarations
+            .iter()
+            .any(|(existing, _)| existing == name.as_str())
+            || self
+                .imports
+                .iter()
+                .any(|(existing, _)| existing == name.as_str())
+        {
+            return Ok(());
+        }
+        if let Some(declaration) = self.namespace_declaration(name.as_str()) {
+            return self.visit_declaration(declaration.clone());
+        }
+        for root in [self.schema.input(), self.schema.output()] {
+            if let SpecifiedRoot::Enum(root) = root
+                && root.name() == name
+            {
+                return self.visit_declaration(SpecifiedDeclaration::new(
+                    Visibility::Public,
+                    root.name().clone(),
+                    Vec::new(),
+                    SpecifiedDeclarationBody::Enum(root.variants().to_vec()),
+                    ImplCatalog::empty(),
+                ));
+            }
+        }
+        if let Some(import) = self
+            .schema
+            .imports()
+            .iter()
+            .find(|import| &import.local_name == name)
+        {
+            self.imports
+                .push((name.as_str().to_owned(), import.clone()));
+            return Ok(());
+        }
+        Err(SchemaError::FamilyReferenceNotFound {
+            family: self.family.to_owned(),
+            name: name.as_str().to_owned(),
+        })
     }
 }
 

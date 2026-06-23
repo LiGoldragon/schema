@@ -20,7 +20,7 @@ pub use declarative::{
     MacroTemplateObject, SchemaMacro, TypeTemplate,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
-pub use identity::{ContentHash, FamilyClosure};
+pub use identity::{ContentHash, FamilyClosure, SpecifiedFamilyClosure};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
     MacroPosition, MacroRegistry, SchemaMacroHandler,

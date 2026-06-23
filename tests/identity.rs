@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use schema_next::{
     ContentHash, ImportResolver, MacroContext, Schema, SchemaEngine, SchemaError, SchemaIdentity,
+    SpecifiedSchema,
 };
 
 /// One semantic schema spelled as several `.schema` source texts. The
@@ -104,6 +105,14 @@ impl IdentityFixture {
             .expect("family closure hashes")
     }
 
+    fn specified_family_hash(&self, source: &str, family: &str) -> ContentHash {
+        SpecifiedSchema::from(&self.schema(source))
+            .family_closure(family)
+            .expect("specified family closure builds")
+            .content_hash()
+            .expect("specified family closure hashes")
+    }
+
     fn schema_hash(&self, source: &str) -> ContentHash {
         self.schema(source).content_hash().expect("schema hashes")
     }
@@ -171,6 +180,44 @@ fn formatting_differences_do_not_change_any_hash() {
         fixture.family_hash(IdentityFixture::BASE, "Input"),
         fixture.family_hash(IdentityFixture::REFORMATTED, "Input"),
     );
+}
+
+#[test]
+fn specified_family_closure_matches_family_identity_behavior() {
+    let fixture = IdentityFixture::new();
+
+    assert_eq!(
+        fixture.specified_family_hash(IdentityFixture::BASE, "Entry"),
+        fixture.specified_family_hash(IdentityFixture::REFORMATTED, "Entry"),
+        "specified family hashes semantic data, not source formatting",
+    );
+    assert_ne!(
+        fixture.specified_family_hash(IdentityFixture::BASE, "Entry"),
+        fixture.specified_family_hash(IdentityFixture::DEEP_CHANGE, "Entry"),
+        "reachable declaration edits move the specified family identity",
+    );
+    assert_eq!(
+        fixture.specified_family_hash(IdentityFixture::BASE, "Entry"),
+        fixture.specified_family_hash(IdentityFixture::UNRELATED_CHANGE, "Entry"),
+        "unreachable declaration edits do not move the specified family identity",
+    );
+}
+
+#[test]
+fn specified_family_closure_collects_only_reachable_declarations_sorted_by_name() {
+    let fixture = IdentityFixture::new();
+    let specified = SpecifiedSchema::from(&fixture.schema(IdentityFixture::BASE));
+
+    let closure = specified.family_closure("Entry").expect("entry closure");
+    assert_eq!(closure.root().as_str(), "Entry");
+    let names = closure
+        .declarations()
+        .iter()
+        .map(|declaration| declaration.name().as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["Detail", "Entry", "Magnitude", "Topic"]);
+    assert!(closure.imports().is_empty());
+    assert!(closure.streams().is_empty());
 }
 
 #[test]
