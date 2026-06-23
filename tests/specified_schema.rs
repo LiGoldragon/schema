@@ -1,6 +1,6 @@
 use schema_next::{
-    SchemaEngine, SchemaIdentity, SpecifiedDeclarationBody, SpecifiedPayloadBody,
-    SpecifiedPayloadShape, SpecifiedSchema, TypeReference,
+    ImportResolver, SchemaEngine, SchemaIdentity, SourceDeclaration, SpecifiedDeclarationBody,
+    SpecifiedPayloadBody, SpecifiedPayloadShape, SpecifiedSchema, TypeReference,
 };
 
 fn specified_fixture() -> SpecifiedSchema {
@@ -150,5 +150,59 @@ fn specified_schema_is_a_rkyv_serializable_data_value() {
     assert_eq!(
         recovered, specified,
         "the fully specified schema value should round-trip as binary data"
+    );
+}
+
+#[test]
+fn specified_schema_projects_back_to_the_schema_declaration_codec() {
+    let specified = specified_fixture();
+    let entry = specified
+        .declaration_named("Entry")
+        .expect("Entry declaration exists");
+    let value = entry.body().to_source_declaration_value();
+    let declaration = SourceDeclaration::new(entry.name().clone(), Some(value));
+
+    assert_eq!(
+        declaration.to_schema_text(),
+        "(Entry { domains.(Vector Domain) Kind Description Certainty Importance Privacy Referents })",
+        "SpecifiedSchema should project to typed schema declarations without a hand printer"
+    );
+
+    let input = specified.input().as_enum().expect("input root is an enum");
+    let record = input
+        .variant_named("Record")
+        .expect("Record variant exists");
+    let value = record
+        .payload()
+        .expect("Record payload exists")
+        .to_help_source_declaration_value();
+    let declaration = SourceDeclaration::new(record.name().clone(), Some(value));
+    assert_eq!(
+        declaration.to_schema_text(),
+        "(Record { record_entry.Entry record_reason.Justification })",
+        "root Help projection should use the explicit payload shape from SpecifiedSchema"
+    );
+}
+
+#[test]
+fn specified_source_lowers_with_embedded_import_resolver() {
+    let resolver = ImportResolver::new().with_module_source(
+        "dependency-crate",
+        "domain",
+        "0.1.0",
+        "{}\n[]\n[]\n{\n  ImportedThing String\n}",
+    );
+    let specified = SchemaEngine::default()
+        .lower_specified_source_with_resolver(
+            "{ ImportedThing dependency-crate:domain:ImportedThing }\n[Use]\n[]\n{\n  Use ImportedThing\n}",
+            SchemaIdentity::new("consumer", "0.1.0"),
+            &resolver,
+        )
+        .expect("specified schema lowers with an embedded dependency module");
+
+    assert_eq!(specified.resolved_imports().len(), 1);
+    assert_eq!(
+        specified.resolved_imports()[0].source().rust_path(),
+        "dependency_crate::schema::domain::ImportedThing"
     );
 }

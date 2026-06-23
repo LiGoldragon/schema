@@ -1,8 +1,10 @@
 use crate::{
     Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, ImplBlock, ImplCatalog,
     ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration, Root, RootApplication,
-    Schema, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TypeDeclaration,
-    TypeReference, Visibility,
+    Schema, SchemaIdentity, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody, SourceField,
+    SourceReference, SourceStreamBody, SourceStructBody, SourceVariantName, SourceVariantPayload,
+    SourceVariantSignature, StreamDeclaration, StreamRelation, StreamRelationKeyword,
+    StructDeclaration, TypeDeclaration, TypeReference, Visibility,
 };
 
 /// The fully specified schema value: the semantic schema object after authored
@@ -311,6 +313,23 @@ impl SpecifiedDeclarationBody {
             Self::Struct(_) | Self::Enum(_) => None,
         }
     }
+
+    pub fn to_source_declaration_value(&self) -> SourceDeclarationValue {
+        match self {
+            Self::Newtype(reference) => {
+                SourceDeclarationValue::Reference(SourceReference::from_type_reference(reference))
+            }
+            Self::Struct(fields) => SourceDeclarationValue::Struct(SourceStructBody::new(
+                fields.iter().map(SpecifiedField::to_source_field).collect(),
+            )),
+            Self::Enum(variants) => SourceDeclarationValue::Enum(SourceEnumBody::new(
+                variants
+                    .iter()
+                    .map(SpecifiedVariant::to_source_variant_signature)
+                    .collect(),
+            )),
+        }
+    }
 }
 
 /// A fully specified struct field: the role name and resolved reference are
@@ -342,6 +361,10 @@ impl SpecifiedField {
 
     pub fn reference(&self) -> &TypeReference {
         &self.reference
+    }
+
+    pub fn to_source_field(&self) -> SourceField {
+        SourceField::from_type_reference(self.name.clone(), &self.reference)
     }
 }
 
@@ -389,6 +412,27 @@ impl SpecifiedVariant {
     pub fn stream_relation(&self) -> Option<&StreamRelation> {
         self.stream_relation.as_ref()
     }
+
+    pub fn to_source_variant_signature(&self) -> SourceVariantSignature {
+        let payload = self.payload().map(|payload| {
+            SourceVariantPayload::Reference(SourceReference::from_type_reference(
+                payload.reference(),
+            ))
+        });
+        match (payload, self.stream_relation()) {
+            (Some(payload), Some(relation)) => SourceVariantSignature::Streaming(
+                SourceVariantName::new(self.name.clone()),
+                payload,
+                StreamRelationKeyword::from(relation),
+                SourceVariantName::new(relation.stream_name().clone()),
+            ),
+            (Some(payload), None) => {
+                SourceVariantSignature::from_payload(self.name.clone(), payload)
+            }
+            (None, Some(_)) => SourceVariantSignature::from_name(self.name.clone()),
+            (None, None) => SourceVariantSignature::from_name(self.name.clone()),
+        }
+    }
 }
 
 /// A variant payload made explicit for schema consumers.
@@ -433,6 +477,30 @@ impl SpecifiedPayload {
     pub fn shape(&self) -> &SpecifiedPayloadShape {
         &self.shape
     }
+
+    pub fn to_help_source_declaration_value(&self) -> SourceDeclarationValue {
+        match self.shape() {
+            SpecifiedPayloadShape::Struct(_) | SpecifiedPayloadShape::Enum(_) => {
+                self.shape().to_source_declaration_value()
+            }
+            SpecifiedPayloadShape::Scalar(_) | SpecifiedPayloadShape::Reference(_) => {
+                match self.immediate_body() {
+                    Some(SpecifiedPayloadBody::Newtype(reference)) => {
+                        SourceDeclarationValue::Reference(SourceReference::from_type_reference(
+                            reference,
+                        ))
+                    }
+                    Some(body @ SpecifiedPayloadBody::Struct(_))
+                    | Some(body @ SpecifiedPayloadBody::Enum(_)) => {
+                        body.to_source_declaration_value()
+                    }
+                    None => SourceDeclarationValue::Reference(
+                        SourceReference::from_type_reference(self.reference()),
+                    ),
+                }
+            }
+        }
+    }
 }
 
 /// The bounded declaration body directly named by a payload reference. Unlike
@@ -474,6 +542,23 @@ impl SpecifiedPayloadBody {
         match self {
             Self::Newtype(reference) => Some(reference),
             Self::Struct(_) | Self::Enum(_) => None,
+        }
+    }
+
+    pub fn to_source_declaration_value(&self) -> SourceDeclarationValue {
+        match self {
+            Self::Newtype(reference) => {
+                SourceDeclarationValue::Reference(SourceReference::from_type_reference(reference))
+            }
+            Self::Struct(fields) => SourceDeclarationValue::Struct(SourceStructBody::new(
+                fields.iter().map(SpecifiedField::to_source_field).collect(),
+            )),
+            Self::Enum(variants) => SourceDeclarationValue::Enum(SourceEnumBody::new(
+                variants
+                    .iter()
+                    .map(SpecifiedVariantSummary::to_source_variant_signature)
+                    .collect(),
+            )),
         }
     }
 }
@@ -522,6 +607,25 @@ impl SpecifiedVariantSummary {
     pub fn stream_relation(&self) -> Option<&StreamRelation> {
         self.stream_relation.as_ref()
     }
+
+    pub fn to_source_variant_signature(&self) -> SourceVariantSignature {
+        let payload = self.payload().map(|reference| {
+            SourceVariantPayload::Reference(SourceReference::from_type_reference(reference))
+        });
+        match (payload, self.stream_relation()) {
+            (Some(payload), Some(relation)) => SourceVariantSignature::Streaming(
+                SourceVariantName::new(self.name.clone()),
+                payload,
+                StreamRelationKeyword::from(relation),
+                SourceVariantName::new(relation.stream_name().clone()),
+            ),
+            (Some(payload), None) => {
+                SourceVariantSignature::from_payload(self.name.clone(), payload)
+            }
+            (None, Some(_)) => SourceVariantSignature::from_name(self.name.clone()),
+            (None, None) => SourceVariantSignature::from_name(self.name.clone()),
+        }
+    }
 }
 
 /// The data shape a payload presents after transparent newtypes are followed.
@@ -556,6 +660,53 @@ impl SpecifiedPayloadShape {
             Self::Enum(variants) => Some(variants),
             Self::Scalar(_) | Self::Reference(_) | Self::Struct(_) => None,
         }
+    }
+
+    pub fn to_source_declaration_value(&self) -> SourceDeclarationValue {
+        match self {
+            Self::Scalar(reference) | Self::Reference(reference) => {
+                SourceDeclarationValue::Reference(SourceReference::from_type_reference(reference))
+            }
+            Self::Struct(fields) => SourceDeclarationValue::Struct(SourceStructBody::new(
+                fields.iter().map(SpecifiedField::to_source_field).collect(),
+            )),
+            Self::Enum(variants) => SourceDeclarationValue::Enum(SourceEnumBody::new(
+                variants
+                    .iter()
+                    .map(SpecifiedVariantSummary::to_source_variant_signature)
+                    .collect(),
+            )),
+        }
+    }
+}
+
+impl From<&StreamRelation> for StreamRelationKeyword {
+    fn from(relation: &StreamRelation) -> Self {
+        match relation {
+            StreamRelation::Opens(_) => Self::Opens,
+            StreamRelation::Belongs(_) => Self::Belongs,
+        }
+    }
+}
+
+impl From<&StreamDeclaration> for SourceDeclarationValue {
+    fn from(declaration: &StreamDeclaration) -> Self {
+        Self::Stream(SourceStreamBody::new(
+            SourceReference::from_type_reference(&declaration.token),
+            SourceReference::from_type_reference(&declaration.opened),
+            SourceReference::from_type_reference(&declaration.event),
+            SourceReference::from_type_reference(&declaration.close),
+        ))
+    }
+}
+
+impl From<&FamilyDeclaration> for SourceDeclarationValue {
+    fn from(declaration: &FamilyDeclaration) -> Self {
+        Self::Family(SourceFamilyBody::new(
+            declaration.record.clone(),
+            declaration.table.clone(),
+            declaration.key,
+        ))
     }
 }
 

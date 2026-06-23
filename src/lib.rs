@@ -47,8 +47,9 @@ pub use source::{
     SourceDeclarations, SourceEnumBody, SourceFamilyBody, SourceField, SourceFieldValue,
     SourceImplCatalog, SourceImplEntry, SourceImport, SourceImports, SourceMethodParameter,
     SourceMethodSignature, SourceNamespace, SourceNamespaceEntry, SourceReference, SourceRelation,
-    SourceRelationValue, SourceRelations, SourceRootBody, SourceRootEnum, SourceStructBody,
-    SourceVariantName, SourceVariantPayload, SourceVariantSignature, StreamRelationKeyword,
+    SourceRelationValue, SourceRelations, SourceRootBody, SourceRootEnum, SourceStreamBody,
+    SourceStructBody, SourceVariantName, SourceVariantPayload, SourceVariantSignature,
+    StreamRelationKeyword,
 };
 pub use specified::{
     SpecifiedDeclaration, SpecifiedDeclarationBody, SpecifiedField, SpecifiedPayload,

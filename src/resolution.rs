@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use crate::{EnumVariant, ImportDeclaration, Name, SchemaEngine, SchemaError, SchemaPackage};
+use crate::{
+    EnumVariant, ImportDeclaration, Name, SchemaEngine, SchemaError, SchemaIdentity,
+    SchemaModuleSource, SchemaPackage,
+};
 
 /// A single-colon import target parsed into its three positions.
 ///
@@ -192,6 +195,14 @@ impl ResolvedImport {
 #[derive(Clone, Debug, Default)]
 pub struct ImportResolver {
     packages: Vec<SchemaPackage>,
+    module_sources: Vec<ImportModuleSource>,
+}
+
+#[derive(Clone, Debug)]
+struct ImportModuleSource {
+    crate_name: Name,
+    module: Name,
+    source: SchemaModuleSource,
 }
 
 impl ImportResolver {
@@ -226,6 +237,32 @@ impl ImportResolver {
         self.with_package(SchemaPackage::new(root, crate_name, version))
     }
 
+    pub fn with_module_source(
+        mut self,
+        crate_name: impl Into<String>,
+        module: impl Into<String>,
+        version: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
+        let crate_name = Name::new(crate_name);
+        let module = Name::new(module);
+        let identity = SchemaIdentity::new(
+            format!("{}:{}", crate_name.as_str(), module.as_str()),
+            version,
+        );
+        let path = PathBuf::from(format!(
+            "<embedded:{}:{}>",
+            crate_name.as_str(),
+            module.as_str()
+        ));
+        self.module_sources.push(ImportModuleSource {
+            crate_name,
+            module,
+            source: SchemaModuleSource::new(identity, path, source),
+        });
+        self
+    }
+
     fn package_for(&self, crate_name: &Name) -> Result<&SchemaPackage, SchemaError> {
         self.packages
             .iter()
@@ -248,8 +285,14 @@ impl ImportResolver {
                     found: "collection import source".to_owned(),
                 })?;
         let source = ImportSource::try_from(source_name)?;
-        let package = self.package_for(source.crate_name())?;
-        let module_source = package.load_module(source.module().clone())?;
+        let module_source = if let Some(module) = self.module_sources.iter().find(|module| {
+            &module.crate_name == source.crate_name() && &module.module == source.module()
+        }) {
+            module.source.clone()
+        } else {
+            self.package_for(source.crate_name())?
+                .load_module(source.module().clone())?
+        };
         let module_schema = module_source.lower_with_resolver(engine, self)?;
         if module_schema
             .declared_type_named(source.type_name().local_part())

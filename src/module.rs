@@ -184,6 +184,18 @@ pub struct SchemaModuleSource {
 }
 
 impl SchemaModuleSource {
+    pub fn new(
+        identity: SchemaIdentity,
+        path: impl Into<PathBuf>,
+        source: impl Into<String>,
+    ) -> Self {
+        Self {
+            identity,
+            path: path.into(),
+            source: source.into(),
+        }
+    }
+
     pub fn identity(&self) -> &SchemaIdentity {
         &self.identity
     }

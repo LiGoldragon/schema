@@ -361,6 +361,17 @@ impl SchemaEngine {
             .map(|schema| SpecifiedSchema::from(&schema))
     }
 
+    pub fn lower_specified_source_with_resolver(
+        &self,
+        source: &str,
+        identity: SchemaIdentity,
+        resolver: &ImportResolver,
+    ) -> Result<SpecifiedSchema, SchemaError> {
+        let mut context = MacroContext::default();
+        self.lower_source_with_resolver(source, identity, &mut context, resolver)
+            .map(|schema| SpecifiedSchema::from(&schema))
+    }
+
     pub fn lower_schema_source(
         &self,
         source: &SchemaSource,

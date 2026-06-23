@@ -1812,6 +1812,20 @@ pub struct SourceStreamBody {
 }
 
 impl SourceStreamBody {
+    pub fn new(
+        token: SourceReference,
+        opened: SourceReference,
+        event: SourceReference,
+        close: SourceReference,
+    ) -> Self {
+        Self {
+            token,
+            opened,
+            event,
+            close,
+        }
+    }
+
     pub fn token(&self) -> &SourceReference {
         &self.token
     }
@@ -1965,6 +1979,10 @@ pub struct SourceFamilyBody {
 }
 
 impl SourceFamilyBody {
+    pub fn new(record: Name, table: TableName, key: FamilyKey) -> Self {
+        Self { record, table, key }
+    }
+
     pub fn record(&self) -> &Name {
         &self.record
     }
@@ -2290,6 +2308,18 @@ impl SourceField {
             name,
             value: SourceFieldValue::Reference(reference),
             positional: true,
+        }
+    }
+
+    pub fn from_type_reference(name: Name, reference: &TypeReference) -> Self {
+        let source = SourceReference::from_type_reference(reference);
+        match &source {
+            SourceReference::Plain(reference_name)
+                if Name::new(reference_name.field_name()) == name =>
+            {
+                Self::derived(reference_name.clone())
+            }
+            _ => Self::from_reference(name, source),
         }
     }
 
@@ -3059,6 +3089,35 @@ pub enum SourceReference {
 impl SourceReference {
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         Self::from_raw(&RawNotaDatatype::from_block(block)?)
+    }
+
+    pub fn from_type_reference(reference: &TypeReference) -> Self {
+        match reference {
+            TypeReference::String => Self::Plain(Name::new("String")),
+            TypeReference::Integer => Self::Plain(Name::new("Integer")),
+            TypeReference::Boolean => Self::Plain(Name::new("Boolean")),
+            TypeReference::Path => Self::Plain(Name::new("Path")),
+            TypeReference::Bytes => Self::Plain(Name::new("Bytes")),
+            TypeReference::FixedBytes(width) => Self::FixedBytes(*width),
+            TypeReference::Plain(name) => Self::Plain(name.clone()),
+            TypeReference::Vector(reference) => {
+                Self::Vector(Box::new(Self::from_type_reference(reference)))
+            }
+            TypeReference::Map(key, value) => Self::Map(
+                Box::new(Self::from_type_reference(key)),
+                Box::new(Self::from_type_reference(value)),
+            ),
+            TypeReference::Optional(reference) => {
+                Self::Optional(Box::new(Self::from_type_reference(reference)))
+            }
+            TypeReference::ScopeOf(reference) => {
+                Self::ScopeOf(Box::new(Self::from_type_reference(reference)))
+            }
+            TypeReference::Application { head, arguments } => Self::Application {
+                head: head.name().clone(),
+                arguments: arguments.iter().map(Self::from_type_reference).collect(),
+            },
+        }
     }
 
     /// The plain type name when this reference is a bare named type, else
