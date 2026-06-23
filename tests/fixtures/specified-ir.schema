@@ -1,0 +1,29 @@
+{}
+[Record Observe Version]
+[RecordAccepted]
+{
+  Record RecordRequest
+  Observe Query
+  RecordAccepted RecordIdentifier
+  RecordRequest { record_entry.Entry record_reason.Justification }
+  Entry { domains.(Vector Domain) Kind Description Certainty Importance Privacy Referents }
+  Justification { Testimony Reasoning }
+  Query { filter.DomainMatch limit.(Optional Integer) }
+  Domains (Vector Domain)
+  Testimony (Vector VerbatimQuote)
+  VerbatimQuote { QuoteText OptionalAntecedent }
+  OptionalAntecedent (Optional Antecedent)
+  Antecedent String
+  QuoteText String
+  Reasoning String
+  Description String
+  Referents (Vector String)
+  RecordIdentifier String
+  Domain [Health Technology]
+  DomainMatch [Any Partial Full]
+  Kind [Decision Principle Correction Clarification Constraint]
+  Certainty Magnitude
+  Importance Magnitude
+  Privacy Magnitude
+  Magnitude [Zero Minimum VeryLow Low Medium High VeryHigh Maximum]
+}

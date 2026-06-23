@@ -9,6 +9,7 @@ mod raw;
 mod resolution;
 mod schema;
 mod source;
+mod specified;
 mod upgrade;
 
 pub use instance::InstanceSchemaText;
@@ -48,6 +49,11 @@ pub use source::{
     SourceMethodSignature, SourceNamespace, SourceNamespaceEntry, SourceReference, SourceRelation,
     SourceRelationValue, SourceRelations, SourceRootBody, SourceRootEnum, SourceStructBody,
     SourceVariantName, SourceVariantPayload, SourceVariantSignature, StreamRelationKeyword,
+};
+pub use specified::{
+    SpecifiedDeclaration, SpecifiedDeclarationBody, SpecifiedField, SpecifiedPayload,
+    SpecifiedPayloadBody, SpecifiedPayloadShape, SpecifiedRoot, SpecifiedRootApplication,
+    SpecifiedRootEnum, SpecifiedSchema, SpecifiedVariant, SpecifiedVariantSummary,
 };
 pub use upgrade::{
     AddField, AddVariant, ChangeFieldType, DefaultValue, FieldMigration, MigrationSpec, SchemaEdit,
