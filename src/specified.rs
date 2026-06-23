@@ -419,6 +419,15 @@ impl SpecifiedVariant {
                 payload.reference(),
             ))
         });
+        if self.stream_relation().is_none()
+            && matches!(
+                &payload,
+                Some(SourceVariantPayload::Reference(SourceReference::Plain(name)))
+                    if name == self.name()
+            )
+        {
+            return SourceVariantSignature::from_self_tagged(self.name.clone());
+        }
         match (payload, self.stream_relation()) {
             (Some(payload), Some(relation)) => SourceVariantSignature::Streaming(
                 SourceVariantName::new(self.name.clone()),
@@ -612,6 +621,15 @@ impl SpecifiedVariantSummary {
         let payload = self.payload().map(|reference| {
             SourceVariantPayload::Reference(SourceReference::from_type_reference(reference))
         });
+        if self.stream_relation().is_none()
+            && matches!(
+                &payload,
+                Some(SourceVariantPayload::Reference(SourceReference::Plain(name)))
+                    if name == self.name()
+            )
+        {
+            return SourceVariantSignature::from_self_tagged(self.name.clone());
+        }
         match (payload, self.stream_relation()) {
             (Some(payload), Some(relation)) => SourceVariantSignature::Streaming(
                 SourceVariantName::new(self.name.clone()),

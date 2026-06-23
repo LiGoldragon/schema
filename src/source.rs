@@ -2773,6 +2773,10 @@ impl SourceVariantSignature {
         Self::Data(SourceVariantName::new(name), payload)
     }
 
+    pub fn from_self_tagged(name: Name) -> Self {
+        Self::SelfTagged(SourceVariantName::new(name))
+    }
+
     pub fn name(&self) -> &Name {
         match self {
             Self::Unit(name)
