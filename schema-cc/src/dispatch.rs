@@ -1,33 +1,33 @@
-//! Emission of schema-next's REAL parenthesis-reference dispatch.
+//! Emission of schema's REAL parenthesis-reference dispatch.
 //!
-//! This module emits the dispatch schema-next actually links: a method body
-//! over schema-next's real types (`Self` = `TypeReference`, `SchemaError`,
+//! This module emits the dispatch schema actually links: a method body
+//! over schema's real types (`Self` = `TypeReference`, `SchemaError`,
 //! `MacroRegistry`, `MacroContext`, `Block`). schema-cc is co-located with
-//! schema-next as a workspace member, so naming those types in the emitted
-//! text is sound — the generated source compiles into schema-next, not
+//! schema as a workspace member, so naming those types in the emitted
+//! text is sound — the generated source compiles into schema, not
 //! schema-cc. (This emission replaced the v0 standalone resolver, which only
 //! proved structure and precedence over abstract placeholders with `todo!()`
 //! arms; that second mechanism could silently drift from the real one, so it
 //! was retired in favor of this single, consumed emission.)
 //!
 //! The emitted body is precedence-ordered exactly as the grammar declares:
-//! each `Builtin` head/arity arm dispatches to schema-next's uniform
+//! each `Builtin` head/arity arm dispatches to schema's uniform
 //! `resolve_<snake>` construction method; then the reserved-head guard
 //! (derived from the grammar's built-in set, not a hand-written enum) maps an
 //! arity-mismatched reserved head to `UnknownTypeReferenceForm`; then the
 //! fallback tail `Self::from_macro_or_application` carries the
 //! `DeclaredMacro` (registry) and `Application` (generic) rungs that stay in
-//! schema-next.
+//! schema.
 //!
 //! Nothing here interprets the grammar at runtime: the output is Rust text,
-//! committed and freshness-gated by schema-next's `build.rs`.
+//! committed and freshness-gated by schema's `build.rs`.
 
 use crate::grammar::{BuiltinArity, BuiltinHead, ReferenceForm};
 use crate::validate::ValidatedReferenceGrammar;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-/// schema-next's parenthesis-reference dispatch, emitted from a validated
+/// schema's parenthesis-reference dispatch, emitted from a validated
 /// grammar as a Rust token stream and pretty-printed source.
 ///
 /// Built via `From<&ValidatedReferenceGrammar>`; rendered to committable
@@ -66,7 +66,7 @@ impl From<&ValidatedReferenceGrammar> for ReferenceDispatch {
         // The fallback tail. Validation guarantees the shape
         // `Builtin* DeclaredMacro? Application`, so the DeclaredMacro
         // (registry) and Application (generic) rungs both land in
-        // schema-next's `from_macro_or_application`, which implements
+        // schema's `from_macro_or_application`, which implements
         // registry-then-application. Both markers map to that one tail; no
         // emitted stage exists that the grammar did not declare.
         let fallback_tail = quote! {
@@ -108,7 +108,7 @@ impl From<&ValidatedReferenceGrammar> for ReferenceDispatch {
 }
 
 /// One emitted built-in dispatch arm: a reserved head plus the parenthesis
-/// object count it must hold, mapped to schema-next's uniform construction
+/// object count it must hold, mapped to schema's uniform construction
 /// method `resolve_<snake>`. Carries the data each arm reads, so the emission
 /// is a method on that data rather than a free helper.
 struct BuiltinDispatchArm<'form> {
@@ -124,7 +124,7 @@ impl<'form> BuiltinDispatchArm<'form> {
         }
     }
 
-    /// The `resolve_<snake>` method name schema-next exposes for this head:
+    /// The `resolve_<snake>` method name schema exposes for this head:
     /// `resolve_` followed by the head's PascalCase spelling in snake_case
     /// (`ScopeOf` -> `resolve_scope_of`).
     fn resolver_method(&self) -> proc_macro2::Ident {

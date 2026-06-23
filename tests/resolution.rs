@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use schema_next::{
+use schema::{
     ImportResolver, ImportSource, MacroContext, Name, SchemaEngine, SchemaError, SchemaIdentity,
 };
 
@@ -105,7 +105,7 @@ fn resolver_resolves_import_of_dependency_root_enum() {
 fn resolver_preserves_caller_dependencies_through_local_plane_imports() {
     let runtime_root =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/nested-runtime");
-    let runtime_package = schema_next::SchemaPackage::new(runtime_root, "nested-runtime", "0.1.0");
+    let runtime_package = schema::SchemaPackage::new(runtime_root, "nested-runtime", "0.1.0");
     let resolver = ImportResolver::new().with_dependency(
         "nested-signal",
         fixture_schema_dir("nested-signal"),

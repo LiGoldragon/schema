@@ -26,7 +26,7 @@ pub use macros::{
     MacroPosition, MacroRegistry, SchemaMacroHandler,
 };
 pub use module::{SchemaModuleSource, SchemaPackage};
-pub use nota_next::{
+pub use nota::{
     AtomCase, AtomShape, CaptureName, DelimitedShape, MacroCandidate,
     MacroDelimiter as NotaMacroDelimiter, MacroNodeDefinition as NotaMacroNodeDefinition,
     MacroObjectCount, Pattern, PatternElement, PositionPredicate, SigilPosition, SigilSpec,

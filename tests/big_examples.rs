@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use schema_next::{
+use schema::{
     Declaration, EnumDeclaration, ImportResolver, MacroContext, Schema, SchemaEngine,
     SchemaIdentity, TypeDeclaration,
 };
@@ -113,11 +113,11 @@ fn assert_has_type(declarations: &[Declaration], name: &str) {
     assert!(found, "missing namespace type {name}");
 }
 
-fn root_enum(root: &schema_next::Root) -> &EnumDeclaration {
+fn root_enum(root: &schema::Root) -> &EnumDeclaration {
     root.as_enum().expect("root is the enum-body form")
 }
 
-fn assert_has_variant(root: &schema_next::Root, name: &str) {
+fn assert_has_variant(root: &schema::Root, name: &str) {
     let declaration = root_enum(root);
     assert!(
         declaration

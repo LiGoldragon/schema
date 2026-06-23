@@ -6,8 +6,8 @@ schema compiler rather than hand-writing it. (Spirit `vpbx`.)
 
 ## Why it exists
 
-The stack already turns declared schema data into Rust (`schema-next` →
-`schema-rust-next`). But the **compiler itself** — the reference-resolution
+The stack already turns declared schema data into Rust (`schema` →
+`schema-rust`). But the **compiler itself** — the reference-resolution
 dispatch, the built-in head table, the shape vocabulary, the emission rules — is
 still hand-written Rust whose correctness rests on match-arm ordering pinned by
 tests. That is the one place that escaped *a language is data* (Spirit `7c71`):
@@ -25,12 +25,12 @@ reference-resolution surface to the whole compiler.
 
 | Tier | What | How it is defined |
 |---|---|---|
-| **Seed** | `nota-next` — the NOTA block parser + the one structural derive | irreducible, hand-written, context-free |
+| **Seed** | `nota` — the NOTA block parser + the one structural derive | irreducible, hand-written, context-free |
 | **Definition** | `schema-cc` — reference grammar + dispatch precedence, built-in heads, shape vocabulary, emission rules | **typed data**, decoded by the seed |
-| **Compiler** | `schema-next` / `schema-rust-next` — resolution + lowering + Rust emission | increasingly **generated** from `schema-cc` data |
+| **Compiler** | `schema` / `schema-rust` — resolution + lowering + Rust emission | increasingly **generated** from `schema-cc` data |
 
 The bootstrap bottoms out cleanly: `schema-cc`'s own definitions are structural
-forms the `nota-next` seed can decode **without** the registry-aware resolver, so
+forms the `nota` seed can decode **without** the registry-aware resolver, so
 the seed reads the definition, the definition generates the resolver/emitter, and
 those handle everything user-declared. No chicken-and-egg.
 
@@ -53,6 +53,6 @@ collision; sane arities). Then more of the definition migrates in.
 - **Everything reading NOTA structure goes through typed structural nodes**; if a
   shape cannot be expressed, surface it to the psyche rather than work around it
   (Spirit `v0n6`).
-- **Upstream of `schema-next`.** Dependency order is `nota-next` → `schema-cc` →
-  `schema-next` → `schema-rust-next`; `schema-cc` must not depend on `schema-next`
+- **Upstream of `schema`.** Dependency order is `nota` → `schema-cc` →
+  `schema` → `schema-rust`; `schema-cc` must not depend on `schema`
   (it generates into it).

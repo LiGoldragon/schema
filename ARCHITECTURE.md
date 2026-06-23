@@ -1,17 +1,17 @@
 # Architecture
 
-`schema-next` turns NOTA structure into typed schema source data.
+`schema` turns NOTA structure into typed schema source data.
 
 ## Pipeline
 
-1. `nota-next::Document` parses source into blocks.
+1. `nota::Document` parses source into blocks.
 2. `SchemaEngine` records the document's `StructureHeader`: a compact
    first-two-level witness emitted by the NOTA delimiter pass.
 3. `SchemaEngine` validates the root object count.
 4. `MacroRegistry` dispatches position-aware macros for imports, input enum,
    output enum, namespace declarations, struct fields, and enum variants. Its
-   structural expectations are `nota-next` macro-node definitions: schema-next
-   supplies schema positions and handlers, while nota-next supplies pattern
+   structural expectations are `nota` macro-node definitions: schema
+   supplies schema positions and handlers, while nota supplies pattern
    matching, named captures, and no-match diagnostics.
 5. `SchemaSource` lowers into `Schema`, the ordered semantic schema value used
    by Rust emission and schema upgrade logic.
@@ -19,7 +19,7 @@
 ## Authored Schema Source
 
 `SchemaSource` is the current typed authored-language value produced after raw
-`nota-next::Document` parsing. The target schema pipeline is that authored
+`nota::Document` parsing. The target schema pipeline is that authored
 `.schema` deserializes into Rust datatypes that fully define the schema; that
 schema-in-Rust value is rkyv-serializable; and Rust interface code is lowered
 from that typed value. `SchemaSource` reads a full schema module document —
@@ -67,9 +67,9 @@ rejected. This resolution happens on `SchemaSource` data, not by rewriting the
 user's source string into the older `(Lookup RecordIdentifier)` pair form.
 
 Enum variant entries in authored source are typed structural NOTA nodes.
-`SourceVariantSignature` implements `nota-next::StructuralMacroNode` and uses
+`SourceVariantSignature` implements `nota::StructuralMacroNode` and uses
 the same ordered `EnumVariants` structural cases as codec-facing
-`nota-next::StructuralVariant` values: a bare PascalCase atom is a unit/header
+`nota::StructuralVariant` values: a bare PascalCase atom is a unit/header
 variant, a parenthesized one-object block is a same-named data-carrying
 variant, a parenthesized two-object block is the explicit different-payload
 form, and the four-object forms `(Variant Payload opens StreamName)` /
@@ -106,11 +106,11 @@ surface: `Schema::family_closure(record)` over the declared record type.
 `RawSchemaFile` is the bottom layer used to inspect a core schema before
 schema lowering. It takes a path plus source text, derives the root type name
 from the file stem (`core.schema` -> `Core`), parses the source with
-`nota-next`, and requires one root brace object.
+`nota`, and requires one root brace object.
 
 The input file is still `.schema`, and `.schema` must be legal NOTA. Tests
 that prove schema-file behavior use real `.schema` fixtures and parse them
-through `nota-next::Document` before the raw schema reader interprets the
+through `nota::Document` before the raw schema reader interprets the
 known root shape.
 
 That root brace object is a native NOTA key/value map. Odd positions are
@@ -148,7 +148,7 @@ owner, and the redb-backed semantic store are removed outright. The pipeline is
 `.schema` -> schema-in-Rust (`SchemaSource` source nouns own resolution) ->
 `Schema` -> Rust. The text/binary source artifact lives at
 `SchemaSourceArtifact`, and database work lives in production SEMA engines, not
-in schema-next.
+in schema.
 
 Tests prove the endpoint by asserting the Rust data directly and by
 round-tripping the produced `Schema` through rkyv:
@@ -294,7 +294,7 @@ not emit a template string and parse it back through `Document::parse`.
 The current structural expansion object can lower template-owned atoms and
 delimiter nodes plus captured source blocks. Registry dispatch for arbitrary
 type-reference macro invocations still operates on source `Block` values; the
-fully shared version belongs with the nota-next macro-node substrate once it
+fully shared version belongs with the nota macro-node substrate once it
 exposes owned structural macro objects.
 
 ## Strict Key/Value Schema Syntax
@@ -349,10 +349,10 @@ the default parser.
 ## Macro Node Structural Matching
 
 `MacroNodeDefinition` is the schema-side wrapper for "what can appear here."
-Its structural cases are `nota-next::MacroNodeDefinition` values: each case is
+Its structural cases are `nota::MacroNodeDefinition` values: each case is
 a serializable pattern over atoms, delimiters, literals, rest captures, and
 named captures. Schema-next contributes the schema `MacroPosition` and the
-handler that turns a match into an `Schema` fragment; nota-next owns the
+handler that turns a match into an `Schema` fragment; nota owns the
 shape matcher.
 
 The namespace declaration node makes the strict brace model executable:
@@ -363,16 +363,16 @@ Kind [Decision]        ; symbol key + bracket value -> enum declaration case
 Topic String           ; symbol key + reference value -> alias declaration case
 ```
 
-`KeyValueDeclarationMacro::matches` delegates through the nota-next pattern
+`KeyValueDeclarationMacro::matches` delegates through the nota pattern
 registry instead of merely checking "is this a pair." When no registered macro
 matches at a node position with known cases,
 `SchemaError::UnsupportedMacroNodeStructure` reports the schema position,
-expected macro-node cases, and actual shape using the nota-next no-match
+expected macro-node cases, and actual shape using the nota no-match
 diagnostic. Type-reference positions retain their existing
 `UnknownTypeReferenceForm` path so unknown collection heads remain precise.
 
 Schema-next is now a consumer of the NOTA-layer macro mechanism for structural
-cases. Delimited captures from nota-next expose inner `NotaBody` streams, and
+cases. Delimited captures from nota expose inner `NotaBody` streams, and
 the built-in root imports, root namespace, root enum, and struct-field map
 readers strip matched delimiters before semantic lowering. Authored
 `SchemaSource` enum bodies already route through a typed `StructuralMacroNode`
@@ -488,7 +488,7 @@ module boundaries.
 - Cross-crate imports resolve through `ImportResolver`, not ad hoc text
   substitution. A local import alias names a dependency type by
   `crate:module:Type`; resolution records the dependency Rust path so
-  `schema-rust-next` can emit a `pub use` alias and keep one type identity
+  `schema-rust` can emit a `pub use` alias and keep one type identity
   across the crate boundary.
 - `TypeReference` at a reference position is an enum:
   `String`, `Integer`, `Boolean`, `Path`, `Plain(Name)`, `Vector(Box<TypeReference>)`,
@@ -499,12 +499,12 @@ module boundaries.
   symbol to its scalar variant, a different bare PascalCase symbol to `Plain`,
   `(Vector T)` to `Vector`, `(Map K V)` to `Map`, and `(Optional T)` to
   `Optional`. These names are Schema type-reference vocabulary over
-  nota-next's already-parsed structures, not raw NOTA keywords. The inner
+  nota's already-parsed structures, not raw NOTA keywords. The inner
   positions recurse, so `(Vector (Optional Topic))` and
   `(Map String (Vector Service))` nest. Parentheses with another head are
   dispatched to the user macro registry. An unknown head or wrong native
   argument count is a typed `SchemaError::UnknownTypeReferenceForm`. Lowering
-  is pure semantics over nota-next's already-parsed blocks — not a hand-rolled
+  is pure semantics over nota's already-parsed blocks — not a hand-rolled
   text parser.
 - Collection references reach every reference position. Struct fields are
   written as strict pairs such as `serviceVector (Vector Service)`,

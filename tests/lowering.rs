@@ -1,4 +1,4 @@
-use schema_next::{
+use schema::{
     EnumDeclaration, MacroContext, MacroLibrary, MacroObject, MacroOutput, MacroPosition,
     MacroRegistry, Name, Root, SchemaEngine, SchemaIdentity, SchemaMacroHandler, SchemaPackage,
     SchemaSourceArtifact, TypeDeclaration, TypeReference, Visibility,
@@ -205,7 +205,7 @@ fn redundant_dot_field_roles_are_rejected() {
 
     assert_eq!(
         error,
-        schema_next::SchemaError::RedundantExplicitFieldRole {
+        schema::SchemaError::RedundantExplicitFieldRole {
             found: "topic.Topic".to_owned(),
             type_name: "Topic".to_owned(),
         }
@@ -259,11 +259,11 @@ fn brace_namespace_rejects_parenthesized_named_objects() {
     // parenthesized named object in a namespace as a non-symbol head.
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedSymbol { .. }
-            | schema_next::SchemaError::ExpectedEvenMapEntries { .. }
-            | schema_next::SchemaError::ExpectedDelimiter { .. }
-            | schema_next::SchemaError::MacroDidNotMatch { .. }
-            | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
+        schema::SchemaError::ExpectedSymbol { .. }
+            | schema::SchemaError::ExpectedEvenMapEntries { .. }
+            | schema::SchemaError::ExpectedDelimiter { .. }
+            | schema::SchemaError::MacroDidNotMatch { .. }
+            | schema::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
 }
 
@@ -278,10 +278,10 @@ fn brace_namespace_rejects_redundant_key_value_declarations() {
     // `Entry Entry { … }` triple as a non-symbol reference body.
     assert!(matches!(
         error,
-        schema_next::SchemaError::ExpectedSymbol { .. }
-            | schema_next::SchemaError::ExpectedEvenMapEntries { .. }
-            | schema_next::SchemaError::ExpectedDelimiter { .. }
-            | schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
+        schema::SchemaError::ExpectedSymbol { .. }
+            | schema::SchemaError::ExpectedEvenMapEntries { .. }
+            | schema::SchemaError::ExpectedDelimiter { .. }
+            | schema::SchemaError::UnsupportedMacroNodeStructure { .. }
     ));
 }
 
@@ -645,14 +645,14 @@ fn macro_lowering_receives_macro_position() {
             position: MacroPosition,
             context: &mut MacroContext,
             _registry: &MacroRegistry,
-        ) -> Result<MacroOutput, schema_next::SchemaError> {
+        ) -> Result<MacroOutput, schema::SchemaError> {
             context.remember_macro(self.name());
             context.remember_position(position);
             Ok(MacroOutput::References(Vec::new()))
         }
     }
 
-    let document = nota_next::Document::parse("(Input)").expect("nota parses");
+    let document = nota::Document::parse("(Input)").expect("nota parses");
     let mut context = MacroContext::default();
     let object = document.root_object_at(0).expect("root object");
     let probe = ProbeMacro;
@@ -969,8 +969,8 @@ fn root_enum_positions_supply_input_and_output_names() {
     // root wrapper is therefore rejected at decode.
     assert!(matches!(
         error,
-        schema_next::SchemaError::UnsupportedMacroNodeStructure { .. }
-            | schema_next::SchemaError::MacroDidNotMatch { .. }
-            | schema_next::SchemaError::NotaDecode(_)
+        schema::SchemaError::UnsupportedMacroNodeStructure { .. }
+            | schema::SchemaError::MacroDidNotMatch { .. }
+            | schema::SchemaError::NotaDecode(_)
     ));
 }

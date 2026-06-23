@@ -1,4 +1,4 @@
-use nota_next::{
+use nota::{
     AtomShape, Block, CaptureName, DelimitedShape, Delimiter, MacroCandidate, MacroDelimiter,
     MacroNodeDefinition as NotaMacroNodeDefinition, MacroObjectCount as NotaMacroObjectCount,
     MacroRegistry as NotaMacroRegistry, NotaBody, Pattern, PatternElement, PositionPredicate,
@@ -17,9 +17,9 @@ use crate::{
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
-    nota_next::StructuralMacroNode,
+    nota::NotaDecode,
+    nota::NotaEncode,
+    nota::StructuralMacroNode,
     Clone,
     Copy,
     Debug,
@@ -651,24 +651,22 @@ impl MacroNodeDefinition {
             .dispatch(&object.macro_candidate(self.position))
             .expect_err("unsupported structure checked after no schema macro matched");
         match error {
-            nota_next::MacroError::NoMatch {
+            nota::MacroError::NoMatch {
                 expected, found, ..
             } => SchemaError::UnsupportedMacroNodeStructure {
                 position: self.position.as_str().to_owned(),
                 expected,
                 found,
             },
-            nota_next::MacroError::Conflict(conflict) => {
-                SchemaError::UnsupportedMacroNodeStructure {
-                    position: self.position.as_str().to_owned(),
-                    expected: vec![format!(
-                        "non-conflicting macro cases, found conflict between {} and {}",
-                        conflict.first(),
-                        conflict.second()
-                    )],
-                    found: object.describe(),
-                }
-            }
+            nota::MacroError::Conflict(conflict) => SchemaError::UnsupportedMacroNodeStructure {
+                position: self.position.as_str().to_owned(),
+                expected: vec![format!(
+                    "non-conflicting macro cases, found conflict between {} and {}",
+                    conflict.first(),
+                    conflict.second()
+                )],
+                found: object.describe(),
+            },
         }
     }
 

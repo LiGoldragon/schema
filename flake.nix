@@ -1,5 +1,5 @@
 {
-  description = "schema-next — position-aware schema engine and assembled schema";
+  description = "schema — position-aware schema engine and assembled schema";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -41,7 +41,7 @@
         checks = {
           build = craneLib.cargoBuild (commonArguments // { inherit cargoArtifacts; });
           test = craneLib.cargoTest (commonArguments // { inherit cargoArtifacts; });
-          design-examples = pkgs.runCommand "schema-next-design-examples" { } ''
+          design-examples = pkgs.runCommand "schema-design-examples" { } ''
             grep -R "design_example_schema_document_has_three_roots_or_four_with_imports" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_namespace_brace_contains_key_value_declarations" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_type_reference_macro_captures_use_dollar_sigils" ${src}/tests/design_examples.rs >/dev/null
@@ -57,9 +57,9 @@
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
             touch $out
           '';
-          no-nested-root-enum-examples = pkgs.runCommand "schema-next-no-nested-root-enum-examples" { } ''
+          no-nested-root-enum-examples = pkgs.runCommand "schema-no-nested-root-enum-examples" { } ''
             if find ${src} -name '*.witness.txt' -print -quit | grep .; then
-              echo "line-format .witness.txt goldens must not remain in schema-next" >&2
+              echo "line-format .witness.txt goldens must not remain in schema" >&2
               exit 1
             fi
             if grep -R -n -E '^\s*\((Input|Output) \(' ${src}/schemas ${src}/tests/fixtures; then
@@ -88,16 +88,16 @@
             fi
             touch $out
           '';
-          no-btree-canonical = pkgs.runCommand "schema-next-no-btree-canonical" { } ''
+          no-btree-canonical = pkgs.runCommand "schema-no-btree-canonical" { } ''
             if grep -R "BTreeMap" ${src}/src ${src}/tests ${src}/schemas; then
               echo "BTreeMap must not be canonical assembled-schema storage" >&2
               exit 1
             fi
             touch $out
           '';
-          no-obsolete-asschema-syntax = pkgs.runCommand "schema-next-no-obsolete-asschema-syntax" { } ''
+          no-obsolete-asschema-syntax = pkgs.runCommand "schema-no-obsolete-asschema-syntax" { } ''
             if find ${src} -name '*.asschema' ! -path '*/schemas/core.asschema' -print -quit | grep .; then
-              echo "obsolete .asschema syntax fixtures must not remain in schema-next" >&2
+              echo "obsolete .asschema syntax fixtures must not remain in schema" >&2
               exit 1
             fi
             grep -R "schema_source_and_semantic_schema_round_trip_without_asschema_artifacts" ${src}/tests/operator_271_closed_claims.rs >/dev/null
@@ -108,14 +108,14 @@
             fi
             touch $out
           '';
-          no-authored-features = pkgs.runCommand "schema-next-no-authored-features" { } ''
+          no-authored-features = pkgs.runCommand "schema-no-authored-features" { } ''
             if grep -R "EffectTable\\|FanOutTargets\\|StorageDescriptor\\|Features" ${src}; then
               echo "retracted authored schema features are forbidden" >&2
               exit 1
             fi
             touch $out
           '';
-          macro-registry-used = pkgs.runCommand "schema-next-macro-registry-used" { } ''
+          macro-registry-used = pkgs.runCommand "schema-macro-registry-used" { } ''
             grep -R "pub struct MacroRegistry" ${src}/src/macros.rs >/dev/null
             grep -R "SchemaEngine::with_registry" ${src}/tests/lowering.rs >/dev/null
             grep -R "default_engine_lowers_through_registered_structural_forms" ${src}/tests/lowering.rs >/dev/null
@@ -126,8 +126,8 @@
             ! grep -R "matches_pair" ${src}/src/engine.rs
             touch $out
           '';
-          declarative-schema-macros = pkgs.runCommand "schema-next-declarative-schema-macros" { } ''
-            # Per operator 271 claim 1 — schema-next 99078b20 collapsed
+          declarative-schema-macros = pkgs.runCommand "schema-declarative-schema-macros" { } ''
+            # Per operator 271 claim 1 — schema 99078b20 collapsed
             # the macro library source/artifact split. The previous check
             # asserted presence of `DeclarativeMacroLibrary::builtin` and
             # `pub struct MacroLibraryData`; both were retired in the
@@ -156,7 +156,7 @@
             ! grep -R "MacroTemplateData" ${src}/src
             touch $out
           '';
-          operator-271-closed-claims = pkgs.runCommand "schema-next-operator-271-closed-claims" { } ''
+          operator-271-closed-claims = pkgs.runCommand "schema-operator-271-closed-claims" { } ''
             # Architectural-truth witnesses for the closed claims in
             # operator 271. The test file at
             # tests/operator_271_closed_claims.rs runs through cargo test;
@@ -175,14 +175,14 @@
             grep -R "schema_source_and_semantic_schema_round_trip_without_asschema_artifacts" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             touch $out
           '';
-          namespace-braces-are-key-value = pkgs.runCommand "schema-next-namespace-braces-are-key-value" { } ''
+          namespace-braces-are-key-value = pkgs.runCommand "schema-namespace-braces-are-key-value" { } ''
             grep -R "brace_namespace_rejects_parenthesized_named_objects" ${src}/tests/lowering.rs >/dev/null
             grep -R "brace_namespace_rejects_redundant_key_value_declarations" ${src}/tests/lowering.rs >/dev/null
             ! grep -R "NamedTypeDefinition" ${src}/src ${src}/schemas ${src}/tests
             ! grep -R -n -E '^  \([A-Z][A-Za-z0-9]* [\[\(]' ${src}/schemas/root.schema ${src}/schemas/core.schema ${src}/schemas/spirit-min.schema
             touch $out
           '';
-          schema-module-entrypoint = pkgs.runCommand "schema-next-schema-module-entrypoint" { } ''
+          schema-module-entrypoint = pkgs.runCommand "schema-schema-module-entrypoint" { } ''
             grep -R "pub struct SchemaPackage" ${src}/src/module.rs >/dev/null
             grep -R "lib.schema" ${src}/src/module.rs >/dev/null
             grep -R "package_loader_reads_schema_lib_entrypoint" ${src}/tests/lowering.rs >/dev/null
@@ -195,7 +195,7 @@
             grep -R "colon_qualified_names_lower_as_schema_names" ${src}/tests/lowering.rs >/dev/null
             touch $out
           '';
-          raw-core-schema-example = pkgs.runCommand "schema-next-raw-core-schema-example" { } ''
+          raw-core-schema-example = pkgs.runCommand "schema-raw-core-schema-example" { } ''
             test -f ${src}/tests/fixtures/raw-core/core.schema
             test -f ${src}/tests/fixtures/raw-core/non-map-root.schema
             test -f ${src}/tests/fixtures/raw-core/odd-map.schema
@@ -208,14 +208,14 @@
             grep -F "{ key Name value RawDatatype }" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
             touch $out
           '';
-          no-production-free-functions = pkgs.runCommand "schema-next-no-production-free-functions" { } ''
+          no-production-free-functions = pkgs.runCommand "schema-no-production-free-functions" { } ''
             if grep -R -n -E '^(pub(\([^)]*\))? )?fn ' ${src}/src; then
               echo "production Rust must not use module-level free functions" >&2
               exit 1
             fi
             touch $out
           '';
-          no-production-unit-structs = pkgs.runCommand "schema-next-no-production-unit-structs" { } ''
+          no-production-unit-structs = pkgs.runCommand "schema-no-production-unit-structs" { } ''
             if grep -R -n -E '^struct [A-Za-z][A-Za-z0-9_]*;' ${src}/src; then
               echo "production Rust must not use unit structs as namespace/method holders" >&2
               exit 1
@@ -233,7 +233,7 @@
           });
         };
         devShells.default = pkgs.mkShell {
-          name = "schema-next";
+          name = "schema";
           packages = [ pkgs.jujutsu pkgs.pkg-config toolchain ];
         };
       });

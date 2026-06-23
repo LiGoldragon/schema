@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use nota_next::{Block, Delimiter, Document};
+use nota::{Block, Delimiter, Document};
 
 use crate::{Name, SchemaError, macros::SchemaBlockExt};
 

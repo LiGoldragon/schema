@@ -1,7 +1,7 @@
 //! Validation lifts the conflict checks that match-arm ordering could not
 //! express into typed errors on a `ReferenceGrammar`.
 
-use nota_next::StructuralMacroNode;
+use nota::StructuralMacroNode;
 use schema_cc::{Error, ReferenceGrammar, ValidatedReferenceGrammar};
 
 const CANONICAL: &str = "(ReferenceGrammar (Builtin Vector 1) (Builtin Optional 1) \

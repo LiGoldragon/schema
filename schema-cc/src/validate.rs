@@ -6,7 +6,7 @@
 //! precedence in the source order of its arms, and nothing checks that the
 //! catch-all is last or that two arms don't claim the same head. Lifting the
 //! precedence into a [`ReferenceGrammar`] value makes those rules checkable —
-//! this is the registry-aware analogue of nota-next's
+//! this is the registry-aware analogue of nota's
 //! `StructuralVariantSet::validate_no_silent_conflicts`.
 
 use crate::error::Error;

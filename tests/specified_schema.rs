@@ -1,4 +1,4 @@
-use schema_next::{
+use schema::{
     ImportResolver, SchemaEngine, SchemaIdentity, SourceDeclaration, SourceDeclarations,
     SpecifiedDeclarationBody, SpecifiedPayloadBody, SpecifiedPayloadShape, SpecifiedSchema,
     TypeDeclaration, TypeReference,
@@ -226,7 +226,7 @@ fn specified_schema_content_hash_excludes_derived_payload_shape_cache() {
             .content_hash()
             .expect("specified schema hashes")
             .to_hex(),
-        "b1b8b5aad9a636ebf66c9f24999531560f4a291df93c2d38a24ae204fb57d9ab",
+        "ab69c38661f49c52e7809b987de37ebc9e5b50d68c6d31f80c838220cc514e76",
         "the golden hash is over the canonical specified-schema bytes; adding a stored derived shape cache changes this value"
     );
 }
@@ -285,20 +285,20 @@ fn specified_schema_projects_self_tagged_variants_through_schema_codec() {
         .declarations()
         .first()
         .expect("one projected declaration");
-    let Some(schema_next::SourceDeclarationValue::Enum(body)) = declaration.value() else {
+    let Some(schema::SourceDeclarationValue::Enum(body)) = declaration.value() else {
         panic!("projected Domain should decode as an enum declaration");
     };
     assert!(
         matches!(
             body.variants().first(),
-            Some(schema_next::SourceVariantSignature::SelfTagged(_))
+            Some(schema::SourceVariantSignature::SelfTagged(_))
         ),
         "the declaration codec preserves the payload-bearing self-tagged form"
     );
 
     let lowered = SchemaEngine::default()
         .lower_schema_source(
-            &schema_next::SchemaSource::from_schema_text(
+            &schema::SchemaSource::from_schema_text(
                 "[]\n[]\n{\n  Domain [(Health)]\n  Health [Body Mind]\n}",
             )
             .expect("reconstructed source decodes"),

@@ -1,4 +1,4 @@
-use nota_next::{Block, Delimiter, Document, StructuralMacroNode};
+use nota::{Block, Delimiter, Document, StructuralMacroNode};
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaError,

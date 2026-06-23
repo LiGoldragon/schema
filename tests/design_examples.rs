@@ -1,4 +1,4 @@
-//! Design-illustrating tests for the schema-next stack.
+//! Design-illustrating tests for the schema stack.
 //!
 //! Each test illustrates ONE load-bearing design point with a short
 //! fixture and a focused assertion. Test names start with
@@ -9,8 +9,8 @@
 //! a design report cites a test, the test in this file should be the
 //! canonical example.
 
-use nota_next::{Document, StructureShape};
-use schema_next::{
+use nota::{Document, StructureShape};
+use schema::{
     EnumDeclaration, MacroContext, MacroDispatch, MacroLibrary, MacroObject, MacroPair,
     MacroPosition, MacroRegistry, Name, Root, SchemaEngine, SchemaError, SchemaIdentity,
     SchemaNode, SchemaNodeData, SchemaNodeValue, TypeDeclaration, TypeReference,

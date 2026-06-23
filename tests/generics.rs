@@ -3,7 +3,7 @@
 //! declaration's type-name position.
 //!
 //! `TypeReference::Application { head, arguments }` is the broad
-//! generic-application form, captured by nota-next's
+//! generic-application form, captured by nota's
 //! `#[shape(pascal_head, body)]` structural-macro seam. The first block of
 //! tests pins the application-form behaviours from the earlier slice:
 //!
@@ -26,17 +26,17 @@
 
 use std::path::PathBuf;
 
-use nota_next::{Document, NotaDecode, NotaEncode};
-use schema_next::{
+use nota::{Document, NotaDecode, NotaEncode};
+use schema::{
     ApplicationHead, ImportResolver, MacroContext, Name, Root, SchemaEngine, SchemaError,
     SchemaIdentity, SchemaSourceArtifact, TypeDeclaration, TypeReference,
 };
 
-fn lower(namespace: &str) -> schema_next::Schema {
+fn lower(namespace: &str) -> schema::Schema {
     try_lower(namespace).expect("schema lowers")
 }
 
-fn try_lower(namespace: &str) -> Result<schema_next::Schema, SchemaError> {
+fn try_lower(namespace: &str) -> Result<schema::Schema, SchemaError> {
     SchemaEngine::default().lower_source(
         &format!("[] [] {{ {namespace} }}"),
         SchemaIdentity::new("generics:lib", "0.1.0"),
@@ -44,7 +44,7 @@ fn try_lower(namespace: &str) -> Result<schema_next::Schema, SchemaError> {
 }
 
 fn single_reference<'schema>(
-    schema: &'schema schema_next::Schema,
+    schema: &'schema schema::Schema,
     name: &str,
 ) -> &'schema TypeReference {
     match schema.type_named(name).expect("type present") {
@@ -209,10 +209,7 @@ fn closure_over_imported_generic_head_records_the_import() {
 // (decision O8).
 // ----------------------------------------------------------------------
 
-fn declaration_parameters<'schema>(
-    schema: &'schema schema_next::Schema,
-    name: &str,
-) -> &'schema [Name] {
+fn declaration_parameters<'schema>(schema: &'schema schema::Schema, name: &str) -> &'schema [Name] {
     schema
         .namespace()
         .iter()
@@ -400,7 +397,7 @@ fn application_root_source(read_output: &str) -> String {
     )
 }
 
-fn lower_application_root(read_output: &str) -> schema_next::Schema {
+fn lower_application_root(read_output: &str) -> schema::Schema {
     SchemaEngine::default()
         .lower_source(
             &application_root_source(read_output),

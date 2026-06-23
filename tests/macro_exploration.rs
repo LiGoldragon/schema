@@ -14,8 +14,8 @@
 //! express the same idea, OR uses a combination. Fixtures are tight —
 //! one concept per test.
 
-use nota_next::Document;
-use schema_next::{
+use nota::Document;
+use schema::{
     MacroContext, MacroLibrary, MacroLibraryArtifact, MacroLibrarySourceEntry, MacroObject,
     MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaError, SchemaMacroHandler,
     TypeDeclaration, TypeReference,
@@ -430,7 +430,7 @@ struct MacroLibraryArtifactTestPaths {
 impl MacroLibraryArtifactTestPaths {
     fn new(name: &str) -> Self {
         let directory = std::env::temp_dir().join(format!(
-            "schema-next-macro-library-artifact-{}-{name}",
+            "schema-macro-library-artifact-{}-{name}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&directory);
@@ -570,7 +570,7 @@ impl BraceNamedPairsMacro {
         Self { label }
     }
 
-    fn all_odd_positions_pascal_case(&self, block: &nota_next::Block) -> bool {
+    fn all_odd_positions_pascal_case(&self, block: &nota::Block) -> bool {
         let count = block.holds_root_objects();
         for index in (0..count).step_by(2) {
             let Some(child) = block.root_object_at(index) else {
@@ -896,7 +896,7 @@ fn macro_object_pair_versus_block_dispatch_shapes() {
     let bodies = Document::parse("Foo [Bar Baz]").expect("nota parses");
     let name = bodies.root_object_at(0).expect("name");
     let definition = bodies.root_object_at(1).expect("definition");
-    let pair = MacroObject::Pair(schema_next::MacroPair { name, definition });
+    let pair = MacroObject::Pair(schema::MacroPair { name, definition });
     assert!(macro_obj.matches(pair, MacroPosition::NamespaceDeclaration));
 }
 
@@ -949,8 +949,8 @@ fn macro_library_source_rejects_malformed_definitions_with_typed_errors() {
 
 #[test]
 fn expansion_template_enum_decodes_each_template_kind() {
-    use nota_next::StructuralMacroNode;
-    use schema_next::{MacroTemplate, TypeTemplate};
+    use nota::StructuralMacroNode;
+    use schema::{MacroTemplate, TypeTemplate};
 
     let struct_template = MacroTemplate::from_structural_nota("(Type (Struct $Name [$*Fields]))")
         .expect("Type Struct template decodes");
@@ -1011,8 +1011,8 @@ fn expansion_template_enum_decodes_each_template_kind() {
 
 #[test]
 fn expansion_template_enum_rejects_unknown_heads_with_typed_errors() {
-    use nota_next::StructuralMacroNode;
-    use schema_next::MacroTemplate;
+    use nota::StructuralMacroNode;
+    use schema::MacroTemplate;
 
     let unknown_head = MacroTemplate::from_structural_nota("(Bogus $X)")
         .expect_err("unknown template head does not decode");

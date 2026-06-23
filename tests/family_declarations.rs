@@ -1,6 +1,6 @@
 use std::fs;
 
-use schema_next::{
+use schema::{
     FamilyKey, Schema, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
     TypeDeclaration,
 };
@@ -12,7 +12,7 @@ fn family_fixture() -> String {
         .to_owned()
 }
 
-fn lower(source: &str) -> Result<schema_next::Schema, SchemaError> {
+fn lower(source: &str) -> Result<schema::Schema, SchemaError> {
     SchemaEngine::default().lower_source(source, SchemaIdentity::new("example:lib", "0.1.0"))
 }
 

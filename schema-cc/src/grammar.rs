@@ -1,6 +1,6 @@
 //! `ReferenceGrammar` — the parenthesis-reference dispatch precedence as data.
 //!
-//! The whole grammar is one NOTA value the `nota-next` seed decodes directly:
+//! The whole grammar is one NOTA value the `nota` seed decodes directly:
 //!
 //! ```text
 //! (ReferenceGrammar (Builtin Vector 1) (Builtin Optional 1) (Builtin ScopeOf 1)
@@ -12,7 +12,7 @@
 //! interprets the grammar at runtime — [`crate::dispatch`] reads a validated
 //! grammar and emits the resolver as Rust.
 
-use nota_next::{
+use nota::{
     Block, BlockShape, CaptureName, MacroCandidate, PositionPredicate, StructuralMacroError,
     StructuralMacroNode, StructuralMacroNodeError, StructuralVariant,
 };

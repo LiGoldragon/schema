@@ -30,7 +30,7 @@
 
 use std::path::PathBuf;
 
-use schema_next::{
+use schema::{
     ApplicationHead, EnumVariant, ImportResolver, MacroContext, Name, Root, RootApplication,
     Schema, SchemaEngine, SchemaIdentity, TypeReference,
 };

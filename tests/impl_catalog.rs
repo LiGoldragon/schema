@@ -1,6 +1,6 @@
 use std::fs;
 
-use schema_next::{
+use schema::{
     ImplFact, ImplReference, MethodParameter, MethodSignature, Name, RustSurface, Schema,
     SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, SourceImplEntry,
     SourceNamespaceEntry, SourceReference, TypeDeclaration, TypeReference,

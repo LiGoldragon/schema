@@ -4,14 +4,14 @@ Read `INTENT.md` first, then `ARCHITECTURE.md`, then this file, then `skills.md`
 
 schema-cc is the schema **compiler-compiler**: the compiler's own definition kept
 as typed data that *generates* the schema compiler, bottoming out in the
-nota-next seed. It is **build-time only** — it never links into a runtime binary
+nota seed. It is **build-time only** — it never links into a runtime binary
 (Spirit `9rjq`).
 
 ## Where it sits
 
-`nota-next` (the frozen seed) → **`schema-cc`** (the definition as data) →
-`schema-next` / `schema-rust-next` (the generated compiler). schema-cc must
-**not** depend on `schema-next` — it generates into it; the reverse edge is a
+`nota` (the frozen seed) → **`schema-cc`** (the definition as data) →
+`schema` / `schema-rust` (the generated compiler). schema-cc must
+**not** depend on `schema` — it generates into it; the reverse edge is a
 cycle.
 
 ## Discipline (before authoring Rust, read `skills.md`)
@@ -19,7 +19,7 @@ cycle.
 - Verbs on data-bearing nouns; **no** free functions (outside `fn main` /
   `#[cfg(test)]`) and **no** ZST namespace holders.
 - One typed `Error` enum via `thiserror` in `src/error.rs`; no `anyhow`/`eyre`.
-- Decode NOTA through nota-next's `StructuralMacroNode` — **never** a hand-rolled
+- Decode NOTA through nota's `StructuralMacroNode` — **never** a hand-rolled
   parser (the format already has one: the seed). A leaf the derive vocabulary
   can't express gets a hand-written `StructuralMacroNode` trait impl, not string
   slicing.

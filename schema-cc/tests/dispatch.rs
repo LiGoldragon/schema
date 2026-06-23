@@ -1,7 +1,7 @@
-//! Emission of schema-next's REAL parenthesis-reference dispatch from a
+//! Emission of schema's REAL parenthesis-reference dispatch from a
 //! validated grammar, in declared precedence.
 
-use nota_next::StructuralMacroNode;
+use nota::StructuralMacroNode;
 use schema_cc::{ReferenceDispatch, ReferenceGrammar, ValidatedReferenceGrammar};
 
 const CANONICAL: &str = "(ReferenceGrammar (Builtin Vector 1) (Builtin Optional 1) \
@@ -95,21 +95,21 @@ fn reserved_guard_lists_every_builtin_head() {
 }
 
 #[test]
-fn emitted_dispatch_targets_schema_next_types() {
+fn emitted_dispatch_targets_schema_types() {
     let source = emit(CANONICAL).to_dispatch_source();
-    // The emission names schema-next's real types — co-located, so the
-    // generated source compiles into schema-next, not schema-cc.
+    // The emission names schema's real types — co-located, so the
+    // generated source compiles into schema, not schema-cc.
     assert!(
         source.contains("impl TypeReference"),
         "emits into TypeReference's impl:\n{source}"
     );
     assert!(
         source.contains("-> Result<Self, SchemaError>"),
-        "returns schema-next's Self/SchemaError:\n{source}"
+        "returns schema's Self/SchemaError:\n{source}"
     );
     assert!(
         source.contains("SchemaError::UnknownTypeReferenceForm"),
-        "the reserved-head guard builds schema-next's error variant:\n{source}"
+        "the reserved-head guard builds schema's error variant:\n{source}"
     );
 }
 
@@ -125,7 +125,7 @@ fn emitted_dispatch_matches_golden_source() {
 #[test]
 fn grammar_without_a_registry_rung_still_emits_the_application_tail() {
     // The DeclaredMacro and Application markers both map to the one
-    // `from_macro_or_application` tail in schema-next, so dropping the registry
+    // `from_macro_or_application` tail in schema, so dropping the registry
     // rung does not remove a stage from the emitted body — the tail is the same
     // either way. The built-in arm and reserved guard still emit.
     let source = emit("(ReferenceGrammar (Builtin Vector 1) Application)").to_dispatch_source();

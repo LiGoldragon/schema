@@ -1,4 +1,4 @@
-use nota_next::{Block, Delimiter, Document, NotaBody, NotaEncode};
+use nota::{Block, Delimiter, Document, NotaBody, NotaEncode};
 
 use crate::{
     ImportResolver, SchemaSource,
@@ -19,8 +19,8 @@ use crate::{
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -51,9 +51,9 @@ impl SchemaIdentity {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SchemaError {
     #[error("NOTA parse error: {0}")]
-    Nota(#[from] nota_next::NotaError),
+    Nota(#[from] nota::NotaError),
     #[error("NOTA decode error: {0}")]
-    NotaDecode(#[from] nota_next::NotaDecodeError),
+    NotaDecode(#[from] nota::NotaDecodeError),
     #[error("structural macro parse error: {0}")]
     StructuralMacroParse(String),
     #[error("rkyv archive encoding failed")]
@@ -232,10 +232,10 @@ pub enum SchemaError {
     NonTypeNameTrait { found: String },
 }
 
-impl From<nota_next::MacroError> for SchemaError {
-    fn from(value: nota_next::MacroError) -> Self {
+impl From<nota::MacroError> for SchemaError {
+    fn from(value: nota::MacroError) -> Self {
         match value {
-            nota_next::MacroError::NoMatch {
+            nota::MacroError::NoMatch {
                 position,
                 expected,
                 found,
@@ -245,7 +245,7 @@ impl From<nota_next::MacroError> for SchemaError {
                 expected,
                 found,
             },
-            nota_next::MacroError::Conflict(conflict) => Self::UnsupportedMacroNodeStructure {
+            nota::MacroError::Conflict(conflict) => Self::UnsupportedMacroNodeStructure {
                 position: "structural macro registry".to_owned(),
                 expected: vec![format!(
                     "non-conflicting macro cases, found conflict between {} and {}",
@@ -258,10 +258,10 @@ impl From<nota_next::MacroError> for SchemaError {
     }
 }
 
-impl From<nota_next::StructuralVariantError> for SchemaError {
-    fn from(value: nota_next::StructuralVariantError) -> Self {
+impl From<nota::StructuralVariantError> for SchemaError {
+    fn from(value: nota::StructuralVariantError) -> Self {
         match value {
-            nota_next::StructuralVariantError::NoMatch {
+            nota::StructuralVariantError::NoMatch {
                 position,
                 expected,
                 found,
@@ -271,7 +271,7 @@ impl From<nota_next::StructuralVariantError> for SchemaError {
                 expected,
                 found,
             },
-            nota_next::StructuralVariantError::Conflict(conflict) => {
+            nota::StructuralVariantError::Conflict(conflict) => {
                 Self::UnsupportedMacroNodeStructure {
                     position: "structural macro node enum".to_owned(),
                     expected: vec![format!(
@@ -286,42 +286,42 @@ impl From<nota_next::StructuralVariantError> for SchemaError {
     }
 }
 
-impl From<nota_next::StructuralMacroError<SchemaError>> for SchemaError {
-    fn from(value: nota_next::StructuralMacroError<SchemaError>) -> Self {
+impl From<nota::StructuralMacroError<SchemaError>> for SchemaError {
+    fn from(value: nota::StructuralMacroError<SchemaError>) -> Self {
         match value {
-            nota_next::StructuralMacroError::Parse { error } => Self::StructuralMacroParse(error),
-            nota_next::StructuralMacroError::ExpectedSingleRoot { found } => {
+            nota::StructuralMacroError::Parse { error } => Self::StructuralMacroParse(error),
+            nota::StructuralMacroError::ExpectedSingleRoot { found } => {
                 Self::ExpectedRootObjectCount {
                     expected: "one structural macro node root object",
                     found,
                 }
             }
-            nota_next::StructuralMacroError::Dispatch(error) => Self::from(error),
-            nota_next::StructuralMacroError::MatchedNode(error) => error,
+            nota::StructuralMacroError::Dispatch(error) => Self::from(error),
+            nota::StructuralMacroError::MatchedNode(error) => error,
         }
     }
 }
 
-impl From<nota_next::StructuralMacroNodeError> for SchemaError {
-    fn from(value: nota_next::StructuralMacroNodeError) -> Self {
+impl From<nota::StructuralMacroNodeError> for SchemaError {
+    fn from(value: nota::StructuralMacroNodeError) -> Self {
         Self::MalformedSchemaNode {
             found: value.to_string(),
         }
     }
 }
 
-impl From<nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>> for SchemaError {
-    fn from(value: nota_next::StructuralMacroError<nota_next::StructuralMacroNodeError>) -> Self {
+impl From<nota::StructuralMacroError<nota::StructuralMacroNodeError>> for SchemaError {
+    fn from(value: nota::StructuralMacroError<nota::StructuralMacroNodeError>) -> Self {
         match value {
-            nota_next::StructuralMacroError::Parse { error } => Self::StructuralMacroParse(error),
-            nota_next::StructuralMacroError::ExpectedSingleRoot { found } => {
+            nota::StructuralMacroError::Parse { error } => Self::StructuralMacroParse(error),
+            nota::StructuralMacroError::ExpectedSingleRoot { found } => {
                 Self::ExpectedRootObjectCount {
                     expected: "one structural macro node root object",
                     found,
                 }
             }
-            nota_next::StructuralMacroError::Dispatch(error) => Self::from(error),
-            nota_next::StructuralMacroError::MatchedNode(error) => Self::from(error),
+            nota::StructuralMacroError::Dispatch(error) => Self::from(error),
+            nota::StructuralMacroError::MatchedNode(error) => Self::from(error),
         }
     }
 }
@@ -600,12 +600,12 @@ impl<'schema> KeyValueDeclaration<'schema> {
         let (name, parameters) = DeclarationHead::from_block(self.pair.name)?.into_parts();
         let value = match self.pair.definition {
             Block::Delimited {
-                delimiter: nota_next::Delimiter::Brace,
+                delimiter: nota::Delimiter::Brace,
                 root_objects,
                 ..
             } => self.lower_struct(name, root_objects, registry, context)?,
             Block::Delimited {
-                delimiter: nota_next::Delimiter::SquareBracket,
+                delimiter: nota::Delimiter::SquareBracket,
                 root_objects,
                 ..
             } => self.lower_enum(name, root_objects, registry, context)?,
@@ -649,7 +649,7 @@ impl<'schema> KeyValueDeclaration<'schema> {
         if matches!(
             definition,
             Block::Delimited {
-                delimiter: nota_next::Delimiter::PipeBrace | nota_next::Delimiter::PipeParenthesis,
+                delimiter: nota::Delimiter::PipeBrace | nota::Delimiter::PipeParenthesis,
                 ..
             }
         ) {

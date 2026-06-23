@@ -6,8 +6,8 @@
 //! Round-trip is the witness: every variant decodes from its canonical NOTA
 //! form and re-encodes to byte-identical text through the structural node.
 
-use nota_next::StructuralMacroNode;
-use schema_next::{ApplicationHead, Name, TypeReference};
+use nota::StructuralMacroNode;
+use schema::{ApplicationHead, Name, TypeReference};
 
 /// Decode the input through the derive, assert the node, then re-encode and
 /// assert the text round-trips byte-identically — and that re-decoding the

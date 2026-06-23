@@ -2,13 +2,13 @@
 //! `reports/operator/271-context-maintenance-current-state-2026-06-01.md`.
 //!
 //! Each witness proves the closure named in the report against the current
-//! state of the schema-next sources. The tests are positive witnesses: they
+//! state of the schema sources. The tests are positive witnesses: they
 //! assert the present shape of the code, types, and fixtures. If a future
 //! agent reverts any of the closures, the test fails.
 //!
 //! Coverage:
 //! - Claim 1 — macro-library source/artifact datatype split CLOSED
-//!   (schema-next `99078b20`).
+//!   (schema `99078b20`).
 //! - Claim 4 — strict schema syntax and honest enum bodies CLOSED.
 //! - Claim 5 — SchemaSource as typed source data plus Schema as typed
 //!   semantic data CLOSED.
@@ -21,8 +21,8 @@
 //! - The flake's `library-mirrors-collapsed` check — Nix-side regression
 //!   guard for claim 1.
 
-use nota_next::{Block, Delimiter, Document};
-use schema_next::{
+use nota::{Block, Delimiter, Document};
+use schema::{
     MacroLibrary, MacroLibraryArtifact, Schema, SchemaEngine, SchemaIdentity, SchemaMacro,
     SchemaSourceArtifact, TypeDeclaration,
 };
@@ -119,23 +119,23 @@ fn macro_library_split_does_not_return_through_public_surface() {
     for retired in retired_public_names {
         assert!(
             !pub_use_block.contains(retired),
-            "schema-next lib.rs must not re-export retired split name {retired}"
+            "schema lib.rs must not re-export retired split name {retired}"
         );
     }
 
     // The current `pub use` line MUST carry the present shape's names.
     assert!(
         pub_use_block.contains("MacroLibrary,") || pub_use_block.contains("MacroLibrary\n"),
-        "schema-next lib.rs must re-export MacroLibrary as the one type"
+        "schema lib.rs must re-export MacroLibrary as the one type"
     );
     assert!(
         pub_use_block.contains("MacroLibraryArtifact"),
-        "schema-next lib.rs must re-export MacroLibraryArtifact"
+        "schema lib.rs must re-export MacroLibraryArtifact"
     );
     assert!(
         pub_use_block.contains("MacroLibrarySourceEntry,")
             || pub_use_block.contains("MacroLibrarySourceEntry\n"),
-        "schema-next lib.rs must re-export MacroLibrarySourceEntry"
+        "schema lib.rs must re-export MacroLibrarySourceEntry"
     );
 
     // The declarative source declares the present canonical shape.
@@ -249,21 +249,21 @@ fn spirit_min_input_enum_body_has_compact_root_variants() {
 fn schema_is_typed_data_with_named_field_accessors() {
     let source = include_str!("../schemas/core.schema");
     let schema: Schema = SchemaEngine::default()
-        .lower_source(source, SchemaIdentity::new("schema-next:core", "0.1.0"))
+        .lower_source(source, SchemaIdentity::new("schema:core", "0.1.0"))
         .expect("core schema lowers to typed Schema data");
 
-    assert_eq!(schema.identity().component().as_str(), "schema-next:core");
+    assert_eq!(schema.identity().component().as_str(), "schema:core");
     assert_eq!(schema.identity().version(), "0.1.0");
 
     // Typed accessors — Schema is a noun with methods, not a string blob.
-    let _: &[schema_next::ImportDeclaration] = schema.imports();
-    let _: &schema_next::Root = schema.input();
-    let _: &schema_next::Root = schema.output();
-    let _: &schema_next::EnumDeclaration = schema
+    let _: &[schema::ImportDeclaration] = schema.imports();
+    let _: &schema::Root = schema.input();
+    let _: &schema::Root = schema.output();
+    let _: &schema::EnumDeclaration = schema
         .input()
         .as_enum()
         .expect("core input is an enum root");
-    let _: &[schema_next::Declaration] = schema.namespace();
+    let _: &[schema::Declaration] = schema.namespace();
 
     // The namespace carries typed `Declaration` values; pick one and
     // confirm it lowers into one of the typed variants of `TypeDeclaration`.
@@ -302,7 +302,7 @@ fn schema_source_and_semantic_schema_round_trip_without_asschema_artifacts() {
     let schema = SchemaEngine::default()
         .lower_schema_source(
             source_artifact.source(),
-            SchemaIdentity::new("schema-next:core", "0.1.0"),
+            SchemaIdentity::new("schema:core", "0.1.0"),
         )
         .expect("core schema lowers");
     let bytes = schema

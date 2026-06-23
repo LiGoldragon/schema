@@ -1,7 +1,7 @@
 //! schema-cc — the schema compiler-compiler.
 //!
 //! The compiler's own definition, kept as typed data, that GENERATES the schema
-//! compiler (schema-next / schema-rust-next), bottoming out in the nota-next
+//! compiler (schema / schema-rust), bottoming out in the nota
 //! seed. See `INTENT.md` and `ARCHITECTURE.md`.
 //!
 //! First inhabitant: the reference-resolution grammar — the parenthesis-reference
@@ -14,11 +14,11 @@
 //! ```
 //!
 //! - [`grammar`]  — `ReferenceGrammar`: the dispatch precedence as data, decoded
-//!   by the nota-next seed (no hand-rolled parser).
+//!   by the nota seed (no hand-rolled parser).
 //! - [`validate`] — `ValidatedReferenceGrammar`: catch-all unique and last,
 //!   declared-macro before it, no built-in head collision.
-//! - [`dispatch`] — `ReferenceDispatch`: emits schema-next's REAL parenthesis
-//!   dispatch (a method body over schema-next's own types) from a validated
+//! - [`dispatch`] — `ReferenceDispatch`: emits schema's REAL parenthesis
+//!   dispatch (a method body over schema's own types) from a validated
 //!   grammar. It generates code; it never resolves references at runtime.
 
 pub mod dispatch;

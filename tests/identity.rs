@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use schema_next::{
+use schema::{
     ContentHash, ImportResolver, MacroContext, Schema, SchemaEngine, SchemaError, SchemaIdentity,
     SpecifiedSchema,
 };

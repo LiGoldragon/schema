@@ -1,6 +1,6 @@
-//! Decode and round-trip the reference grammar through the nota-next seed.
+//! Decode and round-trip the reference grammar through the nota seed.
 
-use nota_next::StructuralMacroNode;
+use nota::StructuralMacroNode;
 use schema_cc::{BuiltinArity, BuiltinHead, ReferenceForm, ReferenceGrammar};
 
 const CANONICAL: &str = "(ReferenceGrammar (Builtin Vector 1) (Builtin Optional 1) \

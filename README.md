@@ -1,7 +1,7 @@
-# schema-next
+# schema
 
-`schema-next` is the replacement schema engine for the schema-derived stack.
-It consumes `nota-next` blocks, runs position-aware schema macros, and lowers
+`schema` is the replacement schema engine for the schema-derived stack.
+It consumes `nota` blocks, runs position-aware schema macros, and lowers
 to an ordered semantic schema-in-Rust value.
 
 The active file surface is `.schema`. A `.schema` file must parse as legal
@@ -49,7 +49,7 @@ macro handlers. The remaining self-hosting step is to generate that
 macro-table type from `schemas/core.schema` instead of using the hand-written
 Rust noun.
 
-Rust code emission is not here. It lives in `schema-rust-next`.
+Rust code emission is not here. It lives in `schema-rust`.
 
 Crates expose schemas through a standard `schema/` directory. The current
 entrypoint is `schema/lib.schema`; sibling files such as `schema/signal.schema`

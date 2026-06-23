@@ -8,9 +8,9 @@
 //! the declared-name shape, while reserved scalar names lower to
 //! scalar references instead of pretending to be user namespace types.
 
-use schema_next::{Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
+use schema::{Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
 
-fn lower(source: &str) -> schema_next::Schema {
+fn lower(source: &str) -> schema::Schema {
     SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("collections:lib", "0.1.0"))
         .expect("schema lowers")
@@ -21,9 +21,9 @@ fn roots(namespace: &str) -> String {
 }
 
 fn struct_fields<'schema>(
-    schema: &'schema schema_next::Schema,
+    schema: &'schema schema::Schema,
     name: &str,
-) -> &'schema [schema_next::FieldDeclaration] {
+) -> &'schema [schema::FieldDeclaration] {
     match schema.type_named(name).expect("type present") {
         TypeDeclaration::Struct(declaration) => &declaration.fields,
         TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
@@ -33,7 +33,7 @@ fn struct_fields<'schema>(
 }
 
 fn single_reference<'schema>(
-    schema: &'schema schema_next::Schema,
+    schema: &'schema schema::Schema,
     name: &str,
 ) -> &'schema TypeReference {
     match schema.type_named(name).expect("type present") {
@@ -168,13 +168,13 @@ fn parenthesized_explicit_composite_field_syntax_is_retired() {
     let error = SchemaEngine::default()
         .lower_source(
             &roots("Topic String Query { (Topics (Vector Topic)) }"),
-            schema_next::SchemaIdentity::new("example:lib", "0.1.0"),
+            schema::SchemaIdentity::new("example:lib", "0.1.0"),
         )
         .expect_err("old parenthesized explicit field syntax is retired");
 
     assert!(matches!(
         error,
-        schema_next::SchemaError::RetiredStructFieldSyntax { .. }
+        schema::SchemaError::RetiredStructFieldSyntax { .. }
     ));
 }
 
@@ -188,7 +188,7 @@ fn scalar_names_are_reserved_at_namespace_declaration_position() {
         .expect_err("reserved scalar names cannot be user-declared schema types");
     assert_eq!(
         error,
-        schema_next::SchemaError::ReservedScalarTypeName {
+        schema::SchemaError::ReservedScalarTypeName {
             name: "String".to_owned(),
         }
     );
@@ -229,7 +229,7 @@ fn square_bracket_field_is_not_vec_type_syntax() {
     // square-bracket block at a field position as a non-symbol reference.
     assert_eq!(
         error,
-        schema_next::SchemaError::ExpectedSymbol {
+        schema::SchemaError::ExpectedSymbol {
             found: "square bracket block".to_owned(),
         }
     );
@@ -247,7 +247,7 @@ fn brace_field_is_not_map_type_syntax() {
     // block at a field position as a non-symbol reference.
     assert_eq!(
         error,
-        schema_next::SchemaError::ExpectedSymbol {
+        schema::SchemaError::ExpectedSymbol {
             found: "brace block".to_owned(),
         }
     );
@@ -319,7 +319,7 @@ fn non_builtin_pascal_head_lowers_to_application() {
     assert_eq!(
         single_reference(&schema, "Bad"),
         &TypeReference::Application {
-            head: schema_next::ApplicationHead::Local(schema_next::Name::new("HashSet")),
+            head: schema::ApplicationHead::Local(schema::Name::new("HashSet")),
             arguments: vec![TypeReference::Vector(Box::new(TypeReference::new("Leaf")))],
         }
     );
@@ -334,7 +334,7 @@ fn dropped_vec_alias_no_longer_lowers_to_vector() {
     assert_eq!(
         single_reference(&schema, "Cluster"),
         &TypeReference::Application {
-            head: schema_next::ApplicationHead::Local(schema_next::Name::new("Vec")),
+            head: schema::ApplicationHead::Local(schema::Name::new("Vec")),
             arguments: vec![TypeReference::new("Service")],
         }
     );
@@ -352,7 +352,7 @@ fn map_with_wrong_argument_count_is_rejected() {
     // reference head against its declared arity.
     assert_eq!(
         error,
-        schema_next::SchemaError::ExpectedSyntaxReferenceArity {
+        schema::SchemaError::ExpectedSyntaxReferenceArity {
             form: "built-in reference head",
             expected: "the head's declared arity",
             found: 2,

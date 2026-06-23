@@ -15,7 +15,7 @@
 //!  - AddVariant extends the target enum.
 //!  - `UpgradeObject::apply` chains edits and rejects identity mismatch.
 
-use schema_next::{
+use schema::{
     DefaultValue, FieldMigration, Name, SchemaEdit, SchemaEditApplication, SchemaEngine,
     SchemaError, SchemaIdentity, TypeDeclaration, TypeReference, UpgradeObject,
 };
@@ -38,7 +38,7 @@ fn entry_schema_source() -> &'static str {
      }\n"
 }
 
-fn lower_previous() -> schema_next::Schema {
+fn lower_previous() -> schema::Schema {
     SchemaEngine::default()
         .lower_source(
             entry_schema_source(),

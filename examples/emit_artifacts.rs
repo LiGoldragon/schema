@@ -1,4 +1,4 @@
-use schema_next::{MacroLibrary, MacroLibraryArtifact, SchemaSourceArtifact};
+use schema::{MacroLibrary, MacroLibraryArtifact, SchemaSourceArtifact};
 
 fn main() {
     let macro_library = MacroLibrary::from_source(include_str!("../schemas/builtin-macros.schema"))

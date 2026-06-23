@@ -1,5 +1,5 @@
-use nota_next::Document;
-use schema_next::{RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile, SchemaError};
+use nota::Document;
+use schema::{RawDatatypeMap, RawNotaDatatype, RawNotaSequence, RawSchemaFile, SchemaError};
 
 const CORE_SCHEMA: &str = include_str!("fixtures/raw-core/core.schema");
 const NON_MAP_ROOT_SCHEMA: &str = include_str!("fixtures/raw-core/non-map-root.schema");

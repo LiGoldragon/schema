@@ -1,5 +1,5 @@
-use nota_next::{Document, NotaDecode, NotaEncode};
-use schema_next::{Name, SchemaEngine, SchemaIdentity, SymbolPath, SymbolPathPosition};
+use nota::{Document, NotaDecode, NotaEncode};
+use schema::{Name, SchemaEngine, SchemaIdentity, SymbolPath, SymbolPathPosition};
 
 struct SymbolPathFixture {
     identity: SchemaIdentity,
@@ -14,7 +14,7 @@ impl SymbolPathFixture {
         }
     }
 
-    fn schema(&self) -> schema_next::Schema {
+    fn schema(&self) -> schema::Schema {
         SchemaEngine::default()
             .lower_source(self.source, self.identity.clone())
             .expect("schema lowers")

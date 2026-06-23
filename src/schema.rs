@@ -1,6 +1,6 @@
 use std::fmt;
 
-use nota_next::{
+use nota::{
     AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaDecode, NotaDecodeError,
     NotaEncode, NotaString, StructuralMacroNode,
 };
@@ -104,34 +104,34 @@ impl NotaEncode for Name {
 /// first, so only a PascalCase atom reaches this decode there; the
 /// symbol-case acceptance keeps the node usable wherever a qualified name is
 /// already known to sit at the position.
-impl nota_next::StructuralMacroNode for Name {
+impl nota::StructuralMacroNode for Name {
     type Error = SchemaError;
 
-    fn structural_position() -> nota_next::PositionPredicate {
-        nota_next::PositionPredicate::named("type name")
+    fn structural_position() -> nota::PositionPredicate {
+        nota::PositionPredicate::named("type name")
     }
 
-    fn structural_variants() -> Vec<nota_next::StructuralVariant> {
+    fn structural_variants() -> Vec<nota::StructuralVariant> {
         vec![
-            nota_next::BlockShape::symbol(Some(nota_next::CaptureName::new("name")))
+            nota::BlockShape::symbol(Some(nota::CaptureName::new("name")))
                 .into_structural_variant("Name", "symbol atom"),
         ]
     }
 
     fn from_structural_block(
         block: &Block,
-    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+    ) -> Result<Self, nota::StructuralMacroError<Self::Error>> {
         block
             .schema_name()
-            .map_err(nota_next::StructuralMacroError::MatchedNode)
+            .map_err(nota::StructuralMacroError::MatchedNode)
     }
 
     fn from_structural_candidate(
-        candidate: nota_next::MacroCandidate<'_>,
-    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        candidate: nota::MacroCandidate<'_>,
+    ) -> Result<Self, nota::StructuralMacroError<Self::Error>> {
         match candidate.blocks() {
             [block] => Self::from_structural_block(block),
-            blocks => Err(nota_next::StructuralMacroError::ExpectedSingleRoot {
+            blocks => Err(nota::StructuralMacroError::ExpectedSingleRoot {
                 found: blocks.len(),
             }),
         }
@@ -978,8 +978,8 @@ impl Schema {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1001,8 +1001,8 @@ impl RelationDeclaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1026,8 +1026,8 @@ impl RelationValue {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1042,8 +1042,8 @@ pub struct ImportDeclaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Copy,
     Debug,
@@ -1059,8 +1059,8 @@ pub enum Visibility {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1157,8 +1157,8 @@ impl Declaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Default,
@@ -1197,8 +1197,8 @@ impl ImplCatalog {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1279,8 +1279,8 @@ pub enum ImplCompositionKey {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1350,8 +1350,8 @@ impl MethodSignature {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1384,8 +1384,8 @@ impl MethodParameter {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1551,8 +1551,8 @@ impl RustSurface {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1595,8 +1595,8 @@ impl TypeDeclaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1617,8 +1617,8 @@ impl NewtypeDeclaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1730,8 +1730,8 @@ impl NotaEncode for StructFieldMap {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1746,8 +1746,8 @@ pub struct FieldDeclaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1774,8 +1774,8 @@ impl EnumDeclaration {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1806,8 +1806,8 @@ impl EnumVariant {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1830,8 +1830,8 @@ impl StreamRelation {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1909,9 +1909,9 @@ impl fmt::Display for TableName {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
-    nota_next::StructuralMacroNode,
+    nota::NotaDecode,
+    nota::NotaEncode,
+    nota::StructuralMacroNode,
     Clone,
     Copy,
     Debug,
@@ -1935,8 +1935,8 @@ pub enum FamilyKey {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::NotaDecode,
-    nota_next::NotaEncode,
+    nota::NotaDecode,
+    nota::NotaEncode,
     Clone,
     Debug,
     Eq,
@@ -1997,21 +1997,21 @@ impl ApplicationHead {
 }
 
 /// The broad generic-application node `(Foo A B …)`, captured directly by
-/// nota-next's `#[shape(pascal_head, body)]` derive: a PascalCase head atom
+/// nota's `#[shape(pascal_head, body)]` derive: a PascalCase head atom
 /// followed by a variable-arity tail of type-reference arguments. This is the
 /// structural-macro seam for the application form — the head decodes as a
 /// `Name` (always `Local` at decode time) and the tail decodes as a
 /// `Vec<TypeReference>`. The derive is the single source of truth for matching
 /// and re-emitting the form; this node lowers into [`TypeReference::Application`].
-#[derive(Clone, Debug, Eq, PartialEq, nota_next::StructuralMacroNode)]
+#[derive(Clone, Debug, Eq, PartialEq, nota::StructuralMacroNode)]
 enum ApplicationNode {
     #[shape(pascal_head, body)]
     Application(Name, Vec<TypeReference>),
 }
 
-/// The fixed-width byte leaf `(Bytes N)`, captured through nota-next's
+/// The fixed-width byte leaf `(Bytes N)`, captured through nota's
 /// headed-atom structural shape.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, nota_next::StructuralMacroNode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, nota::StructuralMacroNode)]
 enum FixedBytesNode {
     #[shape(head = "Bytes", atom)]
     FixedBytes(u64),
@@ -2267,7 +2267,7 @@ impl NotaEncode for TypeReference {
 }
 
 /// `TypeReference` is itself a structural-macro node so the application
-/// form's variable-arity tail (`Vec<TypeReference>`, via nota-next's blanket
+/// form's variable-arity tail (`Vec<TypeReference>`, via nota's blanket
 /// `StructuralMacroNode for Vec<Item>`) can decode each argument back through
 /// the full reference grammar. Decode delegates to [`Self::from_block`] (which
 /// owns the built-in-head fast path and the application seam), and encode is
@@ -2275,32 +2275,32 @@ impl NotaEncode for TypeReference {
 /// headed parenthesis for every composite. This is the source-facing grammar
 /// projection, distinct from the canonical-only `NotaEncode`/`NotaDecode`
 /// machine codec above.
-impl nota_next::StructuralMacroNode for TypeReference {
+impl nota::StructuralMacroNode for TypeReference {
     type Error = SchemaError;
 
-    fn structural_position() -> nota_next::PositionPredicate {
-        nota_next::PositionPredicate::named("TypeReference")
+    fn structural_position() -> nota::PositionPredicate {
+        nota::PositionPredicate::named("TypeReference")
     }
 
-    fn structural_variants() -> Vec<nota_next::StructuralVariant> {
+    fn structural_variants() -> Vec<nota::StructuralVariant> {
         vec![
-            nota_next::BlockShape::symbol(Some(nota_next::CaptureName::new("reference")))
+            nota::BlockShape::symbol(Some(nota::CaptureName::new("reference")))
                 .into_structural_variant("TypeReference", "symbol reference atom"),
         ]
     }
 
     fn from_structural_block(
         block: &Block,
-    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
-        Self::from_block(block).map_err(nota_next::StructuralMacroError::MatchedNode)
+    ) -> Result<Self, nota::StructuralMacroError<Self::Error>> {
+        Self::from_block(block).map_err(nota::StructuralMacroError::MatchedNode)
     }
 
     fn from_structural_candidate(
-        candidate: nota_next::MacroCandidate<'_>,
-    ) -> Result<Self, nota_next::StructuralMacroError<Self::Error>> {
+        candidate: nota::MacroCandidate<'_>,
+    ) -> Result<Self, nota::StructuralMacroError<Self::Error>> {
         match candidate.blocks() {
             [block] => Self::from_structural_block(block),
-            blocks => Err(nota_next::StructuralMacroError::ExpectedSingleRoot {
+            blocks => Err(nota::StructuralMacroError::ExpectedSingleRoot {
                 found: blocks.len(),
             }),
         }
@@ -2471,7 +2471,7 @@ impl TypeReference {
     /// `(Optional T)` -> `Optional`, and `(ScopeOf T)` -> `ScopeOf`.
     /// The inner positions recurse, so
     /// `(Vector (Optional Topic))` and `(Map NodeName (Vector Service))`
-    /// nest. nota-next did the structural parse; this is pure semantic
+    /// nest. nota did the structural parse; this is pure semantic
     /// lowering over its `Block`s, not a hand-rolled text parser.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let mut context = MacroContext::default();
@@ -2793,7 +2793,7 @@ impl<'schema> MacroInvocationData<'schema> {
 /// type constructor. This type exists so macro calls can be inspected,
 /// serialized through assembled schema, and tested as data rather than
 /// disappearing into parser control flow.
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(nota::NotaDecode, nota::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub struct SchemaNode {
     tag: Name,
     data: SchemaNodeData,
@@ -2844,7 +2844,7 @@ impl SchemaNode {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(nota::NotaDecode, nota::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub enum SchemaNodeData {
     Unit,
     Value(SchemaNodeValue),
@@ -2870,7 +2870,7 @@ impl SchemaNodeData {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(nota::NotaDecode, nota::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub enum SchemaNodeValue {
     Symbol(Name),
     Text(String),
@@ -2912,7 +2912,7 @@ impl SchemaNodeValue {
     }
 }
 
-#[derive(nota_next::NotaDecode, nota_next::NotaEncode, Clone, Debug, Eq, PartialEq)]
+#[derive(nota::NotaDecode, nota::NotaEncode, Clone, Debug, Eq, PartialEq)]
 pub struct SchemaNodePair {
     key: Name,
     value: SchemaNodeValue,

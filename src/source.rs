@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nota_next::{
+use nota::{
     Block, CaptureName, Delimiter, Document, MacroCandidate, NotaBody, NotaEncode, NotaString,
     StructuralMacroError, StructuralMacroNode, StructuralVariant,
 };
@@ -2731,7 +2731,7 @@ impl SourceEnumBody {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::StructuralMacroNode,
+    nota::StructuralMacroNode,
     Clone,
     Debug,
     Eq,
@@ -2948,13 +2948,13 @@ impl SourceVariantName {
 impl StructuralMacroNode for SourceVariantName {
     type Error = SchemaError;
 
-    fn structural_position() -> nota_next::PositionPredicate {
-        nota_next::PositionPredicate::named("variant name")
+    fn structural_position() -> nota::PositionPredicate {
+        nota::PositionPredicate::named("variant name")
     }
 
     fn structural_variants() -> Vec<StructuralVariant> {
         vec![
-            nota_next::BlockShape::pascal_atom(Some(CaptureName::new("name")))
+            nota::BlockShape::pascal_atom(Some(CaptureName::new("name")))
                 .into_structural_variant("symbol", "PascalCase atom"),
         ]
     }
@@ -3022,8 +3022,8 @@ impl SourceVariantPayload {
 impl StructuralMacroNode for SourceVariantPayload {
     type Error = SchemaError;
 
-    fn structural_position() -> nota_next::PositionPredicate {
-        nota_next::PositionPredicate::named("variant payload")
+    fn structural_position() -> nota::PositionPredicate {
+        nota::PositionPredicate::named("variant payload")
     }
 
     fn structural_variants() -> Vec<StructuralVariant> {
@@ -3064,7 +3064,7 @@ impl StructuralMacroNode for SourceVariantPayload {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    nota_next::StructuralMacroNode,
+    nota::StructuralMacroNode,
     Clone,
     Copy,
     Debug,
@@ -3173,24 +3173,24 @@ impl SourceReference {
         self.to_schema_text()
     }
 
-    /// Project a nota-next instance-schema [`TypeReference`] into a source
+    /// Project a nota instance-schema [`TypeReference`] into a source
     /// reference. The per-instance trace captured by the decoder carries
-    /// nota-next references; this lifts them into schema-next's reference
+    /// nota references; this lifts them into schema's reference
     /// vocabulary so they render through the same encoder as the contract.
-    pub fn from_instance_reference(reference: &nota_next::TypeReference) -> Self {
+    pub fn from_instance_reference(reference: &nota::TypeReference) -> Self {
         match reference {
-            nota_next::TypeReference::Named(name) => Self::Plain(Name::new(*name)),
-            nota_next::TypeReference::Vector(element) => {
+            nota::TypeReference::Named(name) => Self::Plain(Name::new(*name)),
+            nota::TypeReference::Vector(element) => {
                 Self::Vector(Box::new(Self::from_instance_reference(element)))
             }
-            nota_next::TypeReference::Optional(inner) => {
+            nota::TypeReference::Optional(inner) => {
                 Self::Optional(Box::new(Self::from_instance_reference(inner)))
             }
-            nota_next::TypeReference::Map(key, value) => Self::Map(
+            nota::TypeReference::Map(key, value) => Self::Map(
                 Box::new(Self::from_instance_reference(key)),
                 Box::new(Self::from_instance_reference(value)),
             ),
-            nota_next::TypeReference::FixedBytes(width) => Self::FixedBytes(*width as u64),
+            nota::TypeReference::FixedBytes(width) => Self::FixedBytes(*width as u64),
         }
     }
 
@@ -3213,7 +3213,7 @@ impl SourceReference {
     /// the canonical built-in heads are the fast path and the generic
     /// application form `(Foo A B ...)` is the fallback; the dropped aliases
     /// (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse. `RawNotaDatatype`
-    /// is schema-next's own archive representation, not a nota-next `Block`,
+    /// is schema's own archive representation, not a nota `Block`,
     /// so it keeps its own dispatch in lockstep with the other paths.
     fn from_record(sequence: &RawNotaSequence) -> Result<Self, SchemaError> {
         let items = sequence.items();

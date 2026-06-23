@@ -1,6 +1,6 @@
-# INTENT — schema-next
+# INTENT — schema
 
-`schema-next` is the schema macro engine and typed semantic schema data model
+`schema` is the schema macro engine and typed semantic schema data model
 for the schema-derived stack. It does not emit Rust source code.
 
 Load-bearing constraints:
@@ -90,8 +90,8 @@ is the semantic schema-in-Rust value used by lowerers, emitters, upgrades, and
 symbol-path queries; it is not a text artifact and has no artifact/store
 wrapper.
 
-*The structured macro-node mechanism belongs at the NOTA layer.* nota-next
-owns structural macro-node codec machinery; schema-next owns schema positions
+*The structured macro-node mechanism belongs at the NOTA layer.* nota
+owns structural macro-node codec machinery; schema owns schema positions
 and handlers. Built-in schema macros load through a serialized macro-library
 artifact, with hand-authored source kept as a freshness-checked bootstrap
 source.
@@ -100,7 +100,7 @@ source.
 above the raw parser is a violation.* Per Spirit v0n6 (Clarification):
 [Everything reading NOTA-shaped structure above the raw structural parser
 must go through typed structural macro nodes; surviving hand-parsing sites
-such as the schema-next macro library are design violations to fix, not
+such as the schema macro library are design violations to fix, not
 acceptable code. If structural macro nodes cannot express a needed shape,
 that signals the NOTA design was not implemented properly and must be
 surfaced to the psyche rather than worked around.]

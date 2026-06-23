@@ -46,8 +46,8 @@ enum HashDomain {
 impl HashDomain {
     fn context(self) -> &'static str {
         match self {
-            Self::Schema => "schema-next 2026-06-12 whole-schema content identity",
-            Self::FamilyClosure => "schema-next 2026-06-12 family-closure content identity",
+            Self::Schema => "schema 2026-06-12 whole-schema content identity",
+            Self::FamilyClosure => "schema 2026-06-12 family-closure content identity",
         }
     }
 }
