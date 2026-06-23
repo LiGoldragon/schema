@@ -1,6 +1,7 @@
 use schema_next::{
-    ImportResolver, SchemaEngine, SchemaIdentity, SourceDeclaration, SpecifiedDeclarationBody,
-    SpecifiedPayloadBody, SpecifiedPayloadShape, SpecifiedSchema, TypeReference,
+    ImportResolver, SchemaEngine, SchemaIdentity, SourceDeclaration, SourceDeclarations,
+    SpecifiedDeclarationBody, SpecifiedPayloadBody, SpecifiedPayloadShape, SpecifiedSchema,
+    TypeDeclaration, TypeReference,
 };
 
 fn specified_fixture() -> SpecifiedSchema {
@@ -30,10 +31,10 @@ fn specified_schema_makes_root_variants_and_payload_shapes_explicit() {
         "the immediate payload body preserves the Record newtype boundary"
     );
 
-    let fields = payload
-        .shape()
+    let shape = payload.shape(&specified);
+    let fields = shape
         .as_struct()
-        .expect("Record payload follows transparent newtypes to the struct shape");
+        .expect("Record payload derives transparent newtypes to the struct shape");
     let field_pairs = fields
         .iter()
         .map(|field| {
@@ -124,9 +125,9 @@ fn specified_schema_summarizes_enum_payloads_without_recursive_expansion() {
         )))
     );
     assert_eq!(
-        payload.shape(),
-        &SpecifiedPayloadShape::Scalar(TypeReference::String),
-        "transparent newtype chains reach the scalar leaf without duplicating declaration nodes"
+        payload.shape(&specified),
+        SpecifiedPayloadShape::Scalar(TypeReference::String),
+        "transparent newtype chains derive the scalar leaf without duplicating declaration nodes"
     );
 
     let certainty = specified
@@ -154,6 +155,55 @@ fn specified_schema_is_a_rkyv_serializable_data_value() {
 }
 
 #[test]
+fn specified_payload_shape_is_derived_not_stored_on_payload() {
+    let specified = specified_fixture();
+    let output = specified
+        .output()
+        .as_enum()
+        .expect("output root is an enum");
+    let accepted = output
+        .variant_named("RecordAccepted")
+        .expect("RecordAccepted variant exists");
+    let payload = accepted.payload().expect("RecordAccepted has a payload");
+
+    assert_eq!(payload.reference(), &TypeReference::new("RecordAccepted"));
+    assert_eq!(
+        payload.immediate_body(),
+        Some(&SpecifiedPayloadBody::Newtype(TypeReference::new(
+            "RecordIdentifier"
+        ))),
+        "the canonical payload stores the immediate role boundary"
+    );
+
+    let bytes = specified
+        .to_binary_bytes()
+        .expect("specified schema encodes to rkyv bytes");
+    let recovered = SpecifiedSchema::from_binary_bytes(&bytes)
+        .expect("specified schema decodes from rkyv bytes");
+    let recovered_payload = recovered
+        .output()
+        .as_enum()
+        .expect("output root is an enum")
+        .variant_named("RecordAccepted")
+        .expect("RecordAccepted variant exists")
+        .payload()
+        .expect("RecordAccepted has a payload");
+
+    assert_eq!(
+        recovered_payload.immediate_body(),
+        Some(&SpecifiedPayloadBody::Newtype(TypeReference::new(
+            "RecordIdentifier"
+        ))),
+        "rkyv carries the immediate role boundary"
+    );
+    assert_eq!(
+        recovered_payload.shape(&recovered),
+        SpecifiedPayloadShape::Scalar(TypeReference::String),
+        "terminal shape is recomputed from the recovered schema, not archived on the payload"
+    );
+}
+
+#[test]
 fn specified_schema_projects_back_to_the_schema_declaration_codec() {
     let specified = specified_fixture();
     let entry = specified
@@ -175,12 +225,71 @@ fn specified_schema_projects_back_to_the_schema_declaration_codec() {
     let value = record
         .payload()
         .expect("Record payload exists")
-        .to_help_source_declaration_value();
+        .to_help_source_declaration_value(&specified);
     let declaration = SourceDeclaration::new(record.name().clone(), Some(value));
     assert_eq!(
         declaration.to_schema_text(),
         "(Record { record_entry.Entry record_reason.Justification })",
         "root Help projection should use the explicit payload shape from SpecifiedSchema"
+    );
+}
+
+#[test]
+fn specified_schema_projects_self_tagged_variants_through_schema_codec() {
+    let specified = SchemaEngine::default()
+        .lower_specified_source(
+            "[]\n[Domain]\n{\n  Domain [(Health)]\n  Health [Body Mind]\n}",
+            SchemaIdentity::new("schema:self-tag", "0.1.0"),
+        )
+        .expect("self-tag fixture lowers");
+    let domain = specified
+        .declaration_named("Domain")
+        .expect("Domain declaration exists");
+    let value = domain.body().to_source_declaration_value();
+    let declaration = SourceDeclaration::new(domain.name().clone(), Some(value));
+    let text = declaration.to_schema_text();
+
+    assert_eq!(text, "(Domain [(Health)])");
+
+    let declarations =
+        SourceDeclarations::from_schema_text(&text).expect("projected self-tag decodes");
+    let declaration = declarations
+        .declarations()
+        .first()
+        .expect("one projected declaration");
+    let Some(schema_next::SourceDeclarationValue::Enum(body)) = declaration.value() else {
+        panic!("projected Domain should decode as an enum declaration");
+    };
+    assert!(
+        matches!(
+            body.variants().first(),
+            Some(schema_next::SourceVariantSignature::SelfTagged(_))
+        ),
+        "the declaration codec preserves the payload-bearing self-tagged form"
+    );
+
+    let lowered = SchemaEngine::default()
+        .lower_schema_source(
+            &schema_next::SchemaSource::from_schema_text(
+                "[]\n[]\n{\n  Domain [(Health)]\n  Health [Body Mind]\n}",
+            )
+            .expect("reconstructed source decodes"),
+            SchemaIdentity::new("schema:self-tag-round-trip", "0.1.0"),
+        )
+        .expect("reconstructed schema lowers");
+    let Some(TypeDeclaration::Enum(domain)) = lowered.type_named("Domain") else {
+        panic!("Domain should lower as an enum");
+    };
+    let variant = domain
+        .variants
+        .first()
+        .expect("Domain has a Health variant after round trip");
+
+    assert_eq!(variant.name.as_str(), "Health");
+    assert_eq!(
+        variant.payload.as_ref(),
+        Some(&TypeReference::new("Health")),
+        "self-tagged projection decodes as a payload-bearing variant"
     );
 }
 

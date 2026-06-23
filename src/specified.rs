@@ -2,7 +2,7 @@ use crate::{
     Declaration, EnumDeclaration, EnumVariant, FamilyDeclaration, ImplBlock, ImplCatalog,
     ImportDeclaration, Name, NewtypeDeclaration, RelationDeclaration, Root, RootApplication,
     Schema, SchemaIdentity, SourceDeclarationValue, SourceEnumBody, SourceFamilyBody, SourceField,
-    SourceReference, SourceStreamBody, SourceStructBody, SourceVariantName, SourceVariantPayload,
+    SourceReference, SourceStreamBody, SourceStructBody, SourceVariantPayload,
     SourceVariantSignature, StreamDeclaration, StreamRelation, StreamRelationKeyword,
     StructDeclaration, TypeDeclaration, TypeReference, Visibility,
 };
@@ -78,6 +78,53 @@ impl SpecifiedSchema {
         self.declarations
             .iter()
             .find(|declaration| declaration.name().as_str() == name)
+    }
+
+    pub fn payload_shape_for_reference(&self, reference: &TypeReference) -> SpecifiedPayloadShape {
+        self.payload_shape_for_reference_with_visited(reference, Vec::new())
+    }
+
+    fn payload_shape_for_reference_with_visited(
+        &self,
+        reference: &TypeReference,
+        mut visited: Vec<Name>,
+    ) -> SpecifiedPayloadShape {
+        match reference {
+            TypeReference::String
+            | TypeReference::Integer
+            | TypeReference::Boolean
+            | TypeReference::Path
+            | TypeReference::Bytes
+            | TypeReference::FixedBytes(_) => SpecifiedPayloadShape::Scalar(reference.clone()),
+            TypeReference::Plain(name) => {
+                if visited.iter().any(|visited| visited == name) {
+                    return SpecifiedPayloadShape::Reference(reference.clone());
+                }
+                visited.push(name.clone());
+                match self
+                    .declaration_named(name.as_str())
+                    .map(SpecifiedDeclaration::body)
+                {
+                    Some(SpecifiedDeclarationBody::Newtype(reference)) => {
+                        self.payload_shape_for_reference_with_visited(reference, visited)
+                    }
+                    Some(SpecifiedDeclarationBody::Struct(fields)) => {
+                        SpecifiedPayloadShape::Struct(fields.to_vec())
+                    }
+                    Some(SpecifiedDeclarationBody::Enum(variants)) => SpecifiedPayloadShape::Enum(
+                        variants.iter().map(SpecifiedVariantSummary::from).collect(),
+                    ),
+                    None => SpecifiedPayloadShape::Reference(reference.clone()),
+                }
+            }
+            TypeReference::Vector(_)
+            | TypeReference::Map(..)
+            | TypeReference::Optional(_)
+            | TypeReference::ScopeOf(_)
+            | TypeReference::Application { .. } => {
+                SpecifiedPayloadShape::Reference(reference.clone())
+            }
+        }
     }
 
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, crate::SchemaError> {
@@ -419,28 +466,7 @@ impl SpecifiedVariant {
                 payload.reference(),
             ))
         });
-        if self.stream_relation().is_none()
-            && matches!(
-                &payload,
-                Some(SourceVariantPayload::Reference(SourceReference::Plain(name)))
-                    if name == self.name()
-            )
-        {
-            return SourceVariantSignature::from_self_tagged(self.name.clone());
-        }
-        match (payload, self.stream_relation()) {
-            (Some(payload), Some(relation)) => SourceVariantSignature::Streaming(
-                SourceVariantName::new(self.name.clone()),
-                payload,
-                StreamRelationKeyword::from(relation),
-                SourceVariantName::new(relation.stream_name().clone()),
-            ),
-            (Some(payload), None) => {
-                SourceVariantSignature::from_payload(self.name.clone(), payload)
-            }
-            (None, Some(_)) => SourceVariantSignature::from_name(self.name.clone()),
-            (None, None) => SourceVariantSignature::from_name(self.name.clone()),
-        }
+        SourceVariantSignature::from_projected(self.name.clone(), payload, self.stream_relation())
     }
 }
 
@@ -459,19 +485,13 @@ impl SpecifiedVariant {
 pub struct SpecifiedPayload {
     reference: TypeReference,
     immediate_body: Option<SpecifiedPayloadBody>,
-    shape: SpecifiedPayloadShape,
 }
 
 impl SpecifiedPayload {
-    pub fn new(
-        reference: TypeReference,
-        immediate_body: Option<SpecifiedPayloadBody>,
-        shape: SpecifiedPayloadShape,
-    ) -> Self {
+    pub fn new(reference: TypeReference, immediate_body: Option<SpecifiedPayloadBody>) -> Self {
         Self {
             reference,
             immediate_body,
-            shape,
         }
     }
 
@@ -483,14 +503,17 @@ impl SpecifiedPayload {
         self.immediate_body.as_ref()
     }
 
-    pub fn shape(&self) -> &SpecifiedPayloadShape {
-        &self.shape
+    pub fn shape(&self, schema: &SpecifiedSchema) -> SpecifiedPayloadShape {
+        schema.payload_shape_for_reference(self.reference())
     }
 
-    pub fn to_help_source_declaration_value(&self) -> SourceDeclarationValue {
-        match self.shape() {
+    pub fn to_help_source_declaration_value(
+        &self,
+        schema: &SpecifiedSchema,
+    ) -> SourceDeclarationValue {
+        match self.shape(schema) {
             SpecifiedPayloadShape::Struct(_) | SpecifiedPayloadShape::Enum(_) => {
-                self.shape().to_source_declaration_value()
+                self.shape(schema).to_source_declaration_value()
             }
             SpecifiedPayloadShape::Scalar(_) | SpecifiedPayloadShape::Reference(_) => {
                 match self.immediate_body() {
@@ -621,28 +644,7 @@ impl SpecifiedVariantSummary {
         let payload = self.payload().map(|reference| {
             SourceVariantPayload::Reference(SourceReference::from_type_reference(reference))
         });
-        if self.stream_relation().is_none()
-            && matches!(
-                &payload,
-                Some(SourceVariantPayload::Reference(SourceReference::Plain(name)))
-                    if name == self.name()
-            )
-        {
-            return SourceVariantSignature::from_self_tagged(self.name.clone());
-        }
-        match (payload, self.stream_relation()) {
-            (Some(payload), Some(relation)) => SourceVariantSignature::Streaming(
-                SourceVariantName::new(self.name.clone()),
-                payload,
-                StreamRelationKeyword::from(relation),
-                SourceVariantName::new(relation.stream_name().clone()),
-            ),
-            (Some(payload), None) => {
-                SourceVariantSignature::from_payload(self.name.clone(), payload)
-            }
-            (None, Some(_)) => SourceVariantSignature::from_name(self.name.clone()),
-            (None, None) => SourceVariantSignature::from_name(self.name.clone()),
-        }
+        SourceVariantSignature::from_projected(self.name.clone(), payload, self.stream_relation())
     }
 }
 
@@ -846,7 +848,6 @@ impl<'schema> SpecifiedSchemaBuilder<'schema> {
         SpecifiedPayload::new(
             reference.clone(),
             self.payload_body_for_reference(reference),
-            self.payload_shape_for_reference(reference, Vec::new()),
         )
     }
 
@@ -882,58 +883,6 @@ impl<'schema> SpecifiedSchemaBuilder<'schema> {
             ),
         }
     }
-
-    fn payload_shape_for_reference(
-        &self,
-        reference: &TypeReference,
-        mut visited: Vec<Name>,
-    ) -> SpecifiedPayloadShape {
-        match reference {
-            TypeReference::String
-            | TypeReference::Integer
-            | TypeReference::Boolean
-            | TypeReference::Path
-            | TypeReference::Bytes
-            | TypeReference::FixedBytes(_) => SpecifiedPayloadShape::Scalar(reference.clone()),
-            TypeReference::Plain(name) => {
-                if visited.iter().any(|visited| visited == name) {
-                    return SpecifiedPayloadShape::Reference(reference.clone());
-                }
-                visited.push(name.clone());
-                match self.schema.type_named(name.as_str()) {
-                    Some(TypeDeclaration::Newtype(declaration)) => {
-                        self.payload_shape_for_reference(&declaration.reference, visited)
-                    }
-                    Some(TypeDeclaration::Struct(declaration)) => {
-                        match self.specified_struct(declaration) {
-                            SpecifiedDeclarationBody::Struct(fields) => {
-                                SpecifiedPayloadShape::Struct(fields)
-                            }
-                            SpecifiedDeclarationBody::Newtype(_)
-                            | SpecifiedDeclarationBody::Enum(_) => {
-                                unreachable!("specified_struct returns Struct")
-                            }
-                        }
-                    }
-                    Some(TypeDeclaration::Enum(declaration)) => SpecifiedPayloadShape::Enum(
-                        declaration
-                            .variants
-                            .iter()
-                            .map(SpecifiedVariantSummary::from)
-                            .collect(),
-                    ),
-                    None => SpecifiedPayloadShape::Reference(reference.clone()),
-                }
-            }
-            TypeReference::Vector(_)
-            | TypeReference::Map(..)
-            | TypeReference::Optional(_)
-            | TypeReference::ScopeOf(_)
-            | TypeReference::Application { .. } => {
-                SpecifiedPayloadShape::Reference(reference.clone())
-            }
-        }
-    }
 }
 
 impl From<&EnumVariant> for SpecifiedVariantSummary {
@@ -941,6 +890,16 @@ impl From<&EnumVariant> for SpecifiedVariantSummary {
         Self::new(
             variant.name.clone(),
             variant.payload.clone(),
+            variant.stream_relation.clone(),
+        )
+    }
+}
+
+impl From<&SpecifiedVariant> for SpecifiedVariantSummary {
+    fn from(variant: &SpecifiedVariant) -> Self {
+        Self::new(
+            variant.name.clone(),
+            variant.payload().map(|payload| payload.reference().clone()),
             variant.stream_relation.clone(),
         )
     }

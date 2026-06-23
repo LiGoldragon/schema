@@ -2777,6 +2777,32 @@ impl SourceVariantSignature {
         Self::SelfTagged(SourceVariantName::new(name))
     }
 
+    pub fn from_projected(
+        name: Name,
+        payload: Option<SourceVariantPayload>,
+        stream_relation: Option<&StreamRelation>,
+    ) -> Self {
+        if stream_relation.is_none()
+            && matches!(
+                &payload,
+                Some(SourceVariantPayload::Reference(SourceReference::Plain(payload_name)))
+                    if payload_name == &name
+            )
+        {
+            return Self::from_self_tagged(name);
+        }
+        match (payload, stream_relation) {
+            (Some(payload), Some(relation)) => Self::Streaming(
+                SourceVariantName::new(name),
+                payload,
+                StreamRelationKeyword::from(relation),
+                SourceVariantName::new(relation.stream_name().clone()),
+            ),
+            (Some(payload), None) => Self::from_payload(name, payload),
+            (None, Some(_)) | (None, None) => Self::from_name(name),
+        }
+    }
+
     pub fn name(&self) -> &Name {
         match self {
             Self::Unit(name)
