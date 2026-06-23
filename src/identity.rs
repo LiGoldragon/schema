@@ -27,6 +27,7 @@ use crate::{
         Declaration, EnumDeclaration, ImportDeclaration, Name, Schema, StreamDeclaration,
         TypeDeclaration, TypeReference,
     },
+    specified::SpecifiedSchema,
 };
 
 /// The hash domains content identity is derived under. Each domain
@@ -170,6 +171,17 @@ impl Schema {
     /// namespace declaration, a root enum, or a declared import.
     pub fn family_closure(&self, family_name: &str) -> Result<FamilyClosure, SchemaError> {
         ClosureWalk::new(self, family_name).into_closure()
+    }
+}
+
+impl SpecifiedSchema {
+    /// The whole-specified-schema content address: blake3 over the fully
+    /// specified semantic value's canonical rkyv bytes, under the same
+    /// whole-schema hash domain. Derived projections such as payload terminal
+    /// shape are intentionally absent from the archived value.
+    pub fn content_hash(&self) -> Result<ContentHash, SchemaError> {
+        let bytes = self.to_binary_bytes()?;
+        Ok(ContentHash::derive(HashDomain::Schema, &bytes))
     }
 }
 

@@ -204,6 +204,34 @@ fn specified_payload_shape_is_derived_not_stored_on_payload() {
 }
 
 #[test]
+fn specified_schema_content_hash_excludes_derived_payload_shape_cache() {
+    let specified = specified_fixture();
+    let output = specified
+        .output()
+        .as_enum()
+        .expect("output root is an enum");
+    let accepted = output
+        .variant_named("RecordAccepted")
+        .expect("RecordAccepted variant exists");
+    let payload = accepted.payload().expect("RecordAccepted has a payload");
+
+    assert_eq!(
+        payload.shape(&specified),
+        SpecifiedPayloadShape::Scalar(TypeReference::String),
+        "the test exercises the derived terminal shape before hashing"
+    );
+
+    assert_eq!(
+        specified
+            .content_hash()
+            .expect("specified schema hashes")
+            .to_hex(),
+        "b1b8b5aad9a636ebf66c9f24999531560f4a291df93c2d38a24ae204fb57d9ab",
+        "the golden hash is over the canonical specified-schema bytes; adding a stored derived shape cache changes this value"
+    );
+}
+
+#[test]
 fn specified_schema_projects_back_to_the_schema_declaration_codec() {
     let specified = specified_fixture();
     let entry = specified
