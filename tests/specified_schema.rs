@@ -4,13 +4,12 @@ use schema_next::{
 };
 
 fn specified_fixture() -> SpecifiedSchema {
-    let schema = SchemaEngine::default()
-        .lower_source(
+    SchemaEngine::default()
+        .lower_specified_source(
             include_str!("fixtures/specified-ir.schema"),
             SchemaIdentity::new("schema:specified-ir", "0.1.0"),
         )
-        .expect("specified IR fixture lowers");
-    SpecifiedSchema::from(&schema)
+        .expect("specified IR fixture lowers")
 }
 
 #[test]

@@ -12,6 +12,7 @@ use crate::{
         Declaration, DeclarationHead, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
         NewtypeDeclaration, RootApplication, Schema, TypeDeclaration, TypeReference,
     },
+    specified::SpecifiedSchema,
 };
 
 #[derive(
@@ -349,6 +350,15 @@ impl SchemaEngine {
     ) -> Result<Schema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document(&document, identity)
+    }
+
+    pub fn lower_specified_source(
+        &self,
+        source: &str,
+        identity: SchemaIdentity,
+    ) -> Result<SpecifiedSchema, SchemaError> {
+        self.lower_source(source, identity)
+            .map(|schema| SpecifiedSchema::from(&schema))
     }
 
     pub fn lower_schema_source(
