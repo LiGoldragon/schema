@@ -1,5 +1,6 @@
 mod declarative;
 mod engine;
+mod environment;
 mod expansion;
 mod identity;
 mod instance;
@@ -20,6 +21,11 @@ pub use declarative::{
     MacroTemplateObject, SchemaMacro, TypeTemplate,
 };
 pub use engine::{SchemaEngine, SchemaError, SchemaIdentity};
+pub use environment::{
+    SchemaEnvironment, SchemaEnvironmentManifest, SchemaEnvironmentModule, SchemaEnvironmentResult,
+    SchemaNodeType, SchemaNodeTypeLabel, SchemaRootBlockKind, SchemaRootBlockSummary,
+    SchemaSourcePosition, SchemaSourceRange, SchemaSourceSummary,
+};
 pub use identity::{ContentHash, FamilyClosure, SpecifiedFamilyClosure};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
