@@ -1,6 +1,6 @@
 # schema-cc — agent contract
 
-Read `INTENT.md` first, then `ARCHITECTURE.md`, then this file, then `skills.md`.
+Read `ARCHITECTURE.md` first, then this file, then `skills.md`.
 
 schema-cc is the schema **compiler-compiler**: the compiler's own definition kept
 as typed data that *generates* the schema compiler, bottoming out in the

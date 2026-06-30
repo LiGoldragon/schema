@@ -1,6 +1,38 @@
 # Architecture
 
-`schema` turns NOTA structure into typed schema source data.
+`schema` is the schema macro engine and typed semantic schema data model for the
+schema-derived stack. It turns NOTA structure into typed schema source data and
+does not emit Rust source code itself; that is `schema-rust`'s job.
+
+## Direction
+
+Durable direction the psyche has set for this repo, kept beside the architecture
+it shapes:
+
+- Reading NOTA-shaped structure above the raw structural parser must go through
+  typed structural macro nodes. Surviving hand-parsing sites (such as a schema
+  macro library that parses by hand) are design violations to fix, not
+  acceptable code. If a structural macro node cannot express a needed shape,
+  that signals the NOTA design was not implemented properly and must be
+  surfaced to the psyche rather than worked around (Spirit `v0n6`).
+- The schema-layout description is fully content-addressable: its hash is its
+  identity, and any edit to the schema changes the address, which is the
+  version the version-control layer consumes (Spirit `wrjl`). The hash is
+  computed on the semantic schema-in-Rust value, never on `.schema` text, so
+  formatting-only source edits do not move the address.
+- One consistent cryptographic basis spans the version-control and backup
+  system: blake3 for all content addressing, with no component diverging in
+  hash function (Spirit `x0ja`). The whole-schema and family-closure hash kinds
+  are domain-separated through distinct blake3 `derive_key` contexts so they can
+  never collide.
+- A type's kind is announced by its declaration form, never inferred from
+  syntactic position (Spirit `3742`); the generic and trait/impl pipe forms
+  extend this (Spirit `hh3z`, `bpyu`). Reaction frames are workspace-universal:
+  the Work/Action types are declared once as generics and bound per component,
+  not re-authored (Spirit `zjmc`). Code generation is build-time only (Spirit
+  `9rjq`), and generated schema types are the source of every operation data
+  type while handwritten Rust implements only behavior on those nouns (Spirit
+  `5hjv`).
 
 ## Pipeline
 
