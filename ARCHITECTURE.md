@@ -36,6 +36,15 @@ including where the authored syntax is meant to evolve past its current form.
   format and the language is specified by its own `.schema` file. The bootstrap
   Rust reader stays hand-written until the self-description lowers through the
   engine cleanly.
+- The schema language is its own compiler-compiler (Spirit `vpbx`). The compiler
+  definition itself — reference grammar, dispatch precedence, built-in heads,
+  shape vocabulary, and emission rules — is kept as typed data that *generates*
+  the schema compiler (`schema`/`schema-next` and its Rust emitter
+  `schema-rust`/`schema-rust-next`) rather than being hand-written, bottoming
+  out in the `nota-next` seed reader. The governing rule is to push as much of
+  the compiler definition into data as possible, so the hand-written surface
+  shrinks toward the irreducible bootstrap seed and every other compiler choice
+  is an editable schema artifact rather than embedded Rust control flow.
 - Schema is a superset of Cap'n-Proto-style spec languages (Spirit `tace`),
   adding its own module system, a macro system, and shape-driven node-type
   matching (structure plus member count plus member types resolve a node's type)
