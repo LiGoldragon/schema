@@ -7,7 +7,129 @@ does not emit Rust source code itself; that is `schema-rust`'s job.
 ## Direction
 
 Durable direction the psyche has set for this repo, kept beside the architecture
-it shapes:
+it shapes. The implemented surface is described in the sections that follow; the
+direction below states where the design is going and which choices are settled,
+including where the authored syntax is meant to evolve past its current form.
+
+### What schema is
+
+- Schema is the macro-language source of truth for component data, wire,
+  storage, and upgrade behavior. Every Spirit, Signal, Nexus, and SEMA operation
+  is declared in a `.schema` file first; generated schema types are the source
+  of every operation data type, and handwritten Rust only implements behavior on
+  those generated nouns (Spirit `1aam`, `ycmd`). Hand-written Rust is the engine
+  logic alone — the decision-making bodies of actor methods; every structural
+  thing (NOTA form, rkyv form, type definitions, enum variants, field accessors)
+  emits from schema, so the engine never reinvents the data-structure wheel.
+- Schema is the programmable composability layer over NOTA (Spirit `er9w`). NOTA
+  is a thin structure-sensing library carrying no meaning; schema interprets its
+  quote-free delimiter structure into typed input/output interfaces. The same
+  NOTA text means different things under different schemas, and schemas express
+  composable data types and data-driven behavior trees for Signal, Nexus, SEMA,
+  and sub-engine behavior — a reusable declaration bedrock, not only a Spirit
+  contract format.
+- Schema is self-hosting all the way down (Spirit `g2xr`, `khbv`, `sanf`). NOTA's
+  own grammar is described by the foundational schema, which generates the Rust
+  that interprets NOTA; the authoring language is itself a macro expanding to
+  assembled-schema data, so the schema-of-schemas generates its own assembled and
+  short-syntax forms. The meta-schema is written in the schema language's own
+  format and the language is specified by its own `.schema` file. The bootstrap
+  Rust reader stays hand-written until the self-description lowers through the
+  engine cleanly.
+- Schema is a superset of Cap'n-Proto-style spec languages (Spirit `tace`),
+  adding its own module system, a macro system, and shape-driven node-type
+  matching (structure plus member count plus member types resolve a node's type)
+  without becoming general-purpose. Its scope is the workspace's Rust subset
+  only. The recursive-parser-plus-dispatch-plus-lowering model is a reusable
+  library for any NOTA DSL; schema is its first application. The structural
+  patterns (deep typed trees, closed variants, recursive composition, separated
+  syntax/verification/semantics) emerged first in the psyche's Aski language work
+  — `aski-core` rkyv contract types for the compiler/verifier/semantics triad and
+  the core parse-tree primitives — and the schema engine is the second iteration
+  of those insights (Spirit `ospz`; an earlier STT artifact misheard Aski as
+  ASCII).
+
+### Foundational model
+
+- Everything is a struct (Spirit `umsv`, `2cuo`). A unit variant is a zero-field
+  struct, a data variant a one-field struct, an enum a single-field struct
+  holding the active variant; a `Vec` is a single-field struct and a vector is
+  structurally an enum (a choice over its members). Maps are reserved for
+  namespaces. This supersedes the abandoned at-sigil for macro invocation:
+  positional typing against the schema-of-schemas resolves variant-versus-macro
+  with no sigil. The schema is one recursive shape — a root struct with
+  macro-expanded fields down to scalar leaves — and recursion terminates at
+  built-in macros over scalar leaves (integers, unit-variant enums, booleans,
+  typed-newtype strings). Bool's `True`/`False` is a two-unit-variant enum, which
+  is why NOTA capitalizes booleans.
+- The schema language handles only the workspace Rust subset (Spirit `b05y`):
+  named-field structs, named-variant enums (bare, data-carrying, struct-variant,
+  nested), single-field newtype structs, and scalar primitives. No tuples —
+  tuples are poorly-defined structs and excluded. Domain concepts should be typed
+  beyond raw `String` through typed-string newtypes, and `EnumIdentifier` is a
+  core constrained-string type.
+- A struct field's role is its type, so no two fields share a type — dimensional
+  correctness, `Height` versus `Width` (Spirit `a5tg`). Center design on schema
+  types: prefer value enums that name a field's closed set of cases over
+  stringly-typed fields, and thread schema-emitted types end to end rather than
+  re-deriving them by hand. Schema enum variants are themselves enums or
+  data-carrying enums — the mandatory two-layer enum-of-enums structure (Spirit
+  `wvpg`). An interface is a root enum with more than one variant; a root naming
+  only one operation is an incomplete design and a newtype, not an interface, and
+  interface chain depth measures design realism (Spirit `2f04`).
+- Separate a thing's categorical KIND (one-of-N essence, no off) from its
+  additive CAPABILITY vector (Spirit `gjr1`). Kind is an explicit categorical
+  choice validated at projection with a typed error, never modelled as
+  pre-selected defaults an additive vector overrides, since an additive vector
+  cannot express un-selection.
+
+### Authored-syntax direction
+
+The current implemented surface (described under Strict Key/Value Schema Syntax
+and Constraints) uses brace key/value struct bodies and the `*` star shorthand.
+The settled direction is to move struct bodies to bare positional type lists:
+
+- Schema is purely positional (Spirit `6wwf`, `a5tg`, `5jac`). A name appears
+  only where something is genuinely keyed — a namespace map entry by its key, a
+  sum variant by its tag. A positional slot, such as a struct's fields or the
+  Input/Output enum positions, is bare because position already says what it is.
+  An entry is just a list of type names (`Entry (Topic Kind Summary)`); the field
+  name derives by lowercasing the type name. The name-value struct form and the
+  star shorthand are the retirement target, not the destination. When an explicit
+  field name differs from the type-derived name it uses a dot differentiator
+  (`source.TypeReference`), and dot syntax is invalid when the explicit role
+  equals the type-derived name. Repetition is a keyed collection, never repeated
+  fields.
+- The built-in type-name vocabulary lives in Schema, not NOTA (Spirit `iypq`):
+  the scalars `String`, `Integer`, `Boolean`, `Path` and the composites `Vec`,
+  `Optional`, `Map`, `Set`, `Box` are Schema's type-reference vocabulary
+  alongside struct/enum declarations. NOTA stays pure structure plus the codec
+  and the value literals `None`/`(Some x)`. The `(Vec X)` tagged form and the
+  value-versus-type distinction (`[X]` is a vector value, `(Vec X)` the type)
+  hold but live at the Schema layer. `TypeReference` application uses the flat
+  head form `(Map K V)`.
+- Schema-next needs a `Bytes` primitive (ideally fixed-size byte arrays) beyond
+  `String`/`Integer`/`Boolean`/`Path` so binary values — BLS keys, signatures,
+  digests, fingerprints, nonces — type as bytes, plus a hash-identifier type
+  whose value is bytes but whose NOTA projection is a canonical short string code,
+  generalizing the 12-byte base36 `RecordIdentifier` (Spirit `yp29`).
+- `DomainScope` uses ordinary schema-emitted recursive enum semantics, staying
+  typed all the way through matching, expansion, and equivalence; generated code
+  never hand-parses path shortcuts, hides stop markers, or degrades values into
+  `Debug` strings or `Vec<String>` paths (Spirit `94sj`). Domain subdomains are
+  mandatory to a leaf, so a domain value is always complete; `DomainScope` is a
+  separate generated prefix language over the same recursive domain tree — a
+  `ScopeOf` construct where stopping early is the prefix semantics rather than
+  optional subdomain data, with no `Some`/`None` exposed (Spirit `izib`). Domain
+  relations live as first-class schema-declared vocabulary in a dedicated
+  taxonomy schema surface, a new schema interface kind alongside the plane
+  schemas, and the relation/expansion mechanism is reusable across components such
+  as the mind (Spirit `mn3k`). Within that taxonomy, `Technology` divides into two
+  parallel clusters, `Hardware` and `Software`; every child of `Technology` is a
+  cluster with no bare leaves, so all hardware is a queryable scope mirroring the
+  software cluster (Spirit `tw15`).
+
+### Settled architecture choices
 
 - Reading NOTA-shaped structure above the raw structural parser must go through
   typed structural macro nodes. Surviving hand-parsing sites (such as a schema
@@ -33,6 +155,64 @@ it shapes:
   `9rjq`), and generated schema types are the source of every operation data
   type while handwritten Rust implements only behavior on those nouns (Spirit
   `5hjv`).
+- Schema declares data types only — no effects, fan-out targets, effect tables,
+  or storage descriptors (Spirit `hl1z`). Effects are runtime dispatch and logic,
+  outside schema's lane; runner concurrency mode is likewise a runtime/deployment
+  choice the public contract does not encode, and schema declares semantic
+  constraints (ordering, idempotence, cancellability, read fan-out, single-writer)
+  only when those semantics are real (Spirit `i9xk`). Schema files carry
+  structure, not explanatory comments — declarations are self-explanatory through
+  the type names they declare, and prose lives in the Rust implementation files
+  (Spirit `bw9v`). Schema files use the `.schema` extension (Spirit `b0v3`).
+- Schema namespace additions follow append-only discipline (new names at the end
+  of the available namespace), and enum-slot planning minimizes database rewrites
+  so future enum compilation and upgrade logic stays upgrade-compatible (Spirit
+  `9yxh`). Components treat recompiling to change an enum set as trivial:
+  zero-downtime upgrade is a design goal, so schema and enum changes are not a
+  cost to design around (Spirit `uuh7`). Schema-defined execution consults
+  current state and trusted owner/core authority messages before mutating
+  storage; the single-owner model remains the race-avoidance discipline (Spirit
+  `yngr`).
+- Schema declaration is the source of truth that drives codegen, which produces
+  not only the Rust types and impls but per-version namespace-slot-assignment
+  tables and version-diff auto-marking types for upgrade migration on recompile
+  (Spirit `mqlb`). Compilation auto-assigns slot numbers and applies size
+  optimization, and the Rust macro becomes a consumer of structured schema data
+  rather than a parser of Rust syntax. The direction is firm; the exact shape
+  still needs iterative design.
+- Streaming is full schema-derived push: a component subscription opens by
+  delivering the current matching snapshot, then pushes every relevant change
+  until the subscription closes, because a future-deltas-only subscription leaves
+  clients without the current state (Spirit `brgo`). Schema-next gains an
+  event/stream root with `opens`/`belongs` relations; schema-rust-next emits the
+  event frame into signal-frame's streaming body plus an observable-set pub-sub,
+  and the push action and subscriber registry live in triad-runtime. The default
+  `SubscribePolicy` is `TerminateAtHandover`: subscriptions end at handover and
+  clients reconnect to the next version.
+- Schema-next keeps one lowering engine — the most correct lowering path, not
+  dual paths or the smallest patch — and schema-derived Rust emission targets
+  that engine rather than rewiring into the old signal macro implementation
+  (Spirit `58bv`). The schema-derived stack (nota-next, schema-next,
+  schema-rust-next, `signal-frame.schema`, `spirit.schema`) does not reference the
+  separate Nexus NOTA-using vocabulary track; schema macros are plain NOTA records
+  dispatched by position and shape in the schema-next `MacroRegistry`, not by the
+  reserved NOTA sigils (Spirit `5mxn`).
+- Every component repository gets a concept schema file starting at version 0.1,
+  with Spirit, Orchestrate, Mind, and Persona as preferred pilots; schema files
+  remain the source of data-type truth and may live beside Rust source when
+  simplest (Spirit `ddlv`). The schema-codegen capability set is closed (types,
+  generic-frame expansion, payload structs/newtypes/enums, standard impls,
+  role/marker traits, shape-computed constants, method-bearing trait surface,
+  actor wiring, plane carriers, opt-in `Deref`); the next phase is
+  integration/migration, not language design — flip scalar-newtype impls
+  default-on, integrate onto code-repo main, and port all components, with Spirit
+  as a copyable contract-daemon/engine-stack exemplar rather than an all-in-one
+  pilot (Spirit `t5wx`). Runtime binaries stay small, carrying only strict rkyv
+  wire/storage contracts; the schema/NOTA compiler is build-time-only and never
+  linked into runtime, and the NOTA text codec is an optional edge feature absent
+  from the daemon. Creating new repositories with clean names is an acceptable
+  option if branch names and old ancestry become too confusing — an option to
+  evaluate, not an immediate rename directive (Spirit `neib`).
 
 ## Pipeline
 
@@ -220,6 +400,15 @@ Schema names emit through their own `Name` codec, not through the ordinary
 only non-symbol names fall back to bracket-string text. Actual `String`
 type-reference values still use the normal NOTA string surface at value
 positions.
+
+Schema-defined type trees are normally six or seven layers deep —
+enum-of-struct-of-enum-of-struct and so on — so deep nesting is the normal shape,
+not an exception, and the engine must traverse and emit through arbitrary depth
+via canonical recursive walks with no ad-hoc per-layer handling (Spirit `3itj`).
+The same types are referenced in many places throughout the tree through a TYPE
+INDEX: a flat index of named types the tree refers into, so a type appearing in
+many positions resolves to one canonical declaration rather than being
+re-described at each site.
 
 `SymbolPath` is the typed identity projection for schema positions. It is a
 newtype over ordered `Name` segments and can be derived from a `Schema` root
@@ -636,3 +825,253 @@ The generics leg (declaration, use, expansion) is prototyped and proven green;
 the trait/impl leg is designed-but-not-integrated. Per Spirit (low-certainty
 design record, review certainty as integration proceeds): this section's OPEN
 items are the parts still being settled.
+
+## Runtime Planes the Schema Describes
+
+The same four-position schema shape (Imports, Input, Output, Namespace) describes
+three runtime planes, each its own language sharing that shape and the same
+single-colon import/export mechanism; the languages differ only in which types
+and macros fit each position (Spirit `2v9u`, `rmv8`). The three planes are
+Signal (the wire/message plane), Nexus (the execution-IO plane for internal
+effects, external calls, and UI panels — and the keeper of in-flight mail state
+between Signal ingress and SEMA replies), and SEMA (the durable-state plane).
+Each plane has its own engine and traits but shares one pattern: run code over an
+input message, return an output message. Rust emission splits the planes into
+separate namespaces so payloads use plain `Input`/`Output` names without plane
+prefixes (Spirit `7118`, `rmv8`).
+
+A schema document's root is a data-carrying `Plane` enum with `Signal`, `Nexus`,
+and `Sema` variants carrying the actual plane messages, so runtime code matches
+directly on the plane rather than pairing a thin kind tag with a separate
+envelope (Spirit `ugig`). The schema type itself — which plane a schema declares
+— is a `Kind` enum (`schema::Kind`), each variant carrying that plane's
+four-position body, giving the three typed engines their dispatch point and
+mirroring the SEMA runtime envelope at the message level (Spirit `z9kv`; the
+`Kind`-versus-`Plane` naming is still open). Engine trait signatures type-check on
+plane membership: a signal-plane message cannot pass where a nexus or sema
+message is expected, so the trait chain cannot be mis-wired on either the order
+or the plane axis.
+
+A component schema reads as a sectioned three-part structure (parts two and three
+optionally recursive): SPECIFYING (imports and exports / name-sharing), INPUT
+(operations and queries received), and OUTPUT (responses emitted), each part's
+first sub-part a header or derived from the assembled schema (Spirit `rmqo`). Per
+component the struct order is optional metadata/imports, then short headers
+(regular signal, owner signal, SEMA operation) each a vector of variants, then the
+namespace map, optionally a final extension vector; the top-level outer vector
+holds distinct typed sub-vector sections, not one flat mixed vector. Header
+declarations come first and drive receive/dispatch triage, are derivable from the
+actual assembled data type rather than authored separately, and usually begin with
+an enum-like variant decision because the first structural match creates the
+routing namespace, mirroring the binary signal header (Spirit `m76h`). Every
+PascalCase name in a schema header — Input/Output root bodies, `NexusWork`,
+`NexusAction`, `SemaWriteInput`, `SemaReadInput` — becomes an exported top-level
+type importable by library consumers, so the header IS the component's public
+type-level interface: each variant is a named, defined, exported contract verb or
+reply (Spirit `w6y1`). Under the current macro grammar a double-wrapped
+`((Parse Expression) (Render Expression))` Input/Output form reads its heads as
+macro/operator heads, not enum variants, so that form is denied as schema grammar
+until a distinct enum-variant context or explicit enum form is established (Spirit
+`oe6s`).
+
+Most schemas are plain; a component's top-level schema is reactive. A plain BASE
+schema (root struct plus a namespace of type definitions) says what data IS; the
+REACTIVE schema extends it with the reaction surface — input in, nexus through,
+sema state, output back — and says how data MOVES, analogous to Nix's built-in
+derivation extended by higher-level builders (Spirit `mimk`). A loaded file's
+root kind (base versus reactive) is known a priori from the load context
+(extension/filename), like a Nix derivation, so the file supplies only positional
+values at known slots with no root, field, or type names; a base file is just its
+namespace, a reactive file is bare input enum, output enum, namespace, with no
+`Input`/`Output` labels even in `root.schema` (Spirit `l1ip`).
+
+### Engines and the request pipeline
+
+The daemon has three execution centers whose traits encode order (Spirit `o8x5`,
+`str0`). Each engine trait's method count matches the number of distinct wire
+events its plane handles:
+
+- `SignalEngine` (messaging; the first gate) has two methods: triage on input
+  arrival, which rejects invalid messages back to the client, and reply on output
+  emission.
+- `NexusEngine` (the mail keeper and translator that holds being-processed mail
+  and converts Signal to and from SEMA) has one method: execute, a synchronous
+  compute step. Nexus may host an internal recursive engine for future runtime
+  control.
+- `SemaEngine` (state) has two methods: apply for writes and observe for parallel
+  reads.
+
+Push only on success; push methods take the next engine as a parameter,
+sequencing Signal to Nexus to SEMA and then reversing. The full request pipeline
+is: Signal triages wire input, Nexus computes, SEMA performs the durable op,
+Nexus receives the SEMA reply and decides next steps, Nexus returns the reply to
+Signal, and Signal frames the reply to the wire client (Spirit `ooxy`). It is
+asynchronous throughout, and rolling origin identifiers thread through the whole
+pipeline so each layer routes responses back to the correct waiter, including
+partial SEMA responses for multi-op work.
+
+### Effect table and the match-matrix surface
+
+The schema declares an EFFECT TABLE: a closed mapping from message types to
+effect types, with replies declared per message (Spirit `udjq`). Dispatch is
+structural match through the interact-trait contact point — message to mapped
+effect to mapped reply — so effects, messaging, and interactions are all mapped
+and internal work composes them: match always, map always, match rather than
+compute. When a match between two domains has no defined behavior in a cell, the
+response is a typed error or help message (`Unavailable`/`Unauthorized`/
+`NotImplemented`) that lives in the domain enum as part of the trait surface, so
+the caller can match on it rather than hit an exception or unhandled default
+(Spirit `xiqa`). The error surface is part of the trait surface.
+
+The current target assumes at most seven root data-carrying variants for a
+component surface; substantially more is pressure to split the component or
+surface (Spirit `ujb2`).
+
+## Contracts, Channels, and the Component Triad
+
+A contract is a channel: each channel gets its own schema, so one component has
+multiple `.schema` files — one per channel — superseding one-schema-per-component
+(Spirit `26e7`). A component is at least three plane schemas, and major actors get
+their own schema; every part worth describing gets a schema the psyche can
+inspect and interact with, and signal-frame itself is schema.
+
+Components have two schema categories (Spirit `nm97`). EXTERNAL schemas describe
+surfaces outside daemon runtime: wire contracts to other components (the
+signal vocabulary surviving the socket boundary) and database/storage contracts
+(state surviving process exit). INTERNAL schemas describe surfaces within runtime:
+actor message vocabularies and inter-actor channel contracts sharing process
+memory. Each schema describes one channel, and internal-schema changes break
+neither database nor wire.
+
+The component triad splits accordingly (Spirit `f8ds`, `l6zw`, `26e7`). The
+client-facing Signal types live in the `signal-<component>` contract repo as the
+canonical wire vocabulary — only Signal `Input`/`Output` roots, their record
+types, and the wire codec — and the daemon imports them. Nexus and SEMA
+interfaces live in the daemon repo as runtime-internal `.schema` files (for
+example `cloud/schema/nexus.schema`), each with its own imports/exports/namespace
+and importing the wire Signal IO; they are not separate crates or repos.
+`SignalEngine`/`NexusEngine`/`SemaEngine` live in the daemon, which imports the
+contract `Input`/`Output`; clients send and receive only Signal messages. SEMA
+may extract to a contract repo when a daemon gains a scale-out database. The
+schema type/macro-substrate library may co-locate in the triad or sit in a
+dedicated schema-types repo consuming the same compiled NOTA artifact — only
+crate layout differs.
+
+Every component derives two vocabularies from one `.schema` file (Spirit `c8b3`):
+an internal effect language for engine-internal actors over each other and
+storage (the actor-mediator surface), and an external wire language for signal
+contracts via signal sockets (signal-frame envelope, `ShortHeader`, dispatch).
+The `signal_channel` macro emits the wire surface, the SEMA operations, and the
+SEMA lowering operations together.
+
+Schema files are strict typed component interface contracts (Spirit `xbc2`):
+their input and output roots plus imports and namespace define the messaging/API
+surface the engine implementation must use, forcing agents and generated code to
+communicate through schema-emitted objects rather than ad hoc messages. The root
+type of a schema is the message surface — what is sent — and each schema declares
+its own input and output enums and uses colon-path namespace imports for shared
+types (Spirit `fhe8`). Common workspace identifiers (record, forward, send) are
+stored as enum-encoded composite names so the wire form is the discriminator, not
+the string, making the namespace composable across components and enabling
+multilingual labels (Spirit `8u1o`). Schema variant namespaces reserve explicit
+numeric ranges so the encoded form reflects the logical split before deeper
+payload parsing: Input and Output are partitions of one wire tag space, so a
+single tag byte identifies both the variant and its direction — the basis for
+input/output dispatch at the message layer (Spirit `fry8`).
+
+## Schema as a System
+
+The schema component is a full component triad (Spirit `xbu8`). Its daemon loads
+a schema environment from a manifest that selects the module versions the import
+system uses; resolves schemas, namespaces, core definitions, and macro libraries
+from that environment; parses source files with source-map awareness of where
+each block begins and ends and what type it has; and serves as the extensible
+schema language-server surface for inspection, editing, code generation, upgrade,
+and future schema-aware features. The library and macro faces consume the same
+environment and schema values rather than maintaining a separate interpretation.
+
+The workspace ships a library of precompiled schemas (Spirit `uzxp`). A standard
+namespace — the core — is always implicitly loaded and contains the macros and
+built-in types; other schemas load as needed. Precompilation means schemas do not
+re-parse at every interpretation site; they live as in-memory namespace tables,
+and the precompiled-schemas surface is what emitters and interpreters consume.
+The schema daemon is the runtime arm of that library: it resolves and caches
+schemas in memory, owns the namespace surface, and is the single point through
+which agents and code emitters resolve namespace references, so all cross-schema
+resolution flows through it (Spirit `cbtg`). Built-in core macros live in the
+basic schema library and are always imported when a schema imports the schema
+module — no opt-in — while user-defined macros are lazy-loaded by name from
+explicit imports: core macros are non-negotiable substrate, user macros are
+extensions that compose with the core (Spirit `wx5c`).
+
+The schema-derived runtime supports an optional testing/instrumentation build
+surface where generated objects and engine-interface usage emit structured trace
+events to a logging socket, proving actual runtime use of the Signal, Nexus, and
+SEMA interfaces during tests rather than mere symbol existence (Spirit `xqkv`).
+
+Schema-stack presentations, tests, and design reports show the schema-to-interface
+path: each component interface, the schema that creates it, the path to the
+generated interface and component communication, plus the derived code, typed
+interfaces, traits, impls, and derivation boundaries where flaws can be spotted
+(Spirit `hckx`). Schema examples should include multi-variant headers, not only
+one-element vectors (Spirit `h9xd`).
+
+## Macro Dispatch and Composition
+
+Macros are sugar in the schema layer (Spirit `506w`): the brace-enum form expands
+to the canonical paren-list form, both lowering to the same assembled schema,
+where variants are already `(VariantName payload-option)` records in a
+homogeneous vector. The macro engine dispatches on multiple criteria — delimiter,
+internal shape, root-object count, symbol qualification, and combinations —
+choosing the most specific; the macro shape itself is two-position, a pattern it
+matches and a template for how it expands. Enum-body vectors honor homogeneity:
+each element is one variant declaration, a bare PascalCase symbol (unit) or a
+parenthesized `(Name Type)` record (data), and the older interleaved at-suffix
+form is retired as dishonest.
+
+Macro dispatch is two-phase (Spirit `pul9`): a structure-match macro first asks
+what shape the `NotaValue` is (enum short-syntax? struct? newtype?), then the
+matching per-shape transformation macro applies its lowering — they compose
+because the same syntactic placement can carry different shapes. Each macro
+carries its own schema-reading logic, and this is the schema language's extension
+mechanism: new shapes arrive as new macros enter the precompiled core or
+per-schema imports. Schema macro resolution maps nodes onto a closed macro space
+whose variants are the built-in type forms (`Enum`, `Struct`, `Vec`, `Option`,
+`KeyValue`, `Newtype`) via dual dispatch (Spirit `rfg9`): look at the head keyword
+first and dispatch reserved built-ins directly, skipping structural mapping;
+otherwise resolve a user type declaration by structural shape. This adds a keyword
+fast-path over the structure-and-position `MacroRegistry`.
+
+Macros compose from reusable micro-macros — small composable units named in
+specific positions within larger macros, such as an enum-short-syntax applier, a
+struct-short-syntax applier, or a structure-match dispatcher (Spirit `d6if`,
+`qe84`). When you see repetition, extract it into a library or the schema macro;
+prefer pushing logic back into the schema macro, because the more the schema
+generates the better, as long as it stays clear and readable and shows the logic
+as object shapes (Spirit `xprx`). The lowering engine producing assembled schema
+is built from reusable data-carrying macro-variant lowerers at node-definition
+points: each macro-schema variant carries a struct defining its input type, and at
+a node-definition the built-in engine dispatches by shape to the matching variant,
+which consumes its input struct to produce lowered output — extensible by adding
+variants plus their input structs, not by hard-coding shape rules (Spirit `sd7x`).
+
+The bootstrap core schema (the schema-schema) is implemented in ordinary Rust
+first and exposed as the macro interface for writing schema macros (Spirit
+`sanf`): it names macro inputs by type — a macro's input type IS its name — so
+macros inspect NOTA block structure and emit assembled-schema data, and people
+build their own macros against this core. Every schema file is loaded with the
+schema-schema attached implicitly; built-in macros bootstrap expansion before the
+user-declared macro space expands.
+
+Two open macro-frontier questions are recorded but not settled. The enum-versus-
+macro-invocation ambiguity on parenthesized heads — a collection macro on one
+element type and a two-variant enum are structurally identical parens at the same
+position — needs an explicit discriminator (a reserved operator-word set, a sigil
+on operator heads, or moving collections onto suffix sigils plus brace, leaving
+the paren pure enum); only the paren is doubly loaded, struct bracket and map
+brace being unambiguous, and which discriminator wins is open (Spirit `b0s4`).
+Macro bodies also need an explicit binding-and-reference mechanism for assigned
+symbols, with the firm constraint that references stay visible in the schema
+language (a `$`-style sigil is a candidate), plus single-object sigil sugar where
+a leading sigil lets one NOTA object stand for a larger pair or field expression
+when the macro case is obvious (Spirit `e8iu`).
