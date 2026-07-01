@@ -751,6 +751,20 @@ module boundaries.
   parenthesized object as a tagged/data-carrying node: first object is the tag,
   second object is the data. This prevents macro invocation from being a hidden
   parser branch; macro calls can be inspected and represented as assembled data.
+- `UpgradeObject` in `src/upgrade.rs` is the schema-change unit:
+  `{ previous_identity: SchemaIdentity, next_identity: SchemaIdentity, edits: Vec<SchemaEdit> }`.
+  `SchemaEdit` is a closed enum `AddField | ChangeFieldType | AddVariant`.
+  `UpgradeObject::apply` runs edits in order; identity mismatch rejects with
+  `SchemaError::SchemaEditIdentityMismatch` (a typed error, not a string log).
+  The return is an `UpgradeReceipt` carrying the identity transition plus each
+  edit's typed per-edit receipt — typed receipts, not string logs.
+- Schema lowering is single-path: there is exactly one set of lowering semantics
+  (the typed `SchemaSource` path). The document entry point reparses a `Document`
+  into `SchemaSource` and lowers that; no second hand-mirrored lowerer exists.
+  This means a document and its `SchemaSource` cannot lower to different schemas,
+  so the verbose explicit-payload source form and the bare-name form are
+  byte-identical after lowering. Tests in `tests/typeref_structural_macro.rs`
+  witness the byte-identity property for `TypeReference` canonical forms.
 
 ## Syntax Schema Layer
 
@@ -812,6 +826,14 @@ small FIXED, named mechanical family (payload projection, the auto-emitted
 constructors, `From` legs, accessors). Genuine business logic (the decision
 plane, the store, the guardian, the signal-query matchers) stays hand-written;
 arbitrary Rust expression bodies are never modeled as data.
+
+The generic-substrate fence: the four-plane separation of authored `.schema`
+source artifact (`SchemaSourceArtifact`), semantic schema value (`Schema`),
+Rust emitter (`schema-rust`), and durable SEMA storage survives any generic
+lift. A `SerializableArtifact<T>` or `SemaStore<T>` abstraction must not
+collapse these planes by merging source-artifact, semantic-schema, and emission
+concerns into a single parameterized type. Each plane has its own ownership
+contract and must remain independently evolvable.
 
 ### Open (how — deliberately unsettled)
 
