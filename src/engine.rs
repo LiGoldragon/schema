@@ -75,6 +75,13 @@ pub enum SchemaError {
     RetiredStructFieldSyntax { found: String },
     #[error("redundant explicit field role {found}; just use {type_name}")]
     RedundantExplicitFieldRole { found: String, type_name: String },
+    #[error(
+        "optional enum-variant payload {enum_name}::{variant_name}; a variant payload must always appear in the text form, so (Optional T) is forbidden here — model the optional case as an explicit member carrying a required payload (for example a leaf enum with an explicit All member)"
+    )]
+    OptionalVariantPayload {
+        enum_name: String,
+        variant_name: String,
+    },
     #[error("io error at {path}: {reason}")]
     Io { path: String, reason: String },
     #[error("malformed schema path: {path}")]

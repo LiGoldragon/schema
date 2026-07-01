@@ -213,6 +213,27 @@ fn redundant_dot_field_roles_are_rejected() {
 }
 
 #[test]
+fn optional_enum_variant_payload_is_rejected() {
+    // Strict positional NOTA: a variant payload always occupies the text
+    // form, so `(Optional T)` is forbidden as a variant payload. The optional
+    // case must instead be modeled as an explicit member carrying a required
+    // payload (for example a leaf enum with an explicit `All` member). Named
+    // brace-record fields keep `(Optional T)` (see `tests/collections.rs`).
+    let source = "[] [] { Leaf String Category [Plain (Sub (Optional Leaf))] }";
+    let error = SchemaEngine::default()
+        .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
+        .expect_err("optional enum-variant payload is rejected");
+
+    assert_eq!(
+        error,
+        schema::SchemaError::OptionalVariantPayload {
+            enum_name: "Category".to_owned(),
+            variant_name: "Sub".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn single_field_inline_pascal_declarations_lower_to_newtypes() {
     let source =
         "[] [] { RecordIdentifier Integer Receipt { RecordIdentifier } Entry { Receipt } }";

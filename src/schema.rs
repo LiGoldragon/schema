@@ -837,6 +837,12 @@ impl Schema {
     fn verify_enum_arities(&self, declaration: &EnumDeclaration) -> Result<(), SchemaError> {
         for variant in &declaration.variants {
             if let Some(payload) = &variant.payload {
+                if matches!(payload, TypeReference::Optional(_)) {
+                    return Err(SchemaError::OptionalVariantPayload {
+                        enum_name: declaration.name.as_str().to_owned(),
+                        variant_name: variant.name.as_str().to_owned(),
+                    });
+                }
                 self.verify_reference_arities(payload)?;
             }
         }
