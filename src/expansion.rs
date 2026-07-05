@@ -28,7 +28,7 @@ use crate::{
 ///    is recorded as fired.
 ///
 /// The pass does not re-home the retired rival lowering: it never builds a
-/// `Schema`. It produces an expanded [`Document`] string and hands it back to
+/// `TrueSchema`. It produces an expanded [`Document`] string and hands it back to
 /// the single source path, preserving the collapse's single-semantics
 /// property.
 #[derive(Clone, Copy)]

@@ -14,7 +14,7 @@ impl SymbolPathFixture {
         }
     }
 
-    fn schema(&self) -> schema::Schema {
+    fn schema(&self) -> schema::TrueSchema {
         SchemaEngine::default()
             .lower_source(self.source, self.identity.clone())
             .expect("schema lowers")

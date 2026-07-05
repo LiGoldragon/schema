@@ -1,9 +1,9 @@
 use std::fs;
 
 use schema::{
-    ImplFact, ImplReference, MethodParameter, MethodSignature, Name, RustSurface, Schema,
-    SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, SourceImplEntry,
-    SourceNamespaceEntry, SourceReference, TypeDeclaration, TypeReference,
+    ImplFact, ImplReference, MethodParameter, MethodSignature, Name, RustSurface, SchemaEngine,
+    SchemaError, SchemaIdentity, SchemaSourceArtifact, SourceImplEntry, SourceNamespaceEntry,
+    SourceReference, TrueSchema, TypeDeclaration, TypeReference,
 };
 
 fn impl_catalog_fixture(name: &str) -> String {
@@ -17,10 +17,10 @@ fn namespace_entries(artifact: &SchemaSourceArtifact) -> Vec<SourceNamespaceEntr
     artifact.source().namespace().entries().to_vec()
 }
 
-/// Lower a fixture through the typed source archive into a `Schema`, the
+/// Lower a fixture through the typed source archive into a `TrueSchema`, the
 /// path that carries the full impl catalog onto each `Declaration` and the
 /// standalone `ImplBlock`s.
-fn lower_fixture(name: &str) -> Schema {
+fn lower_fixture(name: &str) -> TrueSchema {
     let artifact = SchemaSourceArtifact::from_schema_text(&impl_catalog_fixture(name))
         .expect("source decodes");
     SchemaEngine::default()
@@ -508,7 +508,7 @@ fn absent_trait_impl_fails_verification() {
 /// `(target, entry)` pair from `referenced_impls`, cloned so it outlives the
 /// borrowed schema. The order is the manifest's walk order (declarations
 /// first, then standalone blocks), which both lowering paths share.
-fn manifest_pairs(schema: &Schema) -> Vec<(String, ImplReference)> {
+fn manifest_pairs(schema: &TrueSchema) -> Vec<(String, ImplReference)> {
     schema
         .referenced_impls()
         .into_iter()
@@ -522,14 +522,14 @@ fn manifest_pairs(schema: &Schema) -> Vec<(String, ImplReference)> {
 }
 
 /// Lower a schema text through the macro/document path (`lower_source`).
-fn lower_via_macro_path(source: &str) -> Schema {
+fn lower_via_macro_path(source: &str) -> TrueSchema {
     SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("macro path lowers")
 }
 
 /// Lower a schema text through the typed-source path (`lower_schema_source`).
-fn lower_via_source_path(source: &str) -> Schema {
+fn lower_via_source_path(source: &str) -> TrueSchema {
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     SchemaEngine::default()
         .lower_schema_source(artifact.source(), SchemaIdentity::new("example", "0.1.0"))

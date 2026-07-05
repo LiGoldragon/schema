@@ -234,8 +234,8 @@ The settled direction is to move struct bodies to bare positional type lists:
    structural expectations are `nota` macro-node definitions: schema
    supplies schema positions and handlers, while nota supplies pattern
    matching, named captures, and no-match diagnostics.
-5. `SchemaSource` lowers into `Schema`, the ordered semantic schema value used
-   by Rust emission and schema upgrade logic.
+5. `SchemaSource` lowers into `TrueSchema`, the ordered semantic schema value
+   used by Rust emission and schema upgrade logic.
 
 ## Authored Schema Source
 
@@ -271,7 +271,7 @@ of that archive.
 `SchemaModuleSource::lower` decodes into `SchemaSource` first and lowers that
 typed source object directly through `SchemaEngine`. Package/module callers
 therefore have a named source value and a round-trippable source artifact
-before semantic `Schema`.
+before semantic `TrueSchema`.
 
 Root input/output headers are resolved against the typed source namespace before
 semantic schema is emitted. A bare header entry such as `Lookup` remains one
@@ -304,15 +304,15 @@ it a separate one-way lowering language.
 Stream declarations are typed source metadata in the namespace map, not
 namespace Rust data types. The source form is `StreamName (Stream { token Token
 opened Snapshot event Event close Close })`; it lowers to semantic
-`StreamDeclaration` data on `Schema::streams()` and is excluded from
-`Schema::namespace()`. This keeps push-subscription features visible in schema
+`StreamDeclaration` data on `TrueSchema::streams()` and is excluded from
+`TrueSchema::namespace()`. This keeps push-subscription features visible in schema
 while preventing stream lifecycle records from masquerading as ordinary payload
 types.
 
 Family declarations follow the same metadata precedent. The source form is
 `FamilyName (Family { record RecordType table table-name key Domain })`; it
-lowers to semantic `FamilyDeclaration` data on `Schema::families()` and is
-excluded from `Schema::namespace()`. The family name is the stable identity of
+lowers to semantic `FamilyDeclaration` data on `TrueSchema::families()` and is
+excluded from `TrueSchema::namespace()`. The family name is the stable identity of
 a stored record family; the record name must resolve to a declared namespace
 type, root enum, or import (`SchemaError::FamilyRecordNotFound` otherwise, on
 both lowering paths); the `TableName` is only the current storage coordinate;
@@ -320,7 +320,7 @@ and the key kind is the closed `FamilyKey` structural keyword choice
 `Domain | Identified`, mirroring a SEMA engine's keyed versus identified table
 registration. Duplicate family names and duplicate table names are typed
 errors. The family's version address comes from the existing content-identity
-surface: `Schema::family_closure(record)` over the declared record type.
+surface: `TrueSchema::family_closure(record)` over the declared record type.
 
 ## Raw Core Schema Reading
 
@@ -353,36 +353,37 @@ will consume.
 
 ## Semantic Schema
 
-`Schema` is the semantic schema-in-Rust value produced by lowering a real
+`TrueSchema` is the semantic schema-in-Rust value produced by lowering a real
 `.schema` source value. It is not a serialized text artifact and it is not an
 Asschema compatibility projection. Authored `.schema` text remains the NOTA
-projection owned by `SchemaSourceArtifact`; the semantic `Schema` value is the
+projection owned by `SchemaSourceArtifact`; the semantic `TrueSchema` value is the
 typed data object consumed by Rust emission, schema upgrade logic, symbol-path
 queries, and semantic assertions.
 
-`Schema` archives through rkyv with `Schema::to_binary_bytes` and
-`Schema::from_binary_bytes`. There is intentionally no `Schema::to_nota`, no
-semantic `.asschema` / `.asschema.rkyv` artifact owner, and no schema store in this
-crate. Asschema is retired, not preserved as a compatibility endpoint: the
+`TrueSchema` archives through rkyv with `TrueSchema::to_binary_bytes` and
+`TrueSchema::from_binary_bytes`. Structured NOTA encoding is available through
+the derived `NotaEncode` surface for the typed value; there is no separate
+semantic `.asschema` / `.asschema.rkyv` artifact owner, and no schema store in
+this crate. Asschema is retired, not preserved as a compatibility endpoint: the
 `.asschema` text artifact, the `.asschema.rkyv` binary, the `AsschemaArtifact`
 owner, and the redb-backed semantic store are removed outright. The pipeline is
 `.schema` -> schema-in-Rust (`SchemaSource` source nouns own resolution) ->
-`Schema` -> Rust. The text/binary source artifact lives at
+`TrueSchema` -> Rust. The text/binary source artifact lives at
 `SchemaSourceArtifact`, and database work lives in production SEMA engines, not
 in schema.
 
 Tests prove the endpoint by asserting the Rust data directly and by
-round-tripping the produced `Schema` through rkyv:
+round-tripping the produced `TrueSchema` through rkyv:
 `Declaration::{visibility, name, value}`, `Visibility::{Public, Private}`,
-`TypeDeclaration::{Alias, Struct, Enum, Newtype}` and
+`TypeDeclaration::{Struct, Enum, Newtype}` and
 `TypeReference::{String, Integer, Boolean, Path, Plain, Vector, Optional, Map}`.
 The semantic-schema text fixture surface stays removed: there is no checked
 `.asschema` file and no hand-kept golden semantic-schema text.
 
-`Schema` also carries its content identity. `Schema::content_hash` is the
+`TrueSchema` also carries its content identity. `TrueSchema::content_hash` is the
 blake3 hash of the schema's canonical rkyv bytes wrapped in `ContentHash`; any
 edit to the semantic schema moves the address, and that address is the version
-the version-control layer consumes. `Schema::family_closure` builds a
+the version-control layer consumes. `TrueSchema::family_closure` builds a
 `FamilyClosure` for one named declaration or root enum: the root name plus
 every declaration transitively reachable through type references — struct
 fields, enum variant payloads, newtype/alias references,
@@ -420,7 +421,7 @@ many positions resolves to one canonical declaration rather than being
 re-described at each site.
 
 `SymbolPath` is the typed identity projection for schema positions. It is a
-newtype over ordered `Name` segments and can be derived from a `Schema` root
+newtype over ordered `Name` segments and can be derived from a `TrueSchema` root
 variant, namespace type, struct field, or enum variant. Its NOTA form is
 structured data such as `(SymbolPath [spirit-next:lib Input Record])`; its
 human `Display` form may join the same segments as
@@ -430,7 +431,7 @@ of inventing ad hoc path strings.
 
 The stored path stays a segment vector so deeper schema positions can grow
 without changing the binary object. Position meaning is recovered through the
-owning schema: `Schema::symbol_path_position` validates the component segment
+owning schema: `TrueSchema::symbol_path_position` validates the component segment
 and classifies the local path as a namespace type, root variant, struct field,
 or enum variant. Consumers that need role semantics ask the semantic schema
 instead of guessing from segment count.
@@ -457,7 +458,7 @@ one-field struct map with an invented field name. Its long form is
 Rust emitter consumes the contained reference directly when emitting a tuple
 newtype.
 
-Struct-body lowering has the same rule before the semantic `Schema` value is
+Struct-body lowering has the same rule before the semantic `TrueSchema` value is
 written: a body that produces exactly one field becomes `Newtype`, and a body
 that produces two or more fields stays `Struct`. The source may spell that
 single field as a derived member (`Entry { Topic * }`) or an explicit one-field
@@ -582,7 +583,7 @@ the default parser.
 Its structural cases are `nota::MacroNodeDefinition` values: each case is
 a serializable pattern over atoms, delimiters, literals, rest captures, and
 named captures. Schema-next contributes the schema `MacroPosition` and the
-handler that turns a match into an `Schema` fragment; nota owns the
+handler that turns a match into a `TrueSchema` fragment; nota owns the
 shape matcher.
 
 The namespace declaration node makes the strict brace model executable:
@@ -653,16 +654,16 @@ module boundaries.
   type-body lowering. Concrete macro fields on `SchemaEngine` or root macros
   are not the design.
 - `MacroContext` records positions and applied macro names as diagnostics.
-  Tests prove lowering by asserting on typed `Schema` data, not by treating
+  Tests prove lowering by asserting on typed `TrueSchema` data, not by treating
   trace strings as the load-bearing witness.
 - `MacroContext` records the NOTA `StructureHeader` so tests can prove schema
   lowering consumed the source's first-pass structural shape.
-- `Schema` stores the known `Input` and `Output` enum declarations as
+- `TrueSchema` stores the known `Input` and `Output` enum declarations as
   direct fields, then stores visibility-tagged namespace declarations in
   `Vec` order. The two roots are heterogeneous product positions, not a
   homogeneous vector of root wrappers.
 - Active code does not keep hand-written semantic-schema text fixtures and
-  does not expose a semantic-schema store. `Schema` can serialize itself to
+  does not expose a semantic-schema store. `TrueSchema` can serialize itself to
   rkyv after lowering; source text and source rkyv archives are owned by
   `SchemaSourceArtifact`.
 - Checked-in artifacts are limited to authored schema source and macro-library
@@ -695,9 +696,9 @@ module boundaries.
   variants, parenthesized `(Variant)` records for same-named data variants,
   and parenthesized `(Variant PayloadType)` records only when the payload type
   name differs.
-- The root `Schema` name is implicit when reading a `.schema` file. Nested
+- The root `TrueSchema` name is implicit when reading a `.schema` file. Nested
   enum, struct, and newtype definitions still carry their own names.
-- `schemas/root.schema` describes that known root `Schema` type.
+- `schemas/root.schema` describes that known root `TrueSchema` type.
 - Schema names may be qualified with single colons (`crate:module:Type`). The
   local part drives derived field names; the full name remains available for
   global disambiguation and future import resolution.
@@ -828,7 +829,7 @@ plane, the store, the guardian, the signal-query matchers) stays hand-written;
 arbitrary Rust expression bodies are never modeled as data.
 
 The generic-substrate fence: the four-plane separation of authored `.schema`
-source artifact (`SchemaSourceArtifact`), semantic schema value (`Schema`),
+source artifact (`SchemaSourceArtifact`), semantic schema value (`TrueSchema`),
 Rust emitter (`schema-rust`), and durable SEMA storage survives any generic
 lift. A `SerializableArtifact<T>` or `SemaStore<T>` abstraction must not
 collapse these planes by merging source-artifact, semantic-schema, and emission

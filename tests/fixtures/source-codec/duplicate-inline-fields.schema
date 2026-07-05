@@ -1,4 +1,4 @@
 {}
-[(Record { Topic String }) (Describe { Topic String })]
+[(Record { Topic }) (Record { Description })]
 []
 {}

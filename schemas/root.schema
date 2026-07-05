@@ -1,17 +1,17 @@
 []
 []
 {
-  Schema { Input Output Namespace }
+  TrueSchema { Input Output Namespace }
   Imports (Vector ImportDeclaration)
   Namespace (Vector Declaration)
-  ImportDeclaration { Name source.TypeReference }
+  ImportDeclaration { Name TypeReference }
   Declaration [(Public NamedTypeDeclaration) (Private NamedTypeDeclaration)]
-  NamedTypeDeclaration { Name value.TypeDeclaration }
+  NamedTypeDeclaration { Name TypeDeclaration }
   TypeDeclaration [(Struct StructDeclaration) (Enum EnumDeclaration) (Newtype NewtypeDeclaration)]
   StructDeclaration { Name StructFieldMap }
-  NewtypeDeclaration { Name reference.TypeReference }
+  NewtypeDeclaration { Name TypeReference }
   StructFieldMap (Vector FieldDeclaration)
-  FieldDeclaration { Name reference.TypeReference }
+  FieldDeclaration { Name TypeReference }
   EnumDeclaration { Name Variants }
   Variants (Vector VariantDeclaration)
   VariantDeclaration { Name Payload }

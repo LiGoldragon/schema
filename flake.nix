@@ -170,9 +170,36 @@
             # Claim 4 — honest enum bodies CLOSED.
             grep -R "production_schema_sources_use_honest_enum_bodies" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             grep -R "spirit_min_input_enum_body_has_compact_root_variants" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            # Claim 5 — SchemaSource plus semantic Schema own the retired Asschema path.
+            # Claim 5 — SchemaSource plus semantic TrueSchema own the retired Asschema path.
             grep -R "schema_is_typed_data_with_named_field_accessors" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             grep -R "schema_source_and_semantic_schema_round_trip_without_asschema_artifacts" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            touch $out
+          '';
+          true-schema-public-surface = pkgs.runCommand "schema-true-schema-public-surface" { } ''
+            test -f ${src}/tests/true_schema.rs
+            grep -R "pub struct TrueSchema" ${src}/src/schema.rs >/dev/null
+            grep -R "authored_schema_decodes_directly_to_true_schema" ${src}/tests/true_schema.rs >/dev/null
+            grep -R "true_schema_round_trips_through_binary_and_structured_nota" ${src}/tests/true_schema.rs >/dev/null
+            grep -R "product_components_accept_implicit_unique_types" ${src}/tests/true_schema.rs >/dev/null
+            grep -R "product_components_accept_duplicate_types_with_explicit_identities" ${src}/tests/true_schema.rs >/dev/null
+            grep -R "product_components_reject_redundant_explicit_derived_identity" ${src}/tests/true_schema.rs >/dev/null
+            grep -R "product_components_reject_explicit_identity_on_unique_type" ${src}/tests/true_schema.rs >/dev/null
+            if grep -R -n -E 'pub struct (Schema|SpecifiedSchema)([^A-Za-z0-9_]|$)' ${src}/src; then
+              echo "legacy Schema or SpecifiedSchema public struct returned" >&2
+              exit 1
+            fi
+            if grep -R -n -E 'SpecifiedSchema|Specified[A-Za-z0-9_]*|mod specified|specified::' ${src}/src ${src}/tests ${src}/schemas ${src}/README.md ${src}/ARCHITECTURE.md; then
+              echo "legacy specified semantic names returned" >&2
+              exit 1
+            fi
+            if grep -R -n -E '(^|[^A-Za-z0-9_])Schema::|`Schema`' ${src}/src ${src}/tests ${src}/schemas ${src}/README.md ${src}/ARCHITECTURE.md; then
+              echo "legacy public Schema type references returned" >&2
+              exit 1
+            fi
+            if grep -R -n -E 'pub use .*([^A-Za-z0-9_]|^)Schema([^A-Za-z0-9_]|[,;])' ${src}/src; then
+              echo "legacy public Schema alias returned" >&2
+              exit 1
+            fi
             touch $out
           '';
           namespace-braces-are-key-value = pkgs.runCommand "schema-namespace-braces-are-key-value" { } ''

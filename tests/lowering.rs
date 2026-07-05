@@ -179,7 +179,7 @@ fn fixed_size_bytes_lowers_to_a_fixed_bytes_reference() {
 
 #[test]
 fn single_field_brace_declarations_lower_to_newtypes() {
-    let source = "[] [] { Topic String Entry { Topic } Wrapper { value.Topic } }";
+    let source = "[] [] { Topic String Entry { Topic } Wrapper { Topic } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("single-field brace declarations lower");
@@ -426,10 +426,10 @@ fn root_schema_describes_the_schema_root_type() {
     assert_eq!(schema.output().name().as_str(), "Output");
 
     let TypeDeclaration::Struct(schema_struct) = schema
-        .type_named("Schema")
+        .type_named("TrueSchema")
         .expect("schema type declaration")
     else {
-        panic!("Schema should be a struct");
+        panic!("TrueSchema should be a struct");
     };
 
     assert_eq!(
@@ -931,7 +931,7 @@ fn star_shorthand_derives_fields_and_data_variant_payloads_from_real_schema() {
 
 #[test]
 fn inline_pascal_declaration_creates_ordered_namespace_type() {
-    let source = "[] [] { RecordIdentifier Integer Receipt { RecordIdentifier } Entry { Receipt later.Receipt } }";
+    let source = "[] [] { RecordIdentifier Integer Receipt { RecordIdentifier } Entry { current.Receipt later.Receipt } }";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("inline declaration lowers");
@@ -952,7 +952,7 @@ fn inline_pascal_declaration_creates_ordered_namespace_type() {
     let TypeDeclaration::Struct(entry) = schema.namespace()[2].value() else {
         panic!("entry should be a struct");
     };
-    assert_eq!(entry.fields[0].name, Name::new("receipt"));
+    assert_eq!(entry.fields[0].name, Name::new("current"));
     assert_eq!(
         entry.fields[0].reference,
         TypeReference::Plain(Name::new("Receipt"))

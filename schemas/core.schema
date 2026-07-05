@@ -12,11 +12,11 @@
   MacroPattern MacroPatternObject
   MacroPatternObjects (Vector MacroPatternObject)
   MacroPatternObject [(Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroPatternDelimited)]
-  MacroPatternDelimited { delimiter.MacroDelimiter MacroPatternObjects }
+  MacroPatternDelimited { MacroDelimiter MacroPatternObjects }
   MacroTemplate MacroTemplateObject
   MacroTemplateObjects (Vector MacroTemplateObject)
   MacroTemplateObject [(Capture MacroCaptureName) (RestCapture MacroCaptureName) (Atom MacroAtom) (Delimited MacroTemplateDelimited)]
-  MacroTemplateDelimited { delimiter.MacroDelimiter MacroTemplateObjects }
+  MacroTemplateDelimited { MacroDelimiter MacroTemplateObjects }
   MacroCaptureName String
   MacroAtom String
   MacroDelimiter [SquareBracket Brace Parenthesis PipeParenthesis PipeBrace]

@@ -10,9 +10,8 @@ use crate::{
     },
     schema::{
         Declaration, DeclarationHead, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, RootApplication, Schema, TypeDeclaration, TypeReference,
+        NewtypeDeclaration, RootApplication, TrueSchema, TypeDeclaration, TypeReference,
     },
-    specified::SpecifiedSchema,
 };
 
 #[derive(
@@ -75,6 +74,16 @@ pub enum SchemaError {
     RetiredStructFieldSyntax { found: String },
     #[error("redundant explicit field role {found}; just use {type_name}")]
     RedundantExplicitFieldRole { found: String, type_name: String },
+    #[error(
+        "explicit product component {field}.{type_name} is invalid because {type_name} appears only once"
+    )]
+    ExplicitFieldOnUniqueProductComponent { field: String, type_name: String },
+    #[error(
+        "product component type {type_name} appears more than once and each occurrence must use an explicit field.Type identity"
+    )]
+    DuplicateImplicitProductComponent { type_name: String },
+    #[error("duplicate explicit product component identity {field} for repeated type {type_name}")]
+    DuplicateExplicitProductComponentIdentity { field: String, type_name: String },
     #[error(
         "optional enum-variant payload {enum_name}::{variant_name}; a variant payload must always appear in the text form, so (Optional T) is forbidden here — model the optional case as an explicit member carrying a required payload (for example a leaf enum with an explicit All member)"
     )]
@@ -354,36 +363,34 @@ impl SchemaEngine {
         &self,
         source: &str,
         identity: SchemaIdentity,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document(&document, identity)
     }
 
-    pub fn lower_specified_source(
+    pub fn lower_true_schema_source(
         &self,
         source: &str,
         identity: SchemaIdentity,
-    ) -> Result<SpecifiedSchema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         self.lower_source(source, identity)
-            .map(|schema| SpecifiedSchema::from(&schema))
     }
 
-    pub fn lower_specified_source_with_resolver(
+    pub fn lower_true_schema_source_with_resolver(
         &self,
         source: &str,
         identity: SchemaIdentity,
         resolver: &ImportResolver,
-    ) -> Result<SpecifiedSchema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let mut context = MacroContext::default();
         self.lower_source_with_resolver(source, identity, &mut context, resolver)
-            .map(|schema| SpecifiedSchema::from(&schema))
     }
 
     pub fn lower_schema_source(
         &self,
         source: &SchemaSource,
         identity: SchemaIdentity,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         self.lower_schema_source_with_resolver(source, identity, &ImportResolver::new())
     }
 
@@ -392,10 +399,10 @@ impl SchemaEngine {
         source: &SchemaSource,
         identity: SchemaIdentity,
         resolver: &ImportResolver,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let imports = source.imports().to_schema_imports()?;
         let resolved_imports = resolver.resolve_all(&imports, self)?;
-        source.to_schema(identity, imports, resolved_imports)
+        source.to_true_schema(identity, imports, resolved_imports)
     }
 
     pub fn lower_source_with_context(
@@ -403,7 +410,7 @@ impl SchemaEngine {
         source: &str,
         identity: SchemaIdentity,
         context: &mut MacroContext,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document_with_context(&document, identity, context)
     }
@@ -412,7 +419,7 @@ impl SchemaEngine {
         &self,
         document: &Document,
         identity: SchemaIdentity,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         self.lower_document_with_context(document, identity, &mut MacroContext::default())
     }
 
@@ -421,7 +428,7 @@ impl SchemaEngine {
         document: &Document,
         identity: SchemaIdentity,
         context: &mut MacroContext,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         self.lower_document_with_resolver(document, identity, context, &ImportResolver::new())
     }
 
@@ -453,7 +460,7 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
         resolver: &ImportResolver,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         context.remember_structure_header(document.structure_header());
 
         if !matches!(document.holds_root_objects(), 3 | 4) {
@@ -493,7 +500,7 @@ impl SchemaEngine {
         identity: SchemaIdentity,
         context: &mut MacroContext,
         resolver: &ImportResolver,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let document = Document::parse(source)?;
         self.lower_document_with_resolver(&document, identity, context, resolver)
     }

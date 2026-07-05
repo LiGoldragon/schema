@@ -605,16 +605,21 @@ fn duplicate_inline_and_namespace_declarations_are_errors() {
 #[test]
 fn duplicate_inline_declarations_are_errors() {
     let source = source_codec_fixture("duplicate-inline-fields");
-    let error = SchemaSourceArtifact::from_schema_text(&source)
-        .expect_err("retired Pascal-scalar pair syntax should fail before lowering");
+    let artifact = SchemaSourceArtifact::from_schema_text(&source)
+        .expect("duplicate inline declaration source still parses");
+    let error = artifact
+        .source()
+        .lower(
+            &SchemaEngine::default(),
+            SchemaIdentity::new("example:duplicate-inline", "0.1.0"),
+        )
+        .expect_err("duplicate inline declaration should fail during lowering");
 
-    assert!(
-        matches!(
-            error,
-            SchemaError::MalformedSchemaNode { ref found }
-                if found.contains("retired struct field syntax String")
-        ),
-        "got {error:?}"
+    assert_eq!(
+        error,
+        SchemaError::DuplicateSourceDeclaration {
+            name: "Record".to_owned(),
+        }
     );
 }
 

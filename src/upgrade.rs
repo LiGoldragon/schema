@@ -1,6 +1,6 @@
 use crate::{
-    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, Name, Schema, SchemaError,
-    SchemaIdentity, StructDeclaration, TypeDeclaration, TypeReference,
+    Declaration, EnumDeclaration, EnumVariant, FieldDeclaration, Name, SchemaError, SchemaIdentity,
+    StructDeclaration, TrueSchema, TypeDeclaration, TypeReference,
 };
 
 #[derive(
@@ -143,7 +143,7 @@ pub struct SchemaEditReceipt {
 }
 
 pub struct SchemaEditApplication {
-    schema: Schema,
+    schema: TrueSchema,
     edit: SchemaEdit,
 }
 
@@ -188,17 +188,20 @@ impl SchemaEdit {
         })
     }
 
-    pub fn apply_to(self, schema: Schema) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+    pub fn apply_to(
+        self,
+        schema: TrueSchema,
+    ) -> Result<(TrueSchema, SchemaEditReceipt), SchemaError> {
         SchemaEditApplication::new(schema, self).apply()
     }
 }
 
 impl SchemaEditApplication {
-    pub fn new(schema: Schema, edit: SchemaEdit) -> Self {
+    pub fn new(schema: TrueSchema, edit: SchemaEdit) -> Self {
         Self { schema, edit }
     }
 
-    pub fn apply(self) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+    pub fn apply(self) -> Result<(TrueSchema, SchemaEditReceipt), SchemaError> {
         let Self { schema, edit } = self;
         match edit {
             SchemaEdit::AddField(operation) => Self::apply_add_field(schema, operation),
@@ -210,9 +213,9 @@ impl SchemaEditApplication {
     }
 
     fn apply_add_field(
-        schema: Schema,
+        schema: TrueSchema,
         edit: AddField,
-    ) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+    ) -> Result<(TrueSchema, SchemaEditReceipt), SchemaError> {
         let field_type = edit.field_type.clone();
         let migration = FieldMigration::SetDefault(edit.default_value);
         let (schema, previous_type) =
@@ -248,9 +251,9 @@ impl SchemaEditApplication {
     }
 
     fn apply_change_field_type(
-        schema: Schema,
+        schema: TrueSchema,
         edit: ChangeFieldType,
-    ) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+    ) -> Result<(TrueSchema, SchemaEditReceipt), SchemaError> {
         let next_type = edit.new_type.clone();
         let (schema, previous_type) =
             SchemaEditor::new(schema).update_struct(edit.target_type.clone(), |declaration| {
@@ -282,9 +285,9 @@ impl SchemaEditApplication {
     }
 
     fn apply_add_variant(
-        schema: Schema,
+        schema: TrueSchema,
         edit: AddVariant,
-    ) -> Result<(Schema, SchemaEditReceipt), SchemaError> {
+    ) -> Result<(TrueSchema, SchemaEditReceipt), SchemaError> {
         let schema =
             SchemaEditor::new(schema).update_enum(edit.target_type.clone(), |declaration| {
                 if declaration
@@ -321,7 +324,7 @@ struct SchemaEditor {
 }
 
 impl SchemaEditor {
-    fn new(schema: Schema) -> Self {
+    fn new(schema: TrueSchema) -> Self {
         Self {
             identity: schema.identity().clone(),
             imports: schema.imports().to_vec(),
@@ -340,7 +343,7 @@ impl SchemaEditor {
         update: impl FnOnce(
             &StructDeclaration,
         ) -> Result<(StructDeclaration, Option<TypeReference>), SchemaError>,
-    ) -> Result<(Schema, Option<TypeReference>), SchemaError> {
+    ) -> Result<(TrueSchema, Option<TypeReference>), SchemaError> {
         let Some(index) = self
             .namespace
             .iter()
@@ -363,14 +366,14 @@ impl SchemaEditor {
                 Declaration::private(TypeDeclaration::Struct(declaration))
             }
         };
-        Ok((self.into_schema(), previous_type))
+        Ok((self.into_true_schema(), previous_type))
     }
 
     fn update_enum(
         mut self,
         target_type: Name,
         update: impl FnOnce(&EnumDeclaration) -> Result<EnumDeclaration, SchemaError>,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let Some(index) = self
             .namespace
             .iter()
@@ -391,11 +394,11 @@ impl SchemaEditor {
             crate::Visibility::Public => Declaration::public(TypeDeclaration::Enum(declaration)),
             crate::Visibility::Private => Declaration::private(TypeDeclaration::Enum(declaration)),
         };
-        Ok(self.into_schema())
+        Ok(self.into_true_schema())
     }
 
-    fn into_schema(self) -> Schema {
-        Schema::new(
+    fn into_true_schema(self) -> TrueSchema {
+        TrueSchema::new(
             self.identity,
             self.imports,
             self.resolved_imports,
@@ -409,7 +412,7 @@ impl SchemaEditor {
     }
 }
 
-impl Schema {
+impl TrueSchema {
     fn edit_receipt(&self, migration_spec: Option<MigrationSpec>) -> SchemaEditReceipt {
         SchemaEditReceipt {
             schema_identity: self.identity().clone(),
@@ -477,7 +480,10 @@ impl UpgradeObject {
     /// Identity mismatch is a typed failure — if `previous.identity()` is
     /// not equal to `self.previous_identity`, the upgrade is rejected
     /// rather than applied against a schema it was not authored against.
-    pub fn apply(&self, previous: &Schema) -> Result<(Schema, UpgradeReceipt), SchemaError> {
+    pub fn apply(
+        &self,
+        previous: &TrueSchema,
+    ) -> Result<(TrueSchema, UpgradeReceipt), SchemaError> {
         if previous.identity() != &self.previous_identity {
             return Err(SchemaError::SchemaEditIdentityMismatch {
                 expected: format!(
@@ -543,7 +549,7 @@ impl UpgradeReceipt {
     }
 }
 
-impl Schema {
+impl TrueSchema {
     /// Replace this schema's identity with a new version stamp without
     /// changing its declarations. `UpgradeObject::apply` calls this once
     /// at the end of applying every edit, so the stored schema records

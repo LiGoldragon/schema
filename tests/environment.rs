@@ -137,11 +137,12 @@ fn environment_round_trips_canonical_source_and_resolves_package_imports() {
         .expect("canonical schema text decodes again");
 
     assert_eq!(recovered.to_schema_text(), canonical);
-    assert_eq!(module.schema().resolved_imports().len(), 1);
+    assert_eq!(module.true_schema().resolved_imports().len(), 1);
     assert_eq!(
-        module.schema().resolved_imports()[0].source().rust_path(),
+        module.true_schema().resolved_imports()[0]
+            .source()
+            .rust_path(),
         "fixture_crate::schema::shared::Shared"
     );
-    assert_eq!(module.specified().resolved_imports().len(), 1);
-    assert!(module.specified().declaration_named("UseShared").is_some());
+    assert!(module.true_schema().type_named("UseShared").is_some());
 }

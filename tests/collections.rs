@@ -1,7 +1,7 @@
 //! Collection + Option type references.
 //!
 //! A struct field or enum-variant payload can now wrap its referenced
-//! type in a collection or option. The surface forms are Schema
+//! type in a collection or option. The surface forms are TrueSchema
 //! type-reference objects:
 //! `(Vector T)`, `(Map K V)`, and `(Optional T)`. They lower to
 //! `TypeReference::Vector / Map / Optional`. Bare-symbol fields keep
@@ -10,7 +10,7 @@
 
 use schema::{Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
 
-fn lower(source: &str) -> schema::Schema {
+fn lower(source: &str) -> schema::TrueSchema {
     SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("collections:lib", "0.1.0"))
         .expect("schema lowers")
@@ -21,7 +21,7 @@ fn roots(namespace: &str) -> String {
 }
 
 fn struct_fields<'schema>(
-    schema: &'schema schema::Schema,
+    schema: &'schema schema::TrueSchema,
     name: &str,
 ) -> &'schema [schema::FieldDeclaration] {
     match schema.type_named(name).expect("type present") {
@@ -33,7 +33,7 @@ fn struct_fields<'schema>(
 }
 
 fn single_reference<'schema>(
-    schema: &'schema schema::Schema,
+    schema: &'schema schema::TrueSchema,
     name: &str,
 ) -> &'schema TypeReference {
     match schema.type_named(name).expect("type present") {
@@ -54,10 +54,8 @@ fn vec_field_lowers_to_vector_reference() {
 }
 
 #[test]
-fn scalar_field_names_lower_to_reserved_references() {
-    let schema = lower(&roots(
-        "Entry { string.String integer.Integer boolean.Boolean path.Path }",
-    ));
+fn scalar_type_components_lower_to_reserved_references() {
+    let schema = lower(&roots("Entry { String Integer Boolean Path }"));
     let fields = struct_fields(&schema, "Entry");
     assert_eq!(fields[0].name.as_str(), "string");
     assert_eq!(fields[0].reference, TypeReference::String);
@@ -130,20 +128,20 @@ fn explicit_structural_field_roles_lower_recursively() {
 }
 
 #[test]
-fn lower_case_dot_composite_field_lowers_directly() {
+fn implicit_composite_field_lowers_directly() {
     let schema = lower(&roots(
-        "Topic String Description String Query { topics.(Vector Topic) Description }",
+        "Topic String Description String Query { (Vector Topic) Description }",
     ));
     let fields = struct_fields(&schema, "Query");
 
-    assert_eq!(fields[0].name.as_str(), "topics");
+    assert_eq!(fields[0].name.as_str(), "topic_vector");
     assert_eq!(
         fields[0].reference,
         TypeReference::Vector(Box::new(TypeReference::new("Topic")))
     );
     assert!(
         schema.type_named("Topics").is_none(),
-        "lower-case explicit roles do not mint a role newtype"
+        "implicit composite components do not mint a role newtype"
     );
 }
 
