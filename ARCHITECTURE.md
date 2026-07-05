@@ -39,9 +39,9 @@ including where the authored syntax is meant to evolve past its current form.
 - The schema language is its own compiler-compiler (Spirit `vpbx`). The compiler
   definition itself — reference grammar, dispatch precedence, built-in heads,
   shape vocabulary, and emission rules — is kept as typed data that *generates*
-  the schema compiler (`schema`/`schema-next` and its Rust emitter
-  `schema-rust`/`schema-rust-next`) rather than being hand-written, bottoming
-  out in the `nota-next` seed reader. The governing rule is to push as much of
+  the schema compiler (`schema`/`schema` and its Rust emitter
+  `schema-rust`/`schema-rust`) rather than being hand-written, bottoming
+  out in the `nota` seed reader. The governing rule is to push as much of
   the compiler definition into data as possible, so the hand-written surface
   shrinks toward the irreducible bootstrap seed and every other compiler choice
   is an editable schema artifact rather than embedded Rust control flow.
@@ -193,7 +193,7 @@ The settled direction is to move struct bodies to bare positional type lists:
   delivering the current matching snapshot, then pushes every relevant change
   until the subscription closes, because a future-deltas-only subscription leaves
   clients without the current state (Spirit `brgo`). Schema-next gains an
-  event/stream root with `opens`/`belongs` relations; schema-rust-next emits the
+  event/stream root with `opens`/`belongs` relations; schema-rust emits the
   event frame into signal-frame's streaming body plus an observable-set pub-sub,
   and the push action and subscriber registry live in triad-runtime. The default
   `SubscribePolicy` is `TerminateAtHandover`: subscriptions end at handover and
@@ -201,10 +201,10 @@ The settled direction is to move struct bodies to bare positional type lists:
 - Schema-next keeps one lowering engine — the most correct lowering path, not
   dual paths or the smallest patch — and schema-derived Rust emission targets
   that engine rather than rewiring into the old signal macro implementation
-  (Spirit `58bv`). The schema-derived stack (nota-next, schema-next,
-  schema-rust-next, `signal-frame.schema`, `spirit.schema`) does not reference the
+  (Spirit `58bv`). The schema-derived stack (nota, schema,
+  schema-rust, `signal-frame.schema`, `spirit.schema`) does not reference the
   separate Nexus NOTA-using vocabulary track; schema macros are plain NOTA records
-  dispatched by position and shape in the schema-next `MacroRegistry`, not by the
+  dispatched by position and shape in the schema `MacroRegistry`, not by the
   reserved NOTA sigils (Spirit `5mxn`).
 - Every component repository gets a concept schema file starting at version 0.1,
   with Spirit, Orchestrate, Mind, and Persona as preferred pilots; schema files
