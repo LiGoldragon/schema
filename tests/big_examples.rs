@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use schema::{
-    Declaration, EnumDeclaration, ImportResolver, MacroContext, Schema, SchemaEngine,
-    SchemaIdentity, TypeDeclaration,
+    Declaration, EnumDeclaration, ImportResolver, MacroContext, SchemaEngine, SchemaIdentity,
+    TrueSchema, TypeDeclaration,
 };
 
 #[test]
@@ -53,7 +53,7 @@ fn assert_big_fixture(name: &str, source: &str, resolver: Option<ImportResolver>
     assert_schema_data_shape(name, &schema);
 }
 
-fn assert_schema_data_shape(name: &str, schema: &Schema) {
+fn assert_schema_data_shape(name: &str, schema: &TrueSchema) {
     assert_eq!(
         schema.identity().component().as_str(),
         format!("example:{name}")

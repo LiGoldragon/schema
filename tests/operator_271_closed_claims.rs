@@ -10,7 +10,7 @@
 //! - Claim 1 — macro-library source/artifact datatype split CLOSED
 //!   (schema `99078b20`).
 //! - Claim 4 — strict schema syntax and honest enum bodies CLOSED.
-//! - Claim 5 — SchemaSource as typed source data plus Schema as typed
+//! - Claim 5 — SchemaSource as typed source data plus TrueSchema as typed
 //!   semantic data CLOSED.
 //!
 //! Companion witnesses live in:
@@ -23,8 +23,8 @@
 
 use nota::{Block, Delimiter, Document};
 use schema::{
-    MacroLibrary, MacroLibraryArtifact, Schema, SchemaEngine, SchemaIdentity, SchemaMacro,
-    SchemaSourceArtifact, TypeDeclaration,
+    MacroLibrary, MacroLibraryArtifact, SchemaEngine, SchemaIdentity, SchemaMacro,
+    SchemaSourceArtifact, TrueSchema, TypeDeclaration,
 };
 
 /// Claim 1 — `MacroLibrary` is one type, not split between source and
@@ -241,21 +241,21 @@ fn spirit_min_input_enum_body_has_compact_root_variants() {
     assert_eq!(names, vec!["Record", "Observe"]);
 }
 
-/// Claim 5 — `Schema` is typed Rust data. The type carries the schema
+/// Claim 5 — `TrueSchema` is typed Rust data. The type carries the schema
 /// identity plus the typed projections of imports, resolved imports, input,
 /// output, and namespace declarations. This is the noun the rest of the
 /// projection chain consumes.
 #[test]
 fn schema_is_typed_data_with_named_field_accessors() {
     let source = include_str!("../schemas/core.schema");
-    let schema: Schema = SchemaEngine::default()
+    let schema: TrueSchema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("schema:core", "0.1.0"))
-        .expect("core schema lowers to typed Schema data");
+        .expect("core schema lowers to typed TrueSchema data");
 
     assert_eq!(schema.identity().component().as_str(), "schema:core");
     assert_eq!(schema.identity().version(), "0.1.0");
 
-    // Typed accessors — Schema is a noun with methods, not a string blob.
+    // Typed accessors — TrueSchema is a noun with methods, not a string blob.
     let _: &[schema::ImportDeclaration] = schema.imports();
     let _: &schema::Root = schema.input();
     let _: &schema::Root = schema.output();
@@ -279,7 +279,7 @@ fn schema_is_typed_data_with_named_field_accessors() {
 
 /// Claim 5 — authored schema source text projects into a typed
 /// `SchemaSourceArtifact`, and both source text and rkyv source bytes
-/// round-trip. The semantic `Schema` value keeps only the binary archive
+/// round-trip. The semantic `TrueSchema` value keeps only the binary archive
 /// projection; the retired `.asschema` NOTA artifact path is absent.
 #[test]
 fn schema_source_and_semantic_schema_round_trip_without_asschema_artifacts() {
@@ -308,6 +308,7 @@ fn schema_source_and_semantic_schema_round_trip_without_asschema_artifacts() {
     let bytes = schema
         .to_binary_bytes()
         .expect("schema serialises to rkyv bytes");
-    let from_bytes = Schema::from_binary_bytes(&bytes).expect("rkyv bytes decode back to Schema");
+    let from_bytes =
+        TrueSchema::from_binary_bytes(&bytes).expect("rkyv bytes decode back to TrueSchema");
     assert_eq!(from_bytes, schema);
 }

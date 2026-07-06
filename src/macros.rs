@@ -7,7 +7,7 @@ use nota::{
 
 use crate::{
     Declaration, EnumDeclaration, FieldDeclaration, ImportDeclaration, Name, RootApplication,
-    Schema, SchemaError, TypeDeclaration, TypeReference,
+    SchemaError, TrueSchema, TypeDeclaration, TypeReference,
 };
 
 /// Each position is a keyword structural variant, so a bootstrap macro
@@ -216,7 +216,7 @@ impl MacroContext {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MacroOutput {
-    Schema(Schema),
+    TrueSchema(TrueSchema),
     Imports(Vec<ImportDeclaration>),
     RootEnum(EnumDeclaration),
     /// A root in the application form `(Head Arg …)` — the typed-sum

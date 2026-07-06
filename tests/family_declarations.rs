@@ -1,7 +1,7 @@
 use std::fs;
 
 use schema::{
-    FamilyKey, Schema, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
+    FamilyKey, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, TrueSchema,
     TypeDeclaration,
 };
 
@@ -12,7 +12,7 @@ fn family_fixture() -> String {
         .to_owned()
 }
 
-fn lower(source: &str) -> Result<schema::Schema, SchemaError> {
+fn lower(source: &str) -> Result<schema::TrueSchema, SchemaError> {
     SchemaEngine::default().lower_source(source, SchemaIdentity::new("example:lib", "0.1.0"))
 }
 
@@ -71,7 +71,8 @@ fn semantic_schema_carrying_families_round_trips_through_rkyv() {
     let bytes = schema
         .to_binary_bytes()
         .expect("schema with families serialises to rkyv bytes");
-    let recovered = Schema::from_binary_bytes(&bytes).expect("rkyv bytes decode back to Schema");
+    let recovered =
+        TrueSchema::from_binary_bytes(&bytes).expect("rkyv bytes decode back to TrueSchema");
 
     assert_eq!(recovered, schema);
     assert_eq!(recovered.families(), schema.families());

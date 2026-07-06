@@ -6,7 +6,7 @@
 //!
 //! Per designer 447 §"Block 1" + §"Block 2": the test demonstrates the
 //! NOTA-to-object correspondence — a NOTA-encoded `UpgradeObject` is
-//! decoded into the typed object, applied against a stored `Schema`,
+//! decoded into the typed object, applied against a stored `TrueSchema`,
 //! and the resulting next-version schema matches the expected shape.
 //!
 //! Coverage:
@@ -38,7 +38,7 @@ fn entry_schema_source() -> &'static str {
      }\n"
 }
 
-fn lower_previous() -> schema::Schema {
+fn lower_previous() -> schema::TrueSchema {
     SchemaEngine::default()
         .lower_source(
             entry_schema_source(),

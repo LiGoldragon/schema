@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use nota::{Delimiter, Document, SourcePosition, SourceSpan};
 
 use crate::{
-    ImportResolver, Name, Schema, SchemaEngine, SchemaError, SchemaModuleSource, SchemaPackage,
-    SchemaSourceArtifact, SpecifiedSchema,
+    ImportResolver, Name, SchemaEngine, SchemaError, SchemaModuleSource, SchemaPackage,
+    SchemaSourceArtifact, TrueSchema,
 };
 
 pub struct SchemaEnvironment {
@@ -90,8 +90,7 @@ impl SchemaEnvironmentResult {
 pub struct SchemaEnvironmentModule {
     source: SchemaModuleSource,
     artifact: SchemaSourceArtifact,
-    schema: Schema,
-    specified: SpecifiedSchema,
+    true_schema: TrueSchema,
     summary: SchemaSourceSummary,
 }
 
@@ -104,12 +103,8 @@ impl SchemaEnvironmentModule {
         &self.artifact
     }
 
-    pub fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    pub fn specified(&self) -> &SpecifiedSchema {
-        &self.specified
+    pub fn true_schema(&self) -> &TrueSchema {
+        &self.true_schema
     }
 
     pub fn summary(&self) -> &SchemaSourceSummary {
@@ -122,18 +117,16 @@ impl SchemaEnvironmentModule {
     ) -> Result<Self, SchemaError> {
         let parsed = source.to_schema_source()?;
         let artifact = SchemaSourceArtifact::new(parsed);
-        let schema = lowering.engine().lower_schema_source_with_resolver(
+        let true_schema = lowering.engine().lower_schema_source_with_resolver(
             artifact.source(),
             source.identity().clone(),
             lowering.resolver(),
         )?;
-        let specified = SpecifiedSchema::from(&schema);
         let summary = SchemaSourceSummary::from_module_source(&source)?;
         Ok(Self {
             source,
             artifact,
-            schema,
-            specified,
+            true_schema,
             summary,
         })
     }

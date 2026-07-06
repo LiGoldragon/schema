@@ -279,7 +279,17 @@ impl fmt::Display for SymbolPath {
 /// application of an imported or locally-declared parameterized head. The
 /// closed sum names the two shapes a root can take; nothing else is a
 /// legal root.
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota::NotaDecode,
+    nota::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum Root {
     /// The enum-body root `[Variant …]` — the position lowers to a public
     /// enum declaration whose variants are the root's signatures.
@@ -287,7 +297,7 @@ pub enum Root {
     /// The application-form root `(Head Arg …)` — the position is a typed
     /// sum produced by applying a parameterized head to its arguments. The
     /// application is boxed: an imported head carries a `ResolvedImport`, so
-    /// an unboxed `RootApplication` would make `Root` (and every `Schema`
+    /// an unboxed `RootApplication` would make `Root` (and every `TrueSchema`
     /// holding two roots) carry that weight even for the common enum root.
     Application(Box<RootApplication>),
 }
@@ -335,7 +345,17 @@ impl Root {
 /// closure reuses the field-position `Application` walk by projecting this
 /// root back into a [`TypeReference::Application`] (see [`TypeReference`]'s
 /// `From<&RootApplication>`).
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota::NotaDecode,
+    nota::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct RootApplication {
     name: Name,
     head: ApplicationHead,
@@ -430,8 +450,18 @@ impl From<&RootApplication> for TypeReference {
     }
 }
 
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
-pub struct Schema {
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota::NotaDecode,
+    nota::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct TrueSchema {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
@@ -444,7 +474,7 @@ pub struct Schema {
     impl_blocks: Vec<ImplBlock>,
 }
 
-impl Schema {
+impl TrueSchema {
     // The schema's fields are each a distinct typed section of the model;
     // the constructor takes them as separate typed vectors rather than a
     // bag struct. (Newer clippy raises `too_many_arguments`; the repo's
@@ -590,6 +620,15 @@ impl Schema {
                     family: family.name.as_str().to_owned(),
                     record: family.record.as_str().to_owned(),
                 });
+            }
+        }
+        Ok(self)
+    }
+
+    pub(crate) fn product_components_verified(self) -> Result<Self, SchemaError> {
+        for declaration in &self.namespace {
+            if let TypeDeclaration::Struct(declaration) = declaration.value() {
+                declaration.fields.product_components_verified()?;
             }
         }
         Ok(self)
@@ -969,6 +1008,59 @@ impl Schema {
         }
     }
 
+    pub fn to_schema_text(&self) -> String {
+        let mut roots = vec![
+            self.imports_schema_text(),
+            self.input.to_root_schema_text(),
+            self.output.to_root_schema_text(),
+            self.namespace_schema_text(),
+        ];
+        if !self.relations.is_empty() {
+            roots.push(
+                Delimiter::SquareBracket.wrap(
+                    self.relations
+                        .iter()
+                        .map(RelationDeclaration::to_schema_text),
+                ),
+            );
+        }
+        roots.join("\n")
+    }
+
+    fn imports_schema_text(&self) -> String {
+        if self.imports.is_empty() {
+            return "{}".to_owned();
+        }
+        let imports = self
+            .imports
+            .iter()
+            .map(|import| {
+                format!(
+                    "  {} {}",
+                    import.local_name.to_nota(),
+                    import.source.to_structural_nota()
+                )
+            })
+            .collect::<Vec<_>>();
+        format!("{{\n{}\n}}", imports.join("\n"))
+    }
+
+    fn namespace_schema_text(&self) -> String {
+        let mut entries = Vec::new();
+        entries.extend(self.namespace.iter().map(Declaration::to_schema_text));
+        entries.extend(self.streams.iter().map(StreamDeclaration::to_schema_text));
+        entries.extend(self.families.iter().map(FamilyDeclaration::to_schema_text));
+        entries.extend(self.impl_blocks.iter().map(ImplBlock::to_schema_text));
+        if entries.is_empty() {
+            return "{}".to_owned();
+        }
+        let indented = entries
+            .into_iter()
+            .map(|entry| format!("  {entry}"))
+            .collect::<Vec<_>>();
+        format!("{{\n{}\n}}", indented.join("\n"))
+    }
+
     pub fn from_binary_bytes(bytes: &[u8]) -> Result<Self, SchemaError> {
         rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|_| SchemaError::ArchiveDecode)
     }
@@ -977,6 +1069,248 @@ impl Schema {
         rkyv::to_bytes::<rkyv::rancor::Error>(self)
             .map(|bytes| bytes.to_vec())
             .map_err(|_| SchemaError::ArchiveEncode)
+    }
+}
+
+impl Root {
+    fn to_root_schema_text(&self) -> String {
+        match self {
+            Self::Enum(declaration) => declaration.body_schema_text(),
+            Self::Application(application) => {
+                TypeReference::from(application.as_ref()).to_structural_nota()
+            }
+        }
+    }
+}
+
+impl Declaration {
+    fn to_schema_text(&self) -> String {
+        let head = if self.parameters.is_empty() {
+            self.name.to_nota()
+        } else {
+            let mut items = Vec::with_capacity(self.parameters.len() + 1);
+            items.push(self.name.to_nota());
+            items.extend(self.parameters.iter().map(Name::to_nota));
+            Delimiter::PipeParenthesis.wrap(items)
+        };
+        let mut parts = vec![head, self.value.to_schema_text()];
+        if !self.impls.is_empty() {
+            parts.push(self.impls.to_schema_text());
+        }
+        parts.join(" ")
+    }
+}
+
+impl TypeDeclaration {
+    fn to_schema_text(&self) -> String {
+        match self {
+            Self::Struct(declaration) => declaration.body_schema_text(),
+            Self::Enum(declaration) => declaration.body_schema_text(),
+            Self::Newtype(declaration) => declaration.reference.to_structural_nota(),
+        }
+    }
+}
+
+impl StructDeclaration {
+    fn body_schema_text(&self) -> String {
+        self.fields.to_schema_text()
+    }
+}
+
+impl StructFieldMap {
+    fn to_schema_text(&self) -> String {
+        if self.is_empty() {
+            return "{}".to_owned();
+        }
+        let fields = self
+            .iter()
+            .map(|field| field.to_schema_text(self))
+            .collect::<Vec<_>>();
+        format!("{{ {} }}", fields.join(" "))
+    }
+
+    fn product_components_verified(&self) -> Result<(), SchemaError> {
+        for field in self.iter() {
+            let occurrences = self.reference_count(&field.reference);
+            let derived = field.reference.derived_field_name();
+            if occurrences == 1 && field.name != derived {
+                return Err(SchemaError::ExplicitFieldOnUniqueProductComponent {
+                    field: field.name.to_string(),
+                    type_name: field.reference.to_structural_nota(),
+                });
+            }
+            if occurrences > 1 && field.name == derived {
+                return Err(SchemaError::DuplicateImplicitProductComponent {
+                    type_name: field.reference.to_structural_nota(),
+                });
+            }
+            if occurrences > 1
+                && self
+                    .iter()
+                    .filter(|candidate| candidate.reference == field.reference)
+                    .filter(|candidate| candidate.name == field.name)
+                    .count()
+                    > 1
+            {
+                return Err(SchemaError::DuplicateExplicitProductComponentIdentity {
+                    field: field.name.to_string(),
+                    type_name: field.reference.to_structural_nota(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn reference_count(&self, reference: &TypeReference) -> usize {
+        self.iter()
+            .filter(|field| field.reference == *reference)
+            .count()
+    }
+}
+
+impl FieldDeclaration {
+    fn to_schema_text(&self, product: &StructFieldMap) -> String {
+        let reference = self.reference.to_structural_nota();
+        let derived = self.reference.derived_field_name();
+        if product.reference_count(&self.reference) == 1 && self.name == derived {
+            reference
+        } else {
+            format!("{}.{}", self.name.to_nota(), reference)
+        }
+    }
+}
+
+impl EnumDeclaration {
+    fn body_schema_text(&self) -> String {
+        Delimiter::SquareBracket.wrap(self.variants.iter().map(EnumVariant::to_schema_text))
+    }
+}
+
+impl EnumVariant {
+    fn to_schema_text(&self) -> String {
+        match (&self.payload, &self.stream_relation) {
+            (None, None) => self.name.to_nota(),
+            (Some(payload), None) if payload.plain_name() == Some(&self.name) => {
+                Delimiter::Parenthesis.wrap([self.name.to_nota()])
+            }
+            (Some(payload), None) => {
+                Delimiter::Parenthesis.wrap([self.name.to_nota(), payload.to_structural_nota()])
+            }
+            (Some(payload), Some(relation)) => Delimiter::Parenthesis.wrap([
+                self.name.to_nota(),
+                payload.to_structural_nota(),
+                relation.keyword_text().to_owned(),
+                relation.stream_name().to_nota(),
+            ]),
+            (None, Some(_)) => self.name.to_nota(),
+        }
+    }
+}
+
+impl StreamRelation {
+    fn keyword_text(&self) -> &'static str {
+        match self {
+            Self::Opens(_) => "opens",
+            Self::Belongs(_) => "belongs",
+        }
+    }
+}
+
+impl StreamDeclaration {
+    fn to_schema_text(&self) -> String {
+        format!(
+            "{} (Stream {{ token.{} opened.{} event.{} close.{} }})",
+            self.name.to_nota(),
+            self.token.to_structural_nota(),
+            self.opened.to_structural_nota(),
+            self.event.to_structural_nota(),
+            self.close.to_structural_nota(),
+        )
+    }
+}
+
+impl FamilyDeclaration {
+    fn to_schema_text(&self) -> String {
+        format!(
+            "{} (Family {{ record.{} table.{} key.{} }})",
+            self.name.to_nota(),
+            self.record.to_nota(),
+            self.table.to_nota(),
+            self.key.to_nota(),
+        )
+    }
+}
+
+impl ImplBlock {
+    fn to_schema_text(&self) -> String {
+        format!(
+            "{} {}",
+            self.target.to_nota(),
+            self.catalog.to_schema_text()
+        )
+    }
+}
+
+impl ImplCatalog {
+    fn to_schema_text(&self) -> String {
+        Delimiter::PipeBrace.wrap(self.entries.iter().map(ImplReference::to_schema_text))
+    }
+}
+
+impl ImplReference {
+    fn to_schema_text(&self) -> String {
+        match self {
+            Self::Marker(trait_name) => trait_name.to_nota(),
+            Self::TraitImpl(trait_name, methods) => format!(
+                "{} {}",
+                trait_name.to_nota(),
+                Delimiter::SquareBracket.wrap(methods.iter().map(MethodSignature::to_schema_text))
+            ),
+            Self::InherentMethod(signature) => signature.to_schema_text(),
+        }
+    }
+}
+
+impl MethodSignature {
+    fn to_schema_text(&self) -> String {
+        let parameters =
+            Delimiter::Brace.wrap(self.parameters.iter().map(MethodParameter::to_schema_text));
+        Delimiter::Parenthesis.wrap([
+            self.name.to_nota(),
+            parameters,
+            self.return_reference.to_structural_nota(),
+        ])
+    }
+}
+
+impl MethodParameter {
+    fn to_schema_text(&self) -> String {
+        format!(
+            "{}.{}",
+            self.name.to_nota(),
+            self.reference.to_structural_nota()
+        )
+    }
+}
+
+impl RelationDeclaration {
+    fn to_schema_text(&self) -> String {
+        match self {
+            Self::Equivalence(values) => Delimiter::Parenthesis.wrap([
+                "Equivalence".to_owned(),
+                Delimiter::SquareBracket.wrap(values.iter().map(RelationValue::to_schema_text)),
+            ]),
+        }
+    }
+}
+
+impl RelationValue {
+    fn to_schema_text(&self) -> String {
+        match self.path.as_slice() {
+            [] => Delimiter::Parenthesis.wrap(Vec::<String>::new()),
+            [name] => name.to_nota(),
+            names => Delimiter::Parenthesis.wrap(names.iter().map(Name::to_nota)),
+        }
     }
 }
 
@@ -1123,7 +1457,7 @@ impl Declaration {
     /// The lowered impl catalog referenced by this declaration's trailing
     /// `{| … |}` block. Empty for a declaration with no impl block. This is
     /// the per-type reach of the enumerable manifest; the schema-wide walk
-    /// ([`Schema::referenced_impls`]) unions these with the standalone
+    /// ([`TrueSchema::referenced_impls`]) unions these with the standalone
     /// body-optional impl blocks.
     pub fn impls(&self) -> &ImplCatalog {
         &self.impls
@@ -1417,7 +1751,7 @@ impl ImplBlock {
 }
 
 /// A single impl entry from the schema-wide manifest, paired with the type
-/// it targets. Borrowed view produced by [`Schema::referenced_impls`]; the
+/// it targets. Borrowed view produced by [`TrueSchema::referenced_impls`]; the
 /// `target` is the declaring (fused) type or the body-optional block's
 /// referenced type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1493,7 +1827,7 @@ impl RustSurface {
     /// [`SchemaError::UnverifiedImplReference`] naming the exact target and
     /// signature; an all-present catalog returns `Ok(())`. This proves the
     /// out-of-band catalog can be checked without parsing a real crate.
-    pub fn verify_catalog(&self, schema: &Schema) -> Result<(), SchemaError> {
+    pub fn verify_catalog(&self, schema: &TrueSchema) -> Result<(), SchemaError> {
         for reference in schema.referenced_impls() {
             self.verify_reference(reference)?;
         }
@@ -1974,7 +2308,17 @@ impl FamilyDeclaration {
 /// always carries `Local(Name)`; import resolution rewrites the head to
 /// `Imported` once the closure walk proves the name is an import. The
 /// canonical NOTA projection of either is the bare head name.
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    nota::NotaDecode,
+    nota::NotaEncode,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 #[rkyv(
     bytecheck(bounds(
         __C: rkyv::validation::ArchiveContext,
@@ -2396,6 +2740,39 @@ impl TypeReference {
         }
     }
 
+    pub(crate) fn derived_field_name(&self) -> Name {
+        match self {
+            Self::String => Name::new("string"),
+            Self::Integer => Name::new("integer"),
+            Self::Boolean => Name::new("boolean"),
+            Self::Path => Name::new("path"),
+            Self::Bytes | Self::FixedBytes(_) => Name::new("bytes"),
+            Self::Plain(name) => Name::new(name.field_name()),
+            Self::Vector(reference) => {
+                Name::new(format!("{}_vector", reference.derived_field_name()))
+            }
+            Self::Optional(reference) => {
+                Name::new(format!("optional_{}", reference.derived_field_name()))
+            }
+            Self::ScopeOf(reference) => {
+                Name::new(format!("{}_scope", reference.derived_field_name()))
+            }
+            Self::Map(key, value) => Name::new(format!(
+                "{}_by_{}",
+                value.derived_field_name(),
+                key.derived_field_name()
+            )),
+            Self::Application { head, arguments } => {
+                let mut derived = Name::new(head.name().field_name()).as_str().to_owned();
+                for argument in arguments {
+                    derived.push('_');
+                    derived.push_str(argument.derived_field_name().as_str());
+                }
+                Name::new(derived)
+            }
+        }
+    }
+
     /// The plain name when this reference is a declared-name leaf.
     /// `None` for scalar, collection, or option references — those do
     /// not refer to a user-declared namespace type.
@@ -2472,7 +2849,7 @@ impl TypeReference {
     /// a `TypeReference`.
     ///
     /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. Schema type-reference objects lower at this
+    /// lowers to `Plain`. TrueSchema type-reference objects lower at this
     /// position: `(Vector T)` -> `Vector`, `(Map K V)` -> `Map`,
     /// `(Optional T)` -> `Optional`, and `(ScopeOf T)` -> `ScopeOf`.
     /// The inner positions recurse, so

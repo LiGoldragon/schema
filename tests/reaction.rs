@@ -32,7 +32,7 @@ use std::path::PathBuf;
 
 use schema::{
     ApplicationHead, EnumVariant, ImportResolver, MacroContext, Name, Root, RootApplication,
-    Schema, SchemaEngine, SchemaIdentity, TypeReference,
+    SchemaEngine, SchemaIdentity, TrueSchema, TypeReference,
 };
 
 fn fixture_dir() -> PathBuf {
@@ -48,7 +48,7 @@ fn reaction_resolver() -> ImportResolver {
     ImportResolver::new().with_dependency("reaction", fixture_dir(), "0.1.0")
 }
 
-fn lower_reaction() -> Schema {
+fn lower_reaction() -> TrueSchema {
     SchemaEngine::default()
         .lower_source(
             &read_fixture("reaction.schema"),
@@ -57,7 +57,7 @@ fn lower_reaction() -> Schema {
         .expect("reaction frame lowers")
 }
 
-fn lower_migrated() -> Schema {
+fn lower_migrated() -> TrueSchema {
     SchemaEngine::default()
         .lower_source_with_resolver(
             &read_fixture("spirit-nexus.schema"),
@@ -68,7 +68,7 @@ fn lower_migrated() -> Schema {
         .expect("migrated spirit nexus lowers through the import + root-application path")
 }
 
-fn lower_concrete() -> Schema {
+fn lower_concrete() -> TrueSchema {
     SchemaEngine::default()
         .lower_source(
             &read_fixture("spirit-nexus-concrete.schema"),
@@ -80,12 +80,12 @@ fn lower_concrete() -> Schema {
 /// Monomorphize a migrated root application against the reaction frame, using
 /// the LIBRARY expansion path now under test: read the named frame's body
 /// (binders + variants) from the lowered reaction schema via
-/// [`Schema::declared_frame_body`], then expand the application with
+/// [`TrueSchema::declared_frame_body`], then expand the application with
 /// [`RootApplication::expand_with`]. The result is the concrete `EnumVariant`
 /// list the migrated root denotes — what the equivalence assertions check
 /// leg-for-leg against the hand-written concrete baseline.
 fn expand_root(
-    reaction: &Schema,
+    reaction: &TrueSchema,
     frame_name: &str,
     application: &RootApplication,
 ) -> Vec<EnumVariant> {
@@ -100,7 +100,10 @@ fn expand_root(
     application.expand_with(parameters, variants)
 }
 
-fn application_root<'schema>(schema: &'schema Schema, position: &str) -> &'schema RootApplication {
+fn application_root<'schema>(
+    schema: &'schema TrueSchema,
+    position: &str,
+) -> &'schema RootApplication {
     schema
         .root_named(position)
         .unwrap_or_else(|| panic!("{position} root present"))
@@ -109,7 +112,7 @@ fn application_root<'schema>(schema: &'schema Schema, position: &str) -> &'schem
 }
 
 fn concrete_root_variants<'schema>(
-    schema: &'schema Schema,
+    schema: &'schema TrueSchema,
     position: &str,
 ) -> &'schema [EnumVariant] {
     let Root::Enum(declaration) = schema

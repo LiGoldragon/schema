@@ -10,7 +10,6 @@ mod raw;
 mod resolution;
 mod schema;
 mod source;
-mod specified;
 mod upgrade;
 
 pub use instance::InstanceSchemaText;
@@ -26,7 +25,7 @@ pub use environment::{
     SchemaNodeType, SchemaNodeTypeLabel, SchemaRootBlockKind, SchemaRootBlockSummary,
     SchemaSourcePosition, SchemaSourceRange, SchemaSourceSummary,
 };
-pub use identity::{ContentHash, FamilyClosure, SpecifiedFamilyClosure};
+pub use identity::{ContentHash, FamilyClosure};
 pub use macros::{
     MacroContext, MacroDispatch, MacroNodeDefinition, MacroObject, MacroOutput, MacroPair,
     MacroPosition, MacroRegistry, SchemaMacroHandler,
@@ -44,23 +43,18 @@ pub use schema::{
     FamilyKey, FieldDeclaration, ImplBlock, ImplCatalog, ImplCompositionKey, ImplFact,
     ImplReference, ImportDeclaration, MethodParameter, MethodSignature, Name, NewtypeDeclaration,
     ReferenceHead, ReferencedImpl, RelationDeclaration, RelationValue, Root, RootApplication,
-    RustSurface, Schema, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair,
-    SchemaNodeValue, StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap,
-    SymbolPath, SymbolPathPosition, TableName, TypeDeclaration, TypeReference, Visibility,
+    RustSurface, SchemaDeclaredType, SchemaNode, SchemaNodeData, SchemaNodePair, SchemaNodeValue,
+    StreamDeclaration, StreamRelation, StructDeclaration, StructFieldMap, SymbolPath,
+    SymbolPathPosition, TableName, TrueSchema, TypeDeclaration, TypeReference, Visibility,
 };
 pub use source::{
     SchemaSource, SchemaSourceArtifact, SourceDeclaration, SourceDeclarationValue,
-    SourceDeclarations, SourceEnumBody, SourceFamilyBody, SourceField, SourceFieldValue,
-    SourceImplCatalog, SourceImplEntry, SourceImport, SourceImports, SourceMethodParameter,
-    SourceMethodSignature, SourceNamespace, SourceNamespaceEntry, SourceReference, SourceRelation,
-    SourceRelationValue, SourceRelations, SourceRootBody, SourceRootEnum, SourceStreamBody,
-    SourceStructBody, SourceVariantName, SourceVariantPayload, SourceVariantSignature,
-    StreamRelationKeyword,
-};
-pub use specified::{
-    SpecifiedDeclaration, SpecifiedDeclarationBody, SpecifiedField, SpecifiedPayload,
-    SpecifiedPayloadBody, SpecifiedPayloadShape, SpecifiedRoot, SpecifiedRootApplication,
-    SpecifiedRootEnum, SpecifiedSchema, SpecifiedVariant, SpecifiedVariantSummary,
+    SourceDeclarations, SourceEnumBody, SourceFamilyBody, SourceField, SourceFieldIdentity,
+    SourceFieldValue, SourceImplCatalog, SourceImplEntry, SourceImport, SourceImports,
+    SourceMethodParameter, SourceMethodSignature, SourceNamespace, SourceNamespaceEntry,
+    SourceReference, SourceRelation, SourceRelationValue, SourceRelations, SourceRootBody,
+    SourceRootEnum, SourceStreamBody, SourceStructBody, SourceVariantName, SourceVariantPayload,
+    SourceVariantSignature, StreamRelationKeyword,
 };
 pub use upgrade::{
     AddField, AddVariant, ChangeFieldType, DefaultValue, FieldMigration, MigrationSpec, SchemaEdit,

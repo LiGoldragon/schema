@@ -12,9 +12,9 @@ use crate::{
     Declaration, DeclarationHead, EnumDeclaration, EnumVariant, FamilyDeclaration, FamilyKey,
     FieldDeclaration, ImplBlock, ImplCatalog, ImplReference, ImportDeclaration, MethodParameter,
     MethodSignature, Name, NewtypeDeclaration, RawNotaDatatype, RawNotaSequence,
-    RelationDeclaration, RelationValue, ResolvedImport, Root, RootApplication, Schema,
-    SchemaEngine, SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation,
-    StructDeclaration, TableName, TypeDeclaration, TypeReference,
+    RelationDeclaration, RelationValue, ResolvedImport, Root, RootApplication, SchemaEngine,
+    SchemaError, SchemaIdentity, StreamDeclaration, StreamRelation, StructDeclaration, TableName,
+    TrueSchema, TypeDeclaration, TypeReference,
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -155,16 +155,16 @@ impl SchemaSource {
         &self,
         engine: &SchemaEngine,
         identity: SchemaIdentity,
-    ) -> Result<crate::Schema, SchemaError> {
+    ) -> Result<crate::TrueSchema, SchemaError> {
         engine.lower_schema_source(self, identity)
     }
 
-    pub(crate) fn to_schema(
+    pub(crate) fn to_true_schema(
         &self,
         identity: SchemaIdentity,
         imports: Vec<ImportDeclaration>,
         resolved_imports: Vec<ResolvedImport>,
-    ) -> Result<Schema, SchemaError> {
+    ) -> Result<TrueSchema, SchemaError> {
         let resolver = SourceTypeResolver::from_source(self);
         let mut namespace = SourceLoweredNamespace::from_source(&self.namespace, &resolver)?;
         namespace.push_public_declarations(self.input.public_inline_declarations(&resolver)?)?;
@@ -174,7 +174,7 @@ impl SchemaSource {
         let input = self.input.to_root(&namespace)?;
         let output = self.output.to_root(&namespace)?;
         let impl_blocks = namespace.impl_blocks().to_vec();
-        Schema::new(
+        TrueSchema::new(
             identity,
             imports,
             resolved_imports,
@@ -187,8 +187,9 @@ impl SchemaSource {
         )
         .with_impl_blocks(impl_blocks)
         .families_verified()
-        .and_then(Schema::arities_verified)
-        .and_then(Schema::impls_verified)
+        .and_then(TrueSchema::product_components_verified)
+        .and_then(TrueSchema::arities_verified)
+        .and_then(TrueSchema::impls_verified)
     }
 }
 
@@ -2157,7 +2158,10 @@ impl SourceStructBody {
 
     fn from_block(block: &Block) -> Result<Self, SchemaError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "source struct body")?;
-        SourceField::from_positional_blocks(body.root_objects()).map(|fields| Self { fields })
+        let fields = SourceField::from_positional_blocks(body.root_objects())?;
+        let body = Self { fields };
+        body.validate_product_components()?;
+        Ok(body)
     }
 
     fn to_schema_text(&self) -> String {
@@ -2216,6 +2220,50 @@ impl SourceStructBody {
             .filter_map(SourceField::inline_declaration_name)
             .collect()
     }
+
+    fn validate_product_components(&self) -> Result<(), SchemaError> {
+        for field in &self.fields {
+            let Some(reference) = field.product_reference() else {
+                continue;
+            };
+            let occurrences = self.product_reference_count(&reference);
+            if occurrences == 1 && field.has_explicit_product_identity() {
+                return Err(SchemaError::ExplicitFieldOnUniqueProductComponent {
+                    field: field.name().to_string(),
+                    type_name: reference.to_schema_text(),
+                });
+            }
+            if occurrences > 1 && !field.has_explicit_product_identity() {
+                return Err(SchemaError::DuplicateImplicitProductComponent {
+                    type_name: reference.to_schema_text(),
+                });
+            }
+            if occurrences > 1
+                && field.has_explicit_product_identity()
+                && self
+                    .fields
+                    .iter()
+                    .filter(|candidate| candidate.product_reference() == Some(reference.clone()))
+                    .filter(|candidate| candidate.has_explicit_product_identity())
+                    .filter(|candidate| candidate.name() == field.name())
+                    .count()
+                    > 1
+            {
+                return Err(SchemaError::DuplicateExplicitProductComponentIdentity {
+                    field: field.name().to_string(),
+                    type_name: reference.to_schema_text(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn product_reference_count(&self, reference: &SourceReference) -> usize {
+        self.fields
+            .iter()
+            .filter(|field| field.product_reference().as_ref() == Some(reference))
+            .count()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2271,14 +2319,13 @@ impl<'source> SourceNamedBlock<'source> {
                 found: atom.text().to_owned(),
             });
         }
-        let value =
-            blocks
-                .get(*index + 1)
-                .ok_or_else(|| SchemaError::ExpectedSyntaxReferenceArity {
-                    form: "named schema field",
-                    expected: "a trailing-dot field name and a following value",
-                    found: 1,
-                })?;
+        let value = blocks
+            .get(*index + 1)
+            .ok_or(SchemaError::ExpectedSyntaxReferenceArity {
+                form: "named schema field",
+                expected: "a trailing-dot field name and a following value",
+                found: 1,
+            })?;
         *index += 2;
         Ok(Some(Self {
             name: Name::new(name_text),
@@ -2287,11 +2334,17 @@ impl<'source> SourceNamedBlock<'source> {
     }
 }
 
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceFieldIdentity {
+    Implicit,
+    Explicit,
+}
+
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct SourceField {
     name: Name,
     value: SourceFieldValue,
-    positional: bool,
+    identity: SourceFieldIdentity,
 }
 
 impl SourceField {
@@ -2299,7 +2352,7 @@ impl SourceField {
         Self {
             name,
             value: SourceFieldValue::Derived,
-            positional: true,
+            identity: SourceFieldIdentity::Implicit,
         }
     }
 
@@ -2307,7 +2360,7 @@ impl SourceField {
         Self {
             name,
             value: SourceFieldValue::Reference(reference),
-            positional: true,
+            identity: SourceFieldIdentity::Explicit,
         }
     }
 
@@ -2332,19 +2385,22 @@ impl SourceField {
     }
 
     fn to_schema_text(&self) -> String {
-        match (&self.value, self.positional) {
-            (SourceFieldValue::Derived, true) => self.name.to_nota(),
-            (SourceFieldValue::Derived, false) => {
+        match (&self.value, self.identity) {
+            (SourceFieldValue::Derived, SourceFieldIdentity::Implicit) => self.name.to_nota(),
+            (SourceFieldValue::Derived, SourceFieldIdentity::Explicit) => {
                 format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
             }
-            (SourceFieldValue::Reference(SourceReference::Plain(reference)), true) => {
+            (SourceFieldValue::Reference(reference), SourceFieldIdentity::Implicit) => {
+                reference.to_schema_text()
+            }
+            (
+                SourceFieldValue::Reference(SourceReference::Plain(reference)),
+                SourceFieldIdentity::Explicit,
+            ) => {
                 format!("{}.{}", self.name.to_nota(), reference.to_nota())
             }
-            (SourceFieldValue::Reference(reference), true) => {
+            (SourceFieldValue::Reference(reference), SourceFieldIdentity::Explicit) => {
                 format!("{}.{}", self.name.to_nota(), reference.to_schema_text())
-            }
-            (SourceFieldValue::Reference(reference), false) => {
-                format!("{} {}", self.name.to_nota(), reference.to_schema_text())
             }
             (SourceFieldValue::Declaration(_), _) => {
                 format!("{} {}", self.name.to_nota(), self.value.to_schema_text())
@@ -2384,7 +2440,7 @@ impl SourceField {
             return Ok(Self {
                 name: reference.derived_field_name(),
                 value: SourceFieldValue::Reference(reference),
-                positional: true,
+                identity: SourceFieldIdentity::Implicit,
             });
         }
         let atom = SourceAtom::from_block(block)?;
@@ -2397,11 +2453,11 @@ impl SourceField {
             return Self::from_explicit_field_reference(field_name, type_name);
         }
         let name = atom.into_name();
-        if SourceIdentifierCase::new(&name).is_type() && !Self::is_reserved_scalar_name(&name) {
+        if SourceIdentifierCase::new(&name).is_type() {
             return Ok(Self {
                 name,
                 value: SourceFieldValue::Derived,
-                positional: true,
+                identity: SourceFieldIdentity::Implicit,
             });
         }
         Err(SchemaError::RetiredStructFieldSyntax {
@@ -2451,7 +2507,7 @@ impl SourceField {
         Ok(Self {
             name,
             value: SourceFieldValue::Reference(SourceReference::Plain(reference)),
-            positional: true,
+            identity: SourceFieldIdentity::Explicit,
         })
     }
 
@@ -2474,7 +2530,7 @@ impl SourceField {
         Ok(Self {
             name,
             value: SourceFieldValue::Reference(reference),
-            positional: true,
+            identity: SourceFieldIdentity::Explicit,
         })
     }
 
@@ -2559,6 +2615,22 @@ impl SourceField {
             SourceFieldValue::Derived
             | SourceFieldValue::Reference(_)
             | SourceFieldValue::Declaration(_) => None,
+        }
+    }
+
+    fn has_explicit_product_identity(&self) -> bool {
+        self.identity == SourceFieldIdentity::Explicit
+            && !SourceIdentifierCase::new(&self.name).is_type()
+    }
+
+    fn product_reference(&self) -> Option<SourceReference> {
+        match &self.value {
+            SourceFieldValue::Derived => Some(SourceReference::Plain(self.name.clone())),
+            SourceFieldValue::Reference(reference) => Some(reference.clone()),
+            SourceFieldValue::Declaration(_) if SourceIdentifierCase::new(&self.name).is_type() => {
+                Some(SourceReference::Plain(self.name.clone()))
+            }
+            SourceFieldValue::Declaration(_) => None,
         }
     }
 }
@@ -3087,6 +3159,15 @@ impl StreamRelationKeyword {
     }
 }
 
+impl From<&StreamRelation> for StreamRelationKeyword {
+    fn from(relation: &StreamRelation) -> Self {
+        match relation {
+            StreamRelation::Opens(_) => Self::Opens,
+            StreamRelation::Belongs(_) => Self::Belongs,
+        }
+    }
+}
+
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 #[rkyv(
     bytecheck(bounds(
@@ -3500,7 +3581,7 @@ struct SourceLoweredNamespace {
     declarations: Vec<Declaration>,
     /// Standalone impl blocks lowered from body-optional `TypeName {| … |}`
     /// entries. They mint no type declaration; they attach a catalog to a
-    /// type declared elsewhere, surfaced through `Schema::impl_blocks`.
+    /// type declared elsewhere, surfaced through `TrueSchema::impl_blocks`.
     impl_blocks: Vec<ImplBlock>,
 }
 

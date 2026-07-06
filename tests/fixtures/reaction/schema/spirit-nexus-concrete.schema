@@ -20,15 +20,15 @@
   Clarification String
   Supersession String
   Retirement String
-  SemaReceipt { identifier.RecordIdentifier marker.DatabaseMarker }
+  SemaReceipt { RecordIdentifier DatabaseMarker }
   ClarificationReceipt Boolean
   SupersessionReceipt Boolean
   RetirementReceipt Boolean
   RemoveReceipt Boolean
   RecordChangeReceipt Boolean
-  GuardianRejection { reason.GuardianRejectionReason Explanation }
+  GuardianRejection { GuardianRejectionReason Explanation }
   GuardianRejectionReason String
-  ReferentGuardianRejection { reason.ReferentGuardianRejectionReason Explanation }
+  ReferentGuardianRejection { ReferentGuardianRejectionReason Explanation }
   ReferentGuardianRejectionReason String
   Explanation String
   ErrorReport String
@@ -99,6 +99,6 @@
   ObserverTapOpened ObserverSubscription
   ObserverTapClosed ObserverRetraction
 
-  StashRequest { Records marker.DatabaseMarker }
-  StashResult { handle.StashHandle count.RecordCount marker.DatabaseMarker }
+  StashRequest { Records DatabaseMarker }
+  StashResult { StashHandle RecordCount DatabaseMarker }
 }
