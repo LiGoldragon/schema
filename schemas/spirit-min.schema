@@ -1,17 +1,20 @@
-[Record Observe]
-[RecordAccepted RecordsObserved]
+{}
+[Record.RecordPayload Observe.ObservePayload]
+[RecordAccepted.RecordAcceptedPayload RecordsObserved.RecordsObservedPayload]
 {
-  Record Entry
-  Observe Query
-  RecordAccepted RecordIdentifier
-  RecordsObserved RecordSet
-  Topic String
-  Topics (Vector Topic)
-  Description String
-  RecordIdentifier Integer
-  Entry { Topics Kind Description Magnitude }
-  Query { Topic Kind }
-  RecordSet (Vector Entry)
-  Kind [Decision Principle Correction Clarification Constraint]
-  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]
+  RecordPayload.Entry
+  ObservePayload.Query
+  RecordAcceptedPayload.RecordIdentifier
+  RecordsObservedPayload.RecordSet
+  Topic.String
+  Topics.Vector.Topic
+  Description.String
+  RecordIdentifier.Integer
+  Entry.{ Topics Kind Description Magnitude }
+  Query.{ Topic Kind }
+  RecordSet.Vector.Entry
+  Kind.[Decision Principle Correction Clarification Constraint]
+  Magnitude.[Minimum VeryLow Low Medium High VeryHigh Maximum]
 }
+{}
+{}

@@ -1,13 +1,12 @@
 use std::fmt;
 
 use nota::{
-    AtomClassification, Block, Delimiter, NotaBlock, NotaBody, NotaDecode, NotaDecodeError,
+    Block, Delimiter, DottedExpectation, NotaBlock, NotaBody, NotaDecode, NotaDecodeError,
     NotaEncode, NotaString, StructuralMacroNode,
 };
 
 use crate::{
-    MacroContext, MacroObject, MacroOutput, MacroPosition, MacroRegistry, SchemaError,
-    declarative::{MacroExpansionFields, MacroExpansionVariants},
+    SchemaError,
     macros::{BlockDebug, SchemaBlockExt},
 };
 
@@ -64,8 +63,37 @@ impl Name {
         output
     }
 
+    /// The lowerCamel projection of this name's local part: the leading
+    /// character is lowercased and the remainder is left untouched, so a
+    /// PascalCase type name (`StoredRecord`) projects into the lowercase "name"
+    /// register (`storedRecord`) while a single-word head (`Map`) becomes `map`.
+    /// This is the derivation an indirection linkname is minted from — a hoisted
+    /// type's name projected into the lowercase indirection-name register.
+    pub fn lower_camel(&self) -> String {
+        let mut characters = self.local_part().chars();
+        match characters.next() {
+            Some(first) => {
+                let mut projection = first.to_ascii_lowercase().to_string();
+                projection.push_str(characters.as_str());
+                projection
+            }
+            None => String::new(),
+        }
+    }
+
     pub fn qualifies_as_symbol_name(&self) -> bool {
-        AtomClassification::classify(self.as_str()) == AtomClassification::SymbolCandidate
+        // The structural symbol predicate retained from the NOTA reader
+        // (`Atom::qualifies_as_symbol`): a non-empty atom whose every character
+        // is bare-safe — no whitespace and none of the delimiter or quote
+        // characters. No numeric meaning is inferred; a numeric-looking atom
+        // qualifies here and narrows to a number only at decode under its
+        // expected type.
+        let text = self.as_str();
+        !text.is_empty()
+            && text.chars().all(|character| {
+                !character.is_whitespace()
+                    && !matches!(character, '"' | '(' | ')' | '[' | ']' | '{' | '}')
+            })
     }
 
     /// Whether this name is a PascalCase symbol — a symbol-shaped atom whose
@@ -297,7 +325,7 @@ pub enum Root {
     /// The application-form root `(Head Arg …)` — the position is a typed
     /// sum produced by applying a parameterized head to its arguments. The
     /// application is boxed: an imported head carries a `ResolvedImport`, so
-    /// an unboxed `RootApplication` would make `Root` (and every `TrueSchema`
+    /// an unboxed `RootApplication` would make `Root` (and every `SchemaTree`
     /// holding two roots) carry that weight even for the common enum root.
     Application(Box<RootApplication>),
 }
@@ -411,7 +439,6 @@ impl RootApplication {
                     .payload
                     .as_ref()
                     .map(|payload| self.substitute_binder(frame_parameters, payload)),
-                stream_relation: variant.stream_relation.clone(),
             })
             .collect()
     }
@@ -461,20 +488,69 @@ impl From<&RootApplication> for TypeReference {
     Eq,
     PartialEq,
 )]
-pub struct TrueSchema {
+pub struct SchemaTree {
     identity: super::SchemaIdentity,
     imports: Vec<ImportDeclaration>,
     resolved_imports: Vec<super::ResolvedImport>,
     input: Root,
     output: Root,
     namespace: Vec<Declaration>,
-    streams: Vec<StreamDeclaration>,
-    families: Vec<FamilyDeclaration>,
-    relations: Vec<RelationDeclaration>,
     impl_blocks: Vec<ImplBlock>,
 }
 
-impl TrueSchema {
+/// A declaration head that introduces a flat list of type-parameter binders.
+/// Both a native [`Declaration`] and an imported [`super::ResolvedImport`] carry
+/// their binders this way, and both mint one member identifier per binder when
+/// decomposed (`CoreResolvedImport::from_resolved_import` uses the same
+/// `declare_member` path a native frame does), so a repeated binder mints
+/// the same colliding identifier regardless of which shape carries it. Naming
+/// the shared head lets the semantic boundary reject a duplicate through one walk
+/// over every binder-bearing shape instead of a per-shape special case.
+trait ParameterizedHead {
+    /// The name the duplicate-binder error reports as the offending declaration.
+    fn head_name(&self) -> &Name;
+
+    /// The flat binder list the head introduces.
+    fn binders(&self) -> &[Name];
+
+    /// Reject the first repeated binder with the typed error the source reader
+    /// constructs for the same fault; accept a list whose binders are distinct.
+    fn verify_distinct_binders(&self) -> Result<(), SchemaError> {
+        let mut seen: Vec<&Name> = Vec::new();
+        for binder in self.binders() {
+            if seen.contains(&binder) {
+                return Err(SchemaError::DuplicateTypeParameter {
+                    declaration: self.head_name().as_str().to_owned(),
+                    parameter: binder.as_str().to_owned(),
+                });
+            }
+            seen.push(binder);
+        }
+        Ok(())
+    }
+}
+
+impl ParameterizedHead for Declaration {
+    fn head_name(&self) -> &Name {
+        self.name()
+    }
+
+    fn binders(&self) -> &[Name] {
+        self.parameters()
+    }
+}
+
+impl ParameterizedHead for super::ResolvedImport {
+    fn head_name(&self) -> &Name {
+        self.local_name()
+    }
+
+    fn binders(&self) -> &[Name] {
+        self.parameters()
+    }
+}
+
+impl SchemaTree {
     // The schema's fields are each a distinct typed section of the model;
     // the constructor takes them as separate typed vectors rather than a
     // bag struct. (Newer clippy raises `too_many_arguments`; the repo's
@@ -487,9 +563,6 @@ impl TrueSchema {
         input: Root,
         output: Root,
         namespace: Vec<Declaration>,
-        streams: Vec<StreamDeclaration>,
-        families: Vec<FamilyDeclaration>,
-        relations: Vec<RelationDeclaration>,
     ) -> Self {
         Self {
             identity,
@@ -498,17 +571,13 @@ impl TrueSchema {
             input,
             output,
             namespace,
-            streams,
-            families,
-            relations,
             impl_blocks: Vec::new(),
         }
     }
 
-    /// Attach the standalone impl blocks lowered from body-optional
-    /// `TypeName {| … |}` entries — impls for types declared elsewhere. The
-    /// fused-form catalogs ride on their own `Declaration::impls`; these are
-    /// the catalogs whose target type is declared by a separate entry.
+    /// Attach the standalone impl blocks lowered from the impls block's
+    /// `TypeName.[ … ]` entries — every impl catalog is keyed by the type it
+    /// targets, declared by its own types/generics entry.
     pub(crate) fn with_impl_blocks(mut self, impl_blocks: Vec<ImplBlock>) -> Self {
         self.impl_blocks = impl_blocks;
         self
@@ -564,8 +633,8 @@ impl TrueSchema {
         &self.namespace
     }
 
-    /// The standalone impl blocks lowered from body-optional
-    /// `TypeName {| … |}` entries (impls for elsewhere-declared types).
+    /// The standalone impl blocks lowered from the impls block's
+    /// `TypeName.[ … ]` entries.
     pub fn impl_blocks(&self) -> &[ImplBlock] {
         &self.impl_blocks
     }
@@ -597,34 +666,6 @@ impl TrueSchema {
         references
     }
 
-    pub fn streams(&self) -> &[StreamDeclaration] {
-        &self.streams
-    }
-
-    pub fn families(&self) -> &[FamilyDeclaration] {
-        &self.families
-    }
-
-    pub fn relations(&self) -> &[RelationDeclaration] {
-        &self.relations
-    }
-
-    /// Confirm every declared family's record type resolves to a
-    /// namespace declaration, a root enum, or a declared import. Both
-    /// lowering paths call this after assembly, so an unresolvable
-    /// record name is a typed error rather than a silent dead family.
-    pub(crate) fn families_verified(self) -> Result<Self, SchemaError> {
-        for family in &self.families {
-            if !self.family_record_resolves(&family.record) {
-                return Err(SchemaError::FamilyRecordNotFound {
-                    family: family.name.as_str().to_owned(),
-                    record: family.record.as_str().to_owned(),
-                });
-            }
-        }
-        Ok(self)
-    }
-
     pub(crate) fn product_components_verified(self) -> Result<Self, SchemaError> {
         for declaration in &self.namespace {
             if let TypeDeclaration::Struct(declaration) = declaration.value() {
@@ -632,15 +673,6 @@ impl TrueSchema {
             }
         }
         Ok(self)
-    }
-
-    fn family_record_resolves(&self, record: &Name) -> bool {
-        self.type_named(record.as_str()).is_some()
-            || self.root_enum_named(record.as_str()).is_some()
-            || self
-                .imports
-                .iter()
-                .any(|import| &import.local_name == record)
     }
 
     pub fn type_named(&self, name: &str) -> Option<&TypeDeclaration> {
@@ -747,7 +779,6 @@ impl TrueSchema {
                 payload: variant
                     .payload
                     .map(|payload| self.reaim_sibling_application(&payload)),
-                stream_relation: variant.stream_relation,
             })
             .collect();
         Some(EnumDeclaration::new(application.name().clone(), expanded))
@@ -803,6 +834,83 @@ impl TrueSchema {
             self.verify_root_arities(root)?;
         }
         Ok(self)
+    }
+
+    /// Verify that every binder-bearing head's binder list is distinct: no
+    /// declaration head repeats a type-parameter name. The source reader
+    /// (`SourceGenerics::read_parameters`) already rejects a duplicate binder as
+    /// it parses the `generics` block, but that guard sits on the text path
+    /// alone. This is the same rule enforced at the SEMANTIC boundary — the
+    /// construction/decode surface every schema value passes through
+    /// ([`crate::TrueSchema::from_tree`], reached by the programmatic tree
+    /// constructor, binary decode, and NOTA decode) — so a schema value that
+    /// never touched the source reader still cannot carry a duplicate generic or
+    /// frame binder. Two shapes carry binders: a native `Declaration` (plain
+    /// generic or parameterized enum frame) in `self.namespace`, and an imported
+    /// frame head in `self.resolved_imports`. Both decompose their binders through
+    /// the same member-minting path, so both are walked here through the shared
+    /// [`ParameterizedHead`] check, and both construct the same
+    /// [`SchemaError::DuplicateTypeParameter`] the source form does.
+    pub(crate) fn parameters_verified(&self) -> Result<(), SchemaError> {
+        for declaration in &self.namespace {
+            declaration.verify_distinct_binders()?;
+        }
+        for import in &self.resolved_imports {
+            import.verify_distinct_binders()?;
+        }
+        Ok(())
+    }
+
+    /// Every position in the loaded whole that introduces a top-level
+    /// declaration, paired with the site label the duplicate error reports it
+    /// by. A loaded schema is ONE namespace: the input and output roots, every
+    /// namespace declaration, and every resolved import each name one
+    /// declaration in that single space. Brace imports are the source form of
+    /// the resolved imports and enter the whole through them, so counting both
+    /// would double-count one imported declaration; the resolved import is the
+    /// declaration in the whole and is what is walked here.
+    fn declaration_heads(&self) -> Vec<(&Name, &'static str)> {
+        let mut heads: Vec<(&Name, &'static str)> = Vec::new();
+        heads.push((self.input.name(), "the input root"));
+        heads.push((self.output.name(), "the output root"));
+        for declaration in &self.namespace {
+            heads.push((declaration.name(), "a namespace declaration"));
+        }
+        for import in &self.resolved_imports {
+            heads.push((import.local_name(), "a resolved import"));
+        }
+        heads
+    }
+
+    /// Verify the loaded whole is one namespace: no two top-level declarations
+    /// share a name. The source reader (`push_declaration`) already rejects a
+    /// namespace block that repeats a name as it lowers text, but that guard
+    /// sits on the text path alone and sees only the namespace block, not the
+    /// roots or the resolved imports. This is the same one-namespace rule
+    /// enforced at the SEMANTIC boundary — the construction/decode surface every
+    /// schema value passes through ([`crate::TrueSchema::from_tree`], reached by
+    /// the programmatic tree constructor, binary decode, and NOTA decode) — so a
+    /// schema value that never touched the source reader still cannot carry two
+    /// declarations of one name. Decomposition mints every top-level declaration
+    /// through the same `NameHarvest::declare` path keyed on (kind, name), so two
+    /// heads of one name — an imported `Input` and a local `Input` root, or any
+    /// other pair across the whole — would otherwise mint one colliding
+    /// identifier and silently merge two declarations into one. The author
+    /// resolves a real collision by renaming the more appropriate side: the local
+    /// declaration, or the imported one at its source.
+    pub(crate) fn declaration_names_unique(&self) -> Result<(), SchemaError> {
+        let mut seen: Vec<(&Name, &'static str)> = Vec::new();
+        for (name, site) in self.declaration_heads() {
+            if let Some((_, first_site)) = seen.iter().find(|(prior, _)| *prior == name) {
+                return Err(SchemaError::DuplicateDeclaration {
+                    name: name.as_str().to_owned(),
+                    first_site,
+                    second_site: site,
+                });
+            }
+            seen.push((name, site));
+        }
+        Ok(())
     }
 
     /// Verify the impl manifest: every standalone (body-optional) impl block
@@ -876,10 +984,23 @@ impl TrueSchema {
     fn verify_enum_arities(&self, declaration: &EnumDeclaration) -> Result<(), SchemaError> {
         for variant in &declaration.variants {
             if let Some(payload) = &variant.payload {
-                if matches!(payload, TypeReference::Optional(_)) {
+                if matches!(
+                    payload,
+                    TypeReference::SingleTypeApplication {
+                        projection: SingleTypeReferenceProjection::Optional,
+                        ..
+                    }
+                ) {
                     return Err(SchemaError::OptionalVariantPayload {
                         enum_name: declaration.name.as_str().to_owned(),
                         variant_name: variant.name.as_str().to_owned(),
+                    });
+                }
+                if let Some(payload_type) = variant.same_named_direct_payload_type() {
+                    return Err(SchemaError::SameNamedVariantPayload {
+                        enum_name: declaration.name.as_str().to_owned(),
+                        variant_name: variant.name.as_str().to_owned(),
+                        payload_type: payload_type.to_owned(),
                     });
                 }
                 self.verify_reference_arities(payload)?;
@@ -895,14 +1016,16 @@ impl TrueSchema {
             | TypeReference::Boolean
             | TypeReference::Path
             | TypeReference::Bytes
-            | TypeReference::FixedBytes(_)
+            | TypeReference::ValueApplication { .. }
             | TypeReference::Plain(_) => Ok(()),
-            TypeReference::Vector(inner)
-            | TypeReference::Optional(inner)
-            | TypeReference::ScopeOf(inner) => self.verify_reference_arities(inner),
-            TypeReference::Map(key, value) => {
-                self.verify_reference_arities(key)?;
-                self.verify_reference_arities(value)
+            TypeReference::SingleTypeApplication { argument, .. } => {
+                self.verify_reference_arities(argument)
+            }
+            TypeReference::MultiTypeApplication { arguments, .. } => {
+                for argument in arguments {
+                    self.verify_reference_arities(argument)?;
+                }
+                Ok(())
             }
             TypeReference::Application { head, arguments } => {
                 if let Some(expected) = self.declared_head_arity(head)
@@ -1009,48 +1132,69 @@ impl TrueSchema {
     }
 
     pub fn to_schema_text(&self) -> String {
-        let mut roots = vec![
+        let roots = [
             self.imports_schema_text(),
             self.input.to_root_schema_text(),
             self.output.to_root_schema_text(),
-            self.namespace_schema_text(),
+            self.types_schema_text(),
+            self.generics_schema_text(),
+            self.impls_schema_text(),
         ];
-        if !self.relations.is_empty() {
-            roots.push(
-                Delimiter::SquareBracket.wrap(
-                    self.relations
-                        .iter()
-                        .map(RelationDeclaration::to_schema_text),
-                ),
-            );
-        }
         roots.join("\n")
     }
 
     fn imports_schema_text(&self) -> String {
-        if self.imports.is_empty() {
-            return "{}".to_owned();
-        }
-        let imports = self
-            .imports
-            .iter()
-            .map(|import| {
-                format!(
-                    "  {} {}",
-                    import.local_name.to_nota(),
-                    import.source.to_structural_nota()
-                )
-            })
-            .collect::<Vec<_>>();
-        format!("{{\n{}\n}}", imports.join("\n"))
+        Self::brace_block_text(
+            self.imports
+                .iter()
+                .map(|import| import.to_schema_text())
+                .collect(),
+        )
     }
 
-    fn namespace_schema_text(&self) -> String {
+    /// The `types` block: every non-parameterized declaration, projected as a
+    /// dotted `TypeName.Definition` entry.
+    fn types_schema_text(&self) -> String {
+        Self::brace_block_text(
+            self.namespace
+                .iter()
+                .filter(|declaration| declaration.parameters().is_empty())
+                .map(Declaration::types_entry_text)
+                .collect(),
+        )
+    }
+
+    /// The `generics` block: every parameterized declaration, projected as a
+    /// dotted `GenericName.((Params …) Body)` entry.
+    fn generics_schema_text(&self) -> String {
+        Self::brace_block_text(
+            self.namespace
+                .iter()
+                .filter(|declaration| !declaration.parameters().is_empty())
+                .map(Declaration::generics_entry_text)
+                .collect(),
+        )
+    }
+
+    /// The `impls` block: every impl catalog keyed by the type it targets. A
+    /// declaration carrying a fused catalog contributes its own entry, and each
+    /// standalone impl block contributes its target's entry — the same union
+    /// the enumerable manifest walks.
+    fn impls_schema_text(&self) -> String {
         let mut entries = Vec::new();
-        entries.extend(self.namespace.iter().map(Declaration::to_schema_text));
-        entries.extend(self.streams.iter().map(StreamDeclaration::to_schema_text));
-        entries.extend(self.families.iter().map(FamilyDeclaration::to_schema_text));
-        entries.extend(self.impl_blocks.iter().map(ImplBlock::to_schema_text));
+        for declaration in &self.namespace {
+            if !declaration.impls().is_empty() {
+                entries.push(ImplBlock::impls_entry_text(
+                    declaration.name(),
+                    declaration.impls(),
+                ));
+            }
+        }
+        entries.extend(self.impl_blocks.iter().map(ImplBlock::to_impls_entry_text));
+        Self::brace_block_text(entries)
+    }
+
+    fn brace_block_text(entries: Vec<String>) -> String {
         if entries.is_empty() {
             return "{}".to_owned();
         }
@@ -1084,20 +1228,27 @@ impl Root {
 }
 
 impl Declaration {
-    fn to_schema_text(&self) -> String {
-        let head = if self.parameters.is_empty() {
-            self.name.to_nota()
-        } else {
-            let mut items = Vec::with_capacity(self.parameters.len() + 1);
-            items.push(self.name.to_nota());
-            items.extend(self.parameters.iter().map(Name::to_nota));
-            Delimiter::PipeParenthesis.wrap(items)
-        };
-        let mut parts = vec![head, self.value.to_schema_text()];
-        if !self.impls.is_empty() {
-            parts.push(self.impls.to_schema_text());
-        }
-        parts.join(" ")
+    /// Project a non-parameterized declaration as a `types` block entry:
+    /// `TypeName.Definition`.
+    fn types_entry_text(&self) -> String {
+        format!("{}.{}", self.name.to_nota(), self.value.to_schema_text())
+    }
+
+    /// Project a parameterized declaration as a `generics` block entry:
+    /// `GenericName.((Params …) Body)`.
+    fn generics_entry_text(&self) -> String {
+        let binders = self
+            .parameters
+            .iter()
+            .map(Name::to_nota)
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "{}.(({}) {})",
+            self.name.to_nota(),
+            binders,
+            self.value.to_schema_text()
+        )
     }
 }
 
@@ -1188,72 +1339,33 @@ impl EnumDeclaration {
 
 impl EnumVariant {
     fn to_schema_text(&self) -> String {
-        match (&self.payload, &self.stream_relation) {
-            (None, None) => self.name.to_nota(),
-            (Some(payload), None) if payload.plain_name() == Some(&self.name) => {
-                Delimiter::Parenthesis.wrap([self.name.to_nota()])
-            }
-            (Some(payload), None) => {
+        match &self.payload {
+            None => self.name.to_nota(),
+            Some(payload) => {
                 Delimiter::Parenthesis.wrap([self.name.to_nota(), payload.to_structural_nota()])
             }
-            (Some(payload), Some(relation)) => Delimiter::Parenthesis.wrap([
-                self.name.to_nota(),
-                payload.to_structural_nota(),
-                relation.keyword_text().to_owned(),
-                relation.stream_name().to_nota(),
-            ]),
-            (None, Some(_)) => self.name.to_nota(),
         }
-    }
-}
-
-impl StreamRelation {
-    fn keyword_text(&self) -> &'static str {
-        match self {
-            Self::Opens(_) => "opens",
-            Self::Belongs(_) => "belongs",
-        }
-    }
-}
-
-impl StreamDeclaration {
-    fn to_schema_text(&self) -> String {
-        format!(
-            "{} (Stream {{ token.{} opened.{} event.{} close.{} }})",
-            self.name.to_nota(),
-            self.token.to_structural_nota(),
-            self.opened.to_structural_nota(),
-            self.event.to_structural_nota(),
-            self.close.to_structural_nota(),
-        )
-    }
-}
-
-impl FamilyDeclaration {
-    fn to_schema_text(&self) -> String {
-        format!(
-            "{} (Family {{ record.{} table.{} key.{} }})",
-            self.name.to_nota(),
-            self.record.to_nota(),
-            self.table.to_nota(),
-            self.key.to_nota(),
-        )
     }
 }
 
 impl ImplBlock {
-    fn to_schema_text(&self) -> String {
-        format!(
-            "{} {}",
-            self.target.to_nota(),
-            self.catalog.to_schema_text()
-        )
+    /// Project a standalone impl block as an `impls` block entry keyed by its
+    /// target type: `TypeName.[ … ]`.
+    fn to_impls_entry_text(&self) -> String {
+        Self::impls_entry_text(&self.target, &self.catalog)
+    }
+
+    /// Project one `impls` block entry from a target type name and its catalog.
+    /// Shared by standalone impl blocks and the fused catalog a declaration
+    /// carries, so both project to the same `TypeName.[ … ]` shape.
+    fn impls_entry_text(target: &Name, catalog: &ImplCatalog) -> String {
+        format!("{}.{}", target.to_nota(), catalog.to_schema_text())
     }
 }
 
 impl ImplCatalog {
     fn to_schema_text(&self) -> String {
-        Delimiter::PipeBrace.wrap(self.entries.iter().map(ImplReference::to_schema_text))
+        Delimiter::SquareBracket.wrap(self.entries.iter().map(ImplReference::to_schema_text))
     }
 }
 
@@ -1293,75 +1405,6 @@ impl MethodParameter {
     }
 }
 
-impl RelationDeclaration {
-    fn to_schema_text(&self) -> String {
-        match self {
-            Self::Equivalence(values) => Delimiter::Parenthesis.wrap([
-                "Equivalence".to_owned(),
-                Delimiter::SquareBracket.wrap(values.iter().map(RelationValue::to_schema_text)),
-            ]),
-        }
-    }
-}
-
-impl RelationValue {
-    fn to_schema_text(&self) -> String {
-        match self.path.as_slice() {
-            [] => Delimiter::Parenthesis.wrap(Vec::<String>::new()),
-            [name] => name.to_nota(),
-            names => Delimiter::Parenthesis.wrap(names.iter().map(Name::to_nota)),
-        }
-    }
-}
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota::NotaDecode,
-    nota::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub enum RelationDeclaration {
-    Equivalence(Vec<RelationValue>),
-}
-
-impl RelationDeclaration {
-    pub fn values(&self) -> &[RelationValue] {
-        match self {
-            Self::Equivalence(values) => values,
-        }
-    }
-}
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota::NotaDecode,
-    nota::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub struct RelationValue {
-    path: Vec<Name>,
-}
-
-impl RelationValue {
-    pub fn new(path: Vec<Name>) -> Self {
-        Self { path }
-    }
-
-    pub fn path(&self) -> &[Name] {
-        &self.path
-    }
-}
-
 #[derive(
     rkyv::Archive,
     rkyv::Serialize,
@@ -1376,6 +1419,19 @@ impl RelationValue {
 pub struct ImportDeclaration {
     pub local_name: Name,
     pub source: TypeReference,
+}
+
+impl ImportDeclaration {
+    /// The dotted no-alias import entry text: the single-colon source path
+    /// re-projected with dots, `crate.module.Type`. The imported name is the
+    /// target's own name, so no alias is written (see ARCHITECTURE "Imports
+    /// entry syntax carries no alias").
+    fn to_schema_text(&self) -> String {
+        self.source
+            .plain_name()
+            .map(|name| name.as_str().replace(':', "."))
+            .unwrap_or_else(|| self.source.to_structural_nota())
+    }
 }
 
 #[derive(
@@ -1444,7 +1500,7 @@ impl Declaration {
         self
     }
 
-    /// Attach the lowered `{| … |}` impl catalog to this declaration. The
+    /// Attach a lowered impl catalog to this declaration. The
     /// catalog is a *reference* to impls/methods that already exist on the
     /// Rust side — markers and callable method signatures — not a generated
     /// body. A declaration with no trailing impl block carries
@@ -1454,10 +1510,10 @@ impl Declaration {
         self
     }
 
-    /// The lowered impl catalog referenced by this declaration's trailing
-    /// `{| … |}` block. Empty for a declaration with no impl block. This is
+    /// The lowered impl catalog attached to this declaration. Empty for a
+    /// declaration with no attached catalog. This is
     /// the per-type reach of the enumerable manifest; the schema-wide walk
-    /// ([`TrueSchema::referenced_impls`]) unions these with the standalone
+    /// (`SchemaTree::referenced_impls`) unions these with the standalone
     /// body-optional impl blocks.
     pub fn impls(&self) -> &ImplCatalog {
         &self.impls
@@ -1487,7 +1543,7 @@ impl Declaration {
     }
 }
 
-/// The lowered `{| … |}` impl catalog: an enumerable list of impl
+/// The lowered impl catalog: an enumerable list of impl
 /// *references* — markers, body-bearing trait impls, and inherent method
 /// signatures — that name impls/methods already present on the Rust side.
 /// It carries no generated body; it is the data the out-of-band trust
@@ -1717,7 +1773,7 @@ impl MethodParameter {
 }
 
 /// A standalone lowered impl block for a type declared elsewhere — the
-/// lowered form of a body-optional `TypeName {| … |}` entry. The named
+/// lowered form of an impls-block `TypeName.[ … ]` entry. The named
 /// `target` is resolved by ordinary symbol lookup; this block mints no
 /// type declaration, it only attaches a catalog to the existing type.
 #[derive(
@@ -1751,7 +1807,7 @@ impl ImplBlock {
 }
 
 /// A single impl entry from the schema-wide manifest, paired with the type
-/// it targets. Borrowed view produced by [`TrueSchema::referenced_impls`]; the
+/// it targets. Borrowed view produced by `SchemaTree::referenced_impls`; the
 /// `target` is the declaring (fused) type or the body-optional block's
 /// referenced type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1808,7 +1864,7 @@ impl ImplFact {
 /// exposes. The schema's impl catalog is *out of band* from the crate, so
 /// the trust boundary is verifying that every referenced trait/method
 /// signature is actually present here before any code trusts the catalog.
-/// [`Self::verify_catalog`] is that boundary check.
+/// `Self::verify_catalog` is that boundary check.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RustSurface {
     facts: Vec<ImplFact>,
@@ -1827,20 +1883,15 @@ impl RustSurface {
     /// [`SchemaError::UnverifiedImplReference`] naming the exact target and
     /// signature; an all-present catalog returns `Ok(())`. This proves the
     /// out-of-band catalog can be checked without parsing a real crate.
-    pub fn verify_catalog(&self, schema: &TrueSchema) -> Result<(), SchemaError> {
+    pub fn verify_catalog(&self, schema: &crate::TrueSchema) -> Result<(), SchemaError> {
         for reference in schema.referenced_impls() {
-            self.verify_reference(reference)?;
-        }
-        Ok(())
-    }
-
-    fn verify_reference(&self, reference: ReferencedImpl<'_>) -> Result<(), SchemaError> {
-        let target = reference.target();
-        if let Some(trait_name) = reference.entry().trait_name() {
-            self.verify_trait(target, trait_name)?;
-        }
-        for signature in reference.entry().methods() {
-            self.verify_method(target, signature)?;
+            let target = reference.target();
+            if let Some(trait_name) = reference.entry().trait_name() {
+                self.verify_trait(target, trait_name)?;
+            }
+            for signature in reference.entry().methods() {
+                self.verify_method(target, signature)?;
+            }
         }
         Ok(())
     }
@@ -2037,18 +2088,14 @@ impl NotaDecode for StructFieldMap {
     fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
         let body = NotaBody::from_delimited(block, Delimiter::Brace, "StructFieldMap")?;
         let root_objects = body.root_objects();
-        if root_objects.len() % 2 != 0 {
-            return Err(NotaDecodeError::ExpectedRootCount {
-                type_name: "StructFieldMap",
-                expected: root_objects.len() + 1,
-                found: root_objects.len(),
-            });
-        }
         let mut entries = Vec::new();
-        for chunk in root_objects.chunks_exact(2) {
+        let mut index = 0;
+        while index < root_objects.len() {
+            let entry = DottedExpectation::Uncapitalized.read_entry(&root_objects[index..])?;
+            index += entry.consumed();
             entries.push(FieldDeclaration {
-                name: Name::from_nota_block(&chunk[0])?,
-                reference: TypeReference::from_nota_block(&chunk[1])?,
+                name: Name::from_nota_block(entry.key())?,
+                reference: TypeReference::from_nota_block(entry.value())?,
             });
         }
         Ok(Self::new(entries))
@@ -2057,11 +2104,11 @@ impl NotaDecode for StructFieldMap {
 
 impl NotaEncode for StructFieldMap {
     fn to_nota(&self) -> String {
-        let mut fields = Vec::new();
-        for entry in self.entries() {
-            fields.push(entry.name.to_nota());
-            fields.push(entry.reference.to_nota());
-        }
+        let fields = self
+            .entries()
+            .iter()
+            .map(|entry| format!("{}.{}", entry.name.to_nota(), entry.reference.to_nota()))
+            .collect::<Vec<_>>();
         format!("{{{}}}", fields.join(" "))
     }
 }
@@ -2124,178 +2171,19 @@ impl EnumDeclaration {
 pub struct EnumVariant {
     pub name: Name,
     pub payload: Option<TypeReference>,
-    pub stream_relation: Option<StreamRelation>,
 }
 
 impl EnumVariant {
     pub fn new(name: Name, payload: Option<TypeReference>) -> Self {
-        Self {
-            name,
-            payload,
-            stream_relation: None,
-        }
+        Self { name, payload }
     }
 
-    pub fn with_stream_relation(mut self, stream_relation: StreamRelation) -> Self {
-        self.stream_relation = Some(stream_relation);
-        self
-    }
-}
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota::NotaDecode,
-    nota::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub enum StreamRelation {
-    Opens(Name),
-    Belongs(Name),
-}
-
-impl StreamRelation {
-    pub fn stream_name(&self) -> &Name {
-        match self {
-            Self::Opens(name) | Self::Belongs(name) => name,
-        }
-    }
-}
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota::NotaDecode,
-    nota::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub struct StreamDeclaration {
-    pub name: Name,
-    pub token: TypeReference,
-    pub opened: TypeReference,
-    pub event: TypeReference,
-    pub close: TypeReference,
-}
-
-impl StreamDeclaration {
-    pub fn new(
-        name: Name,
-        token: TypeReference,
-        opened: TypeReference,
-        event: TypeReference,
-        close: TypeReference,
-    ) -> Self {
-        Self {
-            name,
-            token,
-            opened,
-            event,
-            close,
-        }
-    }
-}
-
-/// The current storage coordinate of a record family. A table name is
-/// not a schema symbol: renaming the table moves only this coordinate,
-/// never the family's semantic identity.
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
-pub struct TableName(String);
-
-impl TableName {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl NotaDecode for TableName {
-    fn from_nota_block(block: &Block) -> Result<Self, NotaDecodeError> {
-        NotaBlock::new(block).parse_string().map(Self::new)
-    }
-}
-
-impl NotaEncode for TableName {
-    fn to_nota(&self) -> String {
-        if AtomClassification::classify(self.as_str()) == AtomClassification::SymbolCandidate {
-            self.as_str().to_owned()
+    pub(crate) fn same_named_direct_payload_type(&self) -> Option<&str> {
+        let payload_name = self.payload.as_ref()?.plain_name()?;
+        if payload_name.local_part() == self.name.local_part() {
+            Some(payload_name.local_part())
         } else {
-            NotaString::new(self.as_str()).format()
-        }
-    }
-}
-
-impl fmt::Display for TableName {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-/// How a stored record family is keyed: by a domain-supplied record
-/// key, or by an engine-assigned record identifier. The two variants
-/// mirror the two registration shapes a SEMA engine offers (a keyed
-/// table descriptor versus an identified table descriptor).
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota::NotaDecode,
-    nota::NotaEncode,
-    nota::StructuralMacroNode,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub enum FamilyKey {
-    #[shape(keyword = "Domain")]
-    Domain,
-    #[shape(keyword = "Identified")]
-    Identified,
-}
-
-/// A stored record family: schema metadata in the namespace map, on
-/// the stream-declaration precedent. The family name is the stable
-/// identity; the record type names the declaration whose closure is
-/// the family's content identity; the table name is only the current
-/// storage coordinate; the key kind selects the engine registration
-/// shape.
-#[derive(
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    nota::NotaDecode,
-    nota::NotaEncode,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-)]
-pub struct FamilyDeclaration {
-    pub name: Name,
-    pub record: Name,
-    pub table: TableName,
-    pub key: FamilyKey,
-}
-
-impl FamilyDeclaration {
-    pub fn new(name: Name, record: Name, table: TableName, key: FamilyKey) -> Self {
-        Self {
-            name,
-            record,
-            table,
-            key,
+            None
         }
     }
 }
@@ -2346,36 +2234,15 @@ impl ApplicationHead {
     }
 }
 
-/// The broad generic-application node `(Foo A B …)`, captured directly by
-/// nota's `#[shape(pascal_head, body)]` derive: a PascalCase head atom
-/// followed by a variable-arity tail of type-reference arguments. This is the
-/// structural-macro seam for the application form — the head decodes as a
-/// `Name` (always `Local` at decode time) and the tail decodes as a
-/// `Vec<TypeReference>`. The derive is the single source of truth for matching
-/// and re-emitting the form; this node lowers into [`TypeReference::Application`].
-#[derive(Clone, Debug, Eq, PartialEq, nota::StructuralMacroNode)]
-enum ApplicationNode {
-    #[shape(pascal_head, body)]
-    Application(Name, Vec<TypeReference>),
-}
-
-/// The fixed-width byte leaf `(Bytes N)`, captured through nota's
-/// headed-atom structural shape.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, nota::StructuralMacroNode)]
-enum FixedBytesNode {
-    #[shape(head = "Bytes", atom)]
-    FixedBytes(u64),
-}
-
-/// A declaration's type-name position: either a bare `Name` (the ordinary
-/// declaration head) or a pipe-parenthesized `(| Name Param Param … |)` head
-/// that introduces type-parameter binders. Use-site generic application keeps
-/// ordinary parentheses (`(Head Arg …)`); declaration binders use the pipe
-/// form so binding syntax and application syntax remain structurally distinct.
-/// The parameterized form still decodes through the captured-head +
-/// variable-arity tail seam (`ApplicationNode`) after the delimiter gate —
-/// each tail item must be a bare binder name (a `Plain` reference), since a
-/// parameter is a binder, not an applied type.
+/// A declaration's type-name position: a bare `Name` declaration head. The
+/// pipe-parenthesized `(| Name Param Param … |)` binder head is retired along
+/// with the structural pipe delimiters, so a declaration head introduces no
+/// inline type-parameter binders. Generic type-parameter binders now live in
+/// the dedicated generics block (`GenericName.((Params …) Body)`), read by the
+/// source-side generics reader, while authored use-site generic application
+/// stays dotted (`Head.(Arg …)`); binding and application remain structurally
+/// distinct without a pipe fence. The `parameters` vector is accordingly always
+/// decoded empty here.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarationHead {
     name: Name,
@@ -2395,70 +2262,119 @@ impl DeclarationHead {
         (self.name, self.parameters)
     }
 
-    /// Decode the declaration-name position from its block. A bare symbol
-    /// atom is an ordinary head with no parameters; a pipe-parenthesized
-    /// `(| Name Param … |)` reuses the application seam after delimiter
-    /// discrimination and lifts each binder out of the decoded tail.
+    /// Decode the declaration-name position from its block: a bare symbol
+    /// atom with no parameters. The retired pipe-parenthesized
+    /// `(| Name Param … |)` head is not read here — generic binders live in
+    /// the dedicated generics block (`GenericName.((Params …) Body)`), read
+    /// by the source-side generics reader.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        match block {
-            Block::Delimited {
-                delimiter: Delimiter::PipeParenthesis,
-                ..
-            } => Self::from_parameterized(block),
-            _ => Ok(Self {
-                name: block.schema_name()?,
-                parameters: Vec::new(),
-            }),
+        Ok(Self {
+            name: block.schema_name()?,
+            parameters: Vec::new(),
+        })
+    }
+}
+
+/// The within-kind lowering strategy of a single-type generic application.
+///
+/// The single-type kind carries exactly one type argument; the projection is
+/// the closed set of lowering strategies distinguished by meta-shape, never by
+/// the head name. `Vector.T`, `List.T`, and any other single-type generic alias
+/// all lower through one of these strategies; the head name is a `NameTable`
+/// concern, not a dispatch key.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SingleTypeReferenceProjection {
+    Vector,
+    Optional,
+    ScopeOf,
+}
+
+impl SingleTypeReferenceProjection {
+    /// The canonical spelling of this projection in the machine NOTA codec.
+    /// This is an enum-to-spelling projection (the same shape as
+    /// [`TypeReference::scalar_name`]), not a name-dispatch: decoding maps the
+    /// spelling back to the projection through the private `from_canonical_name`
+    /// lookup over this closed set.
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            Self::Vector => "Vector",
+            Self::Optional => "Optional",
+            Self::ScopeOf => "ScopeOf",
         }
     }
 
-    fn from_parameterized(block: &Block) -> Result<Self, SchemaError> {
-        let body = NotaBody::from_delimited(
-            block,
-            Delimiter::PipeParenthesis,
-            "parameterized declaration head",
-        )?;
-        let [head, tail @ ..] = body.root_objects() else {
-            return Err(SchemaError::ExpectedRootObjectCount {
-                expected: "at least one declaration-head object",
-                found: body.root_objects().len(),
-            });
-        };
-        let name = head.schema_name()?;
-        let mut parameters = Vec::with_capacity(tail.len());
-        for argument in tail {
-            let parameter =
-                argument
-                    .schema_name()
-                    .map_err(|_| SchemaError::ExpectedTypeParameterName {
-                        declaration: name.as_str().to_owned(),
-                        found: format!("{argument:?}"),
-                    })?;
-            if parameters.iter().any(|existing| existing == &parameter) {
-                return Err(SchemaError::DuplicateTypeParameter {
-                    declaration: name.as_str().to_owned(),
-                    parameter: parameter.as_str().to_owned(),
-                });
-            }
-            parameters.push(parameter);
+    fn from_canonical_name(name: &str) -> Option<Self> {
+        [Self::Vector, Self::Optional, Self::ScopeOf]
+            .into_iter()
+            .find(|projection| projection.canonical_name() == name)
+    }
+}
+
+/// The within-kind lowering strategy of a multi-type generic application.
+///
+/// The multi-type kind carries an arity-as-data argument list; the projection
+/// names the closed lowering strategy. `Map` is the sole builtin strategy, a
+/// keyed pair; user-defined multi-type aliases reuse it by definition data.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MultiTypeReferenceProjection {
+    Map,
+}
+
+impl MultiTypeReferenceProjection {
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            Self::Map => "Map",
         }
-        Ok(Self { name, parameters })
+    }
+
+    fn from_canonical_name(name: &str) -> Option<Self> {
+        [Self::Map]
+            .into_iter()
+            .find(|projection| projection.canonical_name() == name)
+    }
+}
+
+/// The within-kind lowering strategy of a value/const generic application.
+///
+/// The value kind carries a value argument (a fixed width, not a type). `Bytes`
+/// is the sole builtin strategy: `Bytes.N` is the fixed-width bytes value, named
+/// after the same `Bytes` head the source grammar spells. The dynamic-length
+/// bytes scalar is the separate [`TypeReference::Bytes`] leaf; the kind — value
+/// application versus scalar leaf — is what distinguishes them, exactly as the
+/// grammar distinguishes `Bytes.N` from a bare `Bytes` by the width leaf.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValueReferenceProjection {
+    Bytes,
+}
+
+impl ValueReferenceProjection {
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            Self::Bytes => "Bytes",
+        }
+    }
+
+    fn from_canonical_name(name: &str) -> Option<Self> {
+        [Self::Bytes]
+            .into_iter()
+            .find(|projection| projection.canonical_name() == name)
     }
 }
 
 /// A type at a reference position — a struct field's type, an enum
 /// variant's payload, or an import source.
 ///
-/// `String`, `Integer`, `Boolean`, and `Path` are reserved scalar leaves.
-/// `Plain` is a declared-name leaf (`Topic`, `Magnitude`). `Vector`,
-/// `Map`, `Optional`, and `ScopeOf` carry inner references, lowered from the
-/// single canonical head spelling each: `(Vector T)`, `(Map K V)`,
-/// `(Optional T)`, `(ScopeOf T)` — the earlier aliases (`Vec`, `Option`,
-/// `Scope`, `KeyValue`) are gone and no longer parse. `Application` is the
-/// broad generic-application form `(Foo A B …)`: any other PascalCase head
-/// carrying a tail of type-reference arguments, decoded through the
-/// `#[shape(pascal_head, body)]` structural-macro seam. Built-in heads are
-/// dispatched first; the application form is the fallback.
+/// `String`, `Integer`, `Boolean`, `Path`, and `Bytes` are reserved scalar
+/// leaves. `Plain` is a declared-name leaf (`Topic`, `Magnitude`). The generic
+/// applications mirror the source kind partition rather than one variant per
+/// builtin name: `SingleTypeApplication` (`Vector.T`, `Optional.T`, `ScopeOf.T`),
+/// `MultiTypeApplication` (`Map.(K V)`), and `ValueApplication` (`Bytes.N`) each
+/// carry a closed projection that names the lowering strategy, so lowering
+/// dispatches on kind and projection and never on a head string. `Application`
+/// is the broad generic-application form `Foo.(A B …)`: any other PascalCase
+/// head carrying a tail of type-reference arguments. Built-in heads are
+/// dispatched by the source generic definition table before an application form
+/// is produced.
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, Eq, PartialEq)]
 #[rkyv(
     bytecheck(bounds(
@@ -2477,50 +2393,26 @@ pub enum TypeReference {
     Boolean,
     Path,
     Bytes,
-    FixedBytes(u64),
     Plain(Name),
-    Vector(#[rkyv(omit_bounds)] Box<TypeReference>),
-    Map(
-        #[rkyv(omit_bounds)] Box<TypeReference>,
-        #[rkyv(omit_bounds)] Box<TypeReference>,
-    ),
-    Optional(#[rkyv(omit_bounds)] Box<TypeReference>),
-    ScopeOf(#[rkyv(omit_bounds)] Box<TypeReference>),
+    SingleTypeApplication {
+        projection: SingleTypeReferenceProjection,
+        #[rkyv(omit_bounds)]
+        argument: Box<TypeReference>,
+    },
+    MultiTypeApplication {
+        projection: MultiTypeReferenceProjection,
+        #[rkyv(omit_bounds)]
+        arguments: Vec<TypeReference>,
+    },
+    ValueApplication {
+        projection: ValueReferenceProjection,
+        value: u64,
+    },
     Application {
         head: ApplicationHead,
         #[rkyv(omit_bounds)]
         arguments: Vec<TypeReference>,
     },
-}
-
-/// Reserved built-in reference heads and their canonical arities.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReferenceHead {
-    Vector,
-    Optional,
-    ScopeOf,
-    Map,
-    Bytes,
-}
-
-impl ReferenceHead {
-    pub fn classify(head: &str) -> Option<Self> {
-        match head {
-            "Vector" => Some(Self::Vector),
-            "Optional" => Some(Self::Optional),
-            "ScopeOf" => Some(Self::ScopeOf),
-            "Map" => Some(Self::Map),
-            "Bytes" => Some(Self::Bytes),
-            _ => None,
-        }
-    }
-
-    pub fn node_arity(self) -> usize {
-        match self {
-            Self::Vector | Self::Optional | Self::ScopeOf | Self::Bytes => 2,
-            Self::Map => 3,
-        }
-    }
 }
 
 impl NotaDecode for TypeReference {
@@ -2565,27 +2457,8 @@ impl NotaDecode for TypeReference {
             })?;
         match variant {
             "Plain" => Ok(Self::Plain(Name::from_nota_block(&children[1])?)),
-            "Vector" => Ok(Self::Vector(Box::new(Self::from_nota_block(&children[1])?))),
-            "Optional" => Ok(Self::Optional(Box::new(Self::from_nota_block(
-                &children[1],
-            )?))),
-            "ScopeOf" => Ok(Self::ScopeOf(Box::new(Self::from_nota_block(
-                &children[1],
-            )?))),
-            "Map" => Self::from_nota_map_payload(children),
-            "FixedBytes" => Ok(Self::FixedBytes(
-                children[1]
-                    .demote_to_string()
-                    .and_then(|text| text.parse::<u64>().ok())
-                    .ok_or(NotaDecodeError::ExpectedAtom {
-                        type_name: "FixedBytes width",
-                    })?,
-            )),
             "Application" => Self::from_nota_application_payload(&children[1]),
-            other => Err(NotaDecodeError::UnknownVariant {
-                enum_name: "TypeReference",
-                variant: other.to_owned(),
-            }),
+            other => Self::from_nota_generic_payload(other, children),
         }
     }
 }
@@ -2598,12 +2471,25 @@ impl NotaEncode for TypeReference {
             Self::Boolean => "Boolean".to_owned(),
             Self::Path => "Path".to_owned(),
             Self::Bytes => "Bytes".to_owned(),
-            Self::FixedBytes(width) => format!("(FixedBytes {width})"),
             Self::Plain(name) => format!("(Plain {})", name.to_nota()),
-            Self::Vector(reference) => format!("(Vector {})", reference.to_nota()),
-            Self::Map(key, value) => format!("(Map {} {})", key.to_nota(), value.to_nota()),
-            Self::Optional(reference) => format!("(Optional {})", reference.to_nota()),
-            Self::ScopeOf(reference) => format!("(ScopeOf {})", reference.to_nota()),
+            Self::SingleTypeApplication {
+                projection,
+                argument,
+            } => format!("({} {})", projection.canonical_name(), argument.to_nota()),
+            Self::MultiTypeApplication {
+                projection,
+                arguments,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(Self::to_nota)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("({} {arguments})", projection.canonical_name())
+            }
+            Self::ValueApplication { projection, value } => {
+                format!("({} {value})", projection.canonical_name())
+            }
             Self::Application { head, arguments } => {
                 let arguments = arguments
                     .iter()
@@ -2620,11 +2506,10 @@ impl NotaEncode for TypeReference {
 /// form's variable-arity tail (`Vec<TypeReference>`, via nota's blanket
 /// `StructuralMacroNode for Vec<Item>`) can decode each argument back through
 /// the full reference grammar. Decode delegates to [`Self::from_block`] (which
-/// owns the built-in-head fast path and the application seam), and encode is
-/// the source-grammar projection — a bare PascalCase atom for a leaf, a
-/// headed parenthesis for every composite. This is the source-facing grammar
-/// projection, distinct from the canonical-only `NotaEncode`/`NotaDecode`
-/// machine codec above.
+/// owns the public dotted reader), and encode is the source-grammar projection
+/// — a bare PascalCase atom for a leaf and dotted positional form for every
+/// composite. This is the source-facing grammar projection, distinct from the
+/// canonical-only `NotaEncode`/`NotaDecode` machine codec above.
 impl nota::StructuralMacroNode for TypeReference {
     type Error = SchemaError;
 
@@ -2648,56 +2533,48 @@ impl nota::StructuralMacroNode for TypeReference {
     fn from_structural_candidate(
         candidate: nota::MacroCandidate<'_>,
     ) -> Result<Self, nota::StructuralMacroError<Self::Error>> {
-        match candidate.blocks() {
-            [block] => Self::from_structural_block(block),
-            blocks => Err(nota::StructuralMacroError::ExpectedSingleRoot {
+        let blocks = candidate.blocks();
+        let source = blocks
+            .iter()
+            .map(|block| block.reemit_fallback())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let document = nota::Document::parse(&source)
+            .map_err(|error| nota::StructuralMacroError::MatchedNode(SchemaError::from(error)))?;
+        let mut cursor = 0;
+        let reference =
+            crate::SourceReference::from_blocks_at(document.root_objects(), &mut cursor)
+                .map_err(nota::StructuralMacroError::MatchedNode)?;
+        if cursor == document.root_objects().len() {
+            Ok(reference.to_type_reference())
+        } else {
+            Err(nota::StructuralMacroError::ExpectedSingleRoot {
                 found: blocks.len(),
-            }),
+            })
         }
     }
 
     fn to_structural_nota(&self) -> String {
-        match self {
-            Self::String => "String".to_owned(),
-            Self::Integer => "Integer".to_owned(),
-            Self::Boolean => "Boolean".to_owned(),
-            Self::Path => "Path".to_owned(),
-            Self::Bytes => "Bytes".to_owned(),
-            Self::FixedBytes(width) => format!("(Bytes {width})"),
-            Self::Plain(name) => name.to_nota(),
-            Self::Vector(reference) => {
-                format!("(Vector {})", reference.to_structural_nota())
-            }
-            Self::Map(key, value) => {
-                format!(
-                    "(Map {} {})",
-                    key.to_structural_nota(),
-                    value.to_structural_nota()
-                )
-            }
-            Self::Optional(reference) => {
-                format!("(Optional {})", reference.to_structural_nota())
-            }
-            Self::ScopeOf(reference) => {
-                format!("(ScopeOf {})", reference.to_structural_nota())
-            }
-            Self::Application { head, arguments } => {
-                let tail = arguments
-                    .iter()
-                    .map(Self::to_structural_nota)
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if tail.is_empty() {
-                    format!("({})", head.name().to_nota())
-                } else {
-                    format!("({} {tail})", head.name().to_nota())
-                }
-            }
-        }
+        crate::SourceReference::from_type_reference(self).to_schema_text()
     }
 }
 
 impl TypeReference {
+    /// The canonical roster of primitive scalar kinds. This is the single
+    /// source of the reserved-scalar vocabulary: `from_name`,
+    /// `is_reserved_scalar_name`, and every source-side derivation read each
+    /// kind's spelling through [`scalar_name`](Self::scalar_name) instead of
+    /// repeating the `String | Integer | …` list. A new scalar is therefore
+    /// declared in exactly one place — a variant plus its `scalar_name` arm —
+    /// and the roster's own guard test fails if the two ever disagree.
+    const SCALAR_KINDS: [Self; 5] = [
+        Self::String,
+        Self::Integer,
+        Self::Boolean,
+        Self::Path,
+        Self::Bytes,
+    ];
+
     /// Construct a reference from a schema name. Reserved scalar names
     /// become scalar leaves; every other name remains a declared-name
     /// leaf.
@@ -2706,21 +2583,21 @@ impl TypeReference {
     }
 
     pub fn from_name(name: Name) -> Self {
-        match name.as_str() {
-            "String" => Self::String,
-            "Integer" => Self::Integer,
-            "Boolean" => Self::Boolean,
-            "Path" => Self::Path,
-            "Bytes" => Self::Bytes,
-            _ => Self::Plain(name),
-        }
+        Self::scalar_kind_for(name.as_str()).unwrap_or(Self::Plain(name))
     }
 
     pub fn is_reserved_scalar_name(name: &Name) -> bool {
-        matches!(
-            name.as_str(),
-            "String" | "Integer" | "Boolean" | "Path" | "Bytes"
-        )
+        Self::scalar_kind_for(name.as_str()).is_some()
+    }
+
+    /// The scalar kind a name denotes, matched against the one scalar roster
+    /// through each kind's own [`scalar_name`](Self::scalar_name). Returns
+    /// `None` for every name outside the reserved scalar vocabulary.
+    fn scalar_kind_for(name: &str) -> Option<Self> {
+        Self::SCALAR_KINDS
+            .iter()
+            .find(|kind| kind.scalar_name() == Some(name))
+            .cloned()
     }
 
     pub fn scalar_name(&self) -> Option<&'static str> {
@@ -2730,47 +2607,16 @@ impl TypeReference {
             Self::Boolean => Some("Boolean"),
             Self::Path => Some("Path"),
             Self::Bytes => Some("Bytes"),
-            Self::FixedBytes(_)
-            | Self::Plain(_)
-            | Self::Vector(_)
-            | Self::Map(..)
-            | Self::Optional(_)
-            | Self::ScopeOf(_)
+            Self::Plain(_)
+            | Self::SingleTypeApplication { .. }
+            | Self::MultiTypeApplication { .. }
+            | Self::ValueApplication { .. }
             | Self::Application { .. } => None,
         }
     }
 
     pub(crate) fn derived_field_name(&self) -> Name {
-        match self {
-            Self::String => Name::new("string"),
-            Self::Integer => Name::new("integer"),
-            Self::Boolean => Name::new("boolean"),
-            Self::Path => Name::new("path"),
-            Self::Bytes | Self::FixedBytes(_) => Name::new("bytes"),
-            Self::Plain(name) => Name::new(name.field_name()),
-            Self::Vector(reference) => {
-                Name::new(format!("{}_vector", reference.derived_field_name()))
-            }
-            Self::Optional(reference) => {
-                Name::new(format!("optional_{}", reference.derived_field_name()))
-            }
-            Self::ScopeOf(reference) => {
-                Name::new(format!("{}_scope", reference.derived_field_name()))
-            }
-            Self::Map(key, value) => Name::new(format!(
-                "{}_by_{}",
-                value.derived_field_name(),
-                key.derived_field_name()
-            )),
-            Self::Application { head, arguments } => {
-                let mut derived = Name::new(head.name().field_name()).as_str().to_owned();
-                for argument in arguments {
-                    derived.push('_');
-                    derived.push_str(argument.derived_field_name().as_str());
-                }
-                Name::new(derived)
-            }
-        }
+        crate::SourceReference::from_type_reference(self).derived_field_name()
     }
 
     /// The plain name when this reference is a declared-name leaf.
@@ -2784,11 +2630,9 @@ impl TypeReference {
             | Self::Boolean
             | Self::Path
             | Self::Bytes
-            | Self::FixedBytes(_)
-            | Self::Vector(_)
-            | Self::Map(..)
-            | Self::Optional(_)
-            | Self::ScopeOf(_)
+            | Self::SingleTypeApplication { .. }
+            | Self::MultiTypeApplication { .. }
+            | Self::ValueApplication { .. }
             | Self::Application { .. } => None,
         }
     }
@@ -2798,18 +2642,92 @@ impl TypeReference {
         matches!(self, Self::Plain(_))
     }
 
-    fn from_nota_map_payload(children: &[Block]) -> Result<Self, NotaDecodeError> {
-        if children.len() != 3 {
-            return Err(NotaDecodeError::ExpectedRootCount {
-                type_name: "TypeReference::Map",
-                expected: 3,
-                found: children.len(),
-            });
+    /// Construct a single-type generic application (`Vector.T`, `Optional.T`,
+    /// `ScopeOf.T`) from its projection and single argument.
+    pub fn single_type_application(
+        projection: SingleTypeReferenceProjection,
+        argument: TypeReference,
+    ) -> Self {
+        Self::SingleTypeApplication {
+            projection,
+            argument: Box::new(argument),
         }
-        Ok(Self::Map(
-            Box::new(Self::from_nota_block(&children[1])?),
-            Box::new(Self::from_nota_block(&children[2])?),
-        ))
+    }
+
+    /// Construct a multi-type generic application (`Map.(K V)`) from its
+    /// projection and argument list.
+    pub fn multi_type_application(
+        projection: MultiTypeReferenceProjection,
+        arguments: Vec<TypeReference>,
+    ) -> Self {
+        Self::MultiTypeApplication {
+            projection,
+            arguments,
+        }
+    }
+
+    /// Construct a value/const generic application (`Bytes.N`) from its
+    /// projection and value.
+    pub fn value_application(projection: ValueReferenceProjection, value: u64) -> Self {
+        Self::ValueApplication { projection, value }
+    }
+
+    /// The `Vector.T` single-type application.
+    pub fn vector(argument: TypeReference) -> Self {
+        Self::single_type_application(SingleTypeReferenceProjection::Vector, argument)
+    }
+
+    /// The `Optional.T` single-type application.
+    pub fn optional(argument: TypeReference) -> Self {
+        Self::single_type_application(SingleTypeReferenceProjection::Optional, argument)
+    }
+
+    /// The `ScopeOf.T` single-type application.
+    pub fn scope_of(argument: TypeReference) -> Self {
+        Self::single_type_application(SingleTypeReferenceProjection::ScopeOf, argument)
+    }
+
+    /// The `Map.(K V)` multi-type application.
+    pub fn map(key: TypeReference, value: TypeReference) -> Self {
+        Self::multi_type_application(MultiTypeReferenceProjection::Map, vec![key, value])
+    }
+
+    /// The `Bytes.N` fixed-width bytes value application. The dynamic-length
+    /// bytes scalar is the separate [`Self::Bytes`] leaf.
+    pub fn fixed_width_bytes(width: u64) -> Self {
+        Self::value_application(ValueReferenceProjection::Bytes, width)
+    }
+
+    /// Decode a parenthesized generic payload whose head is a projection
+    /// canonical name (`Vector`, `Map`, `Bytes`, …). The head is matched against
+    /// the closed projection vocabularies, never dispatched as a free string.
+    fn from_nota_generic_payload(head: &str, children: &[Block]) -> Result<Self, NotaDecodeError> {
+        if let Some(projection) = SingleTypeReferenceProjection::from_canonical_name(head) {
+            return Ok(Self::single_type_application(
+                projection,
+                Self::from_nota_block(&children[1])?,
+            ));
+        }
+        if let Some(projection) = MultiTypeReferenceProjection::from_canonical_name(head) {
+            let arguments = children[1..]
+                .iter()
+                .map(Self::from_nota_block)
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(Self::multi_type_application(projection, arguments));
+        }
+        if let Some(projection) = ValueReferenceProjection::from_canonical_name(head) {
+            let value = children[1]
+                .demote_to_string()
+                .and_then(|text| text.parse::<u64>().ok())
+                .ok_or(NotaDecodeError::ExpectedAtom {
+                    type_name: "value application width",
+                })?;
+            return Ok(Self::value_application(projection, value));
+        }
+        Err(NotaDecodeError::UnknownVariant {
+            enum_name: "TypeReference",
+            variant: head.to_owned(),
+        })
     }
 
     /// Decode the grouped payload of the canonical `Application` machine
@@ -2846,325 +2764,11 @@ impl TypeReference {
     }
 
     /// Lower an already-parsed NOTA block at a reference position into
-    /// a `TypeReference`.
-    ///
-    /// A bare PascalCase symbol (`Topic`, `schema-core:mail:Magnitude`)
-    /// lowers to `Plain`. TrueSchema type-reference objects lower at this
-    /// position: `(Vector T)` -> `Vector`, `(Map K V)` -> `Map`,
-    /// `(Optional T)` -> `Optional`, and `(ScopeOf T)` -> `ScopeOf`.
-    /// The inner positions recurse, so
-    /// `(Vector (Optional Topic))` and `(Map NodeName (Vector Service))`
-    /// nest. nota did the structural parse; this is pure semantic
-    /// lowering over its `Block`s, not a hand-rolled text parser.
+    /// a `TypeReference`. The authored-schema entry accepts the strict dotted
+    /// reference projection (`Vector.Topic`, `Map.(Key Value)`) and rejects
+    /// the retired parenthesized generic surface.
     pub fn from_block(block: &Block) -> Result<Self, SchemaError> {
-        let mut context = MacroContext::default();
-        Self::from_block_with_registry(block, &MacroRegistry::with_schema_defaults(), &mut context)
-    }
-
-    pub(crate) fn from_block_with_registry(
-        block: &Block,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        match block {
-            Block::Atom(_) => Ok(Self::from_name(block.schema_name()?)),
-            Block::Delimited {
-                delimiter: Delimiter::SquareBracket,
-                root_objects,
-                ..
-            } => Err(SchemaError::UnknownTypeReferenceForm {
-                head: "SquareBracket".to_owned(),
-                argument_count: root_objects.len(),
-            }),
-            Block::Delimited {
-                delimiter: Delimiter::Brace,
-                root_objects,
-                ..
-            } => Err(SchemaError::UnknownTypeReferenceForm {
-                head: "Brace".to_owned(),
-                argument_count: root_objects.len(),
-            }),
-            Block::Delimited {
-                delimiter: Delimiter::Parenthesis,
-                root_objects,
-                ..
-            } => Self::resolve_parenthesis_reference(block, root_objects, registry, context),
-            Block::PipeText(_) => Err(SchemaError::ExpectedSymbol {
-                found: block.reemit_fallback(),
-            }),
-            Block::Delimited {
-                delimiter: Delimiter::PipeBrace,
-                root_objects,
-                ..
-            } => Self::from_inline_struct(root_objects, registry, context),
-            Block::Delimited {
-                delimiter: Delimiter::PipeParenthesis,
-                root_objects,
-                ..
-            } => Self::from_inline_enum(root_objects, registry, context),
-        }
-    }
-
-    fn from_inline_struct(
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        let name = Self::inline_declaration_name(objects, "inline struct declaration")?;
-        let fields = MacroExpansionFields::new(&objects[1..]).lower(registry, context)?;
-        if fields.len() == 1 {
-            let reference = fields.into_iter().next().expect("length checked").reference;
-            context.remember_inline_declaration(Declaration::private(TypeDeclaration::Newtype(
-                NewtypeDeclaration::new(name.clone(), reference),
-            )));
-        } else {
-            let declaration = StructDeclaration::new(name.clone(), fields);
-            context.remember_inline_declaration(Declaration::private(TypeDeclaration::Struct(
-                declaration,
-            )));
-        }
-        Ok(Self::Plain(name))
-    }
-
-    fn from_inline_enum(
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        let name = Self::inline_declaration_name(objects, "inline enum declaration")?;
-        let variants = MacroExpansionVariants::new(&objects[1..]).lower(registry, context)?;
-        context.remember_inline_declaration(Declaration::private(TypeDeclaration::Enum(
-            EnumDeclaration::new(name.clone(), variants),
-        )));
-        Ok(Self::Plain(name))
-    }
-
-    fn inline_declaration_name(objects: &[Block], form: &'static str) -> Result<Name, SchemaError> {
-        let Some(name) = objects.first() else {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form,
-                expected: "declaration name plus body",
-                found: 0,
-            });
-        };
-        name.schema_name()
-    }
-
-    /// Construct the `Vector` built-in: `(Vector T)`.
-    ///
-    /// One of the uniform per-built-in resolvers the schema-cc-generated
-    /// parenthesis dispatch calls (see `reference_resolver_generated.rs`).
-    /// Every `resolve_*` method shares this signature so the generated call
-    /// site is uniform; this body is the construction lifted verbatim from
-    /// the former hand-written `(Vector, 2)` match arm.
-    fn resolve_vector(
-        _block: &Block,
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        Ok(Self::Vector(Box::new(Self::from_block_with_registry(
-            &objects[1],
-            registry,
-            context,
-        )?)))
-    }
-
-    /// Construct the `Optional` built-in: `(Optional T)`.
-    fn resolve_optional(
-        _block: &Block,
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        Ok(Self::Optional(Box::new(Self::from_block_with_registry(
-            &objects[1],
-            registry,
-            context,
-        )?)))
-    }
-
-    /// Construct the `ScopeOf` built-in: `(ScopeOf T)`.
-    fn resolve_scope_of(
-        _block: &Block,
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        Ok(Self::ScopeOf(Box::new(Self::from_block_with_registry(
-            &objects[1],
-            registry,
-            context,
-        )?)))
-    }
-
-    /// Construct the `Map` built-in: `(Map K V)`.
-    fn resolve_map(
-        _block: &Block,
-        objects: &[Block],
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        Ok(Self::Map(
-            Box::new(Self::from_block_with_registry(
-                &objects[1],
-                registry,
-                context,
-            )?),
-            Box::new(Self::from_block_with_registry(
-                &objects[2],
-                registry,
-                context,
-            )?),
-        ))
-    }
-
-    /// Construct the `Bytes` built-in: `(Bytes N)` — the fixed-width byte
-    /// leaf decoded through the HeadedAtom seam.
-    fn resolve_bytes(
-        block: &Block,
-        _objects: &[Block],
-        _registry: &MacroRegistry,
-        _context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        Self::from_fixed_bytes_block(block)
-    }
-
-    /// The seam between a DECLARED head (a registered user macro) and the
-    /// broad generic-application form. A registered TypeReference macro is a
-    /// declared head and wins over the application fallback, so the registry
-    /// is consulted first; only when no macro matches does the broad
-    /// `(Foo A B …)` form decode through the structural-macro seam. This
-    /// ordering is the design's disambiguation and is NOT compiler-checked
-    /// (the application form structurally overlaps every PascalCase head), so
-    /// it is pinned by tests.
-    fn from_macro_or_application(
-        block: &Block,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        match Self::from_macro_invocation(block, registry, context) {
-            Ok(reference) => Ok(reference),
-            Err(SchemaError::MacroDidNotMatch { .. })
-            | Err(SchemaError::UnknownTypeReferenceForm { .. }) => Self::from_application(block),
-            Err(error) => Err(error),
-        }
-    }
-
-    /// Decode the broad generic-application form `(Foo A B …)` through the
-    /// `#[shape(pascal_head, body)]` structural-macro seam ([`ApplicationNode`]).
-    /// The head is always `Local` at decode time; import resolution rewrites
-    /// it to `Imported` later.
-    fn from_application(block: &Block) -> Result<Self, SchemaError> {
-        match ApplicationNode::from_structural_block(block)? {
-            ApplicationNode::Application(head, arguments) => Ok(Self::Application {
-                head: ApplicationHead::Local(head),
-                arguments,
-            }),
-        }
-    }
-
-    /// Lower the fixed-width byte leaf `(Bytes N)` through the HeadedAtom seam.
-    fn from_fixed_bytes_block(block: &Block) -> Result<Self, SchemaError> {
-        match FixedBytesNode::from_structural_block(block)? {
-            FixedBytesNode::FixedBytes(width) => Ok(Self::FixedBytes(width)),
-        }
-    }
-
-    fn from_macro_invocation(
-        block: &Block,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<Self, SchemaError> {
-        let invocation = TypeReferenceMacroInvocation::from_block(block)?;
-        if !registry
-            .node_definition(MacroPosition::TypeReference)
-            .is_some_and(|definition| definition.accepts_tagged_invocation())
-        {
-            return Err(SchemaError::MacroDidNotMatch {
-                macro_name: invocation.name().to_owned(),
-            });
-        }
-        match registry.lower(
-            MacroObject::Block(block),
-            MacroPosition::TypeReference,
-            context,
-        ) {
-            Ok(MacroOutput::Reference(reference)) => Ok(reference),
-            Ok(_) => Err(SchemaError::UnexpectedMacroOutput {
-                macro_name: invocation.name().to_owned(),
-                expected: "type reference",
-            }),
-            Err(SchemaError::MacroDidNotMatch { .. }) => {
-                Err(SchemaError::UnknownTypeReferenceForm {
-                    head: invocation.name().to_owned(),
-                    argument_count: invocation.argument_count(),
-                })
-            }
-            Err(error) => Err(error),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct TypeReferenceMacroInvocation<'schema> {
-    name: Name,
-    data: MacroInvocationData<'schema>,
-}
-
-impl<'schema> TypeReferenceMacroInvocation<'schema> {
-    fn from_block(block: &'schema Block) -> Result<Self, SchemaError> {
-        if !block.is_parenthesis() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: "(Macro [input])",
-            });
-        }
-        if block.holds_root_objects() != 2 {
-            let head = block
-                .root_object_at(0)
-                .and_then(Block::demote_to_string)
-                .unwrap_or("<missing>");
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: head.to_owned(),
-                argument_count: block.holds_root_objects().saturating_sub(1),
-            });
-        }
-        let name = block
-            .root_object_at(0)
-            .ok_or(SchemaError::EmptyTypeReference)?
-            .schema_name()?;
-        let data = MacroInvocationData::from_block(block.root_object_at(1).expect("count checked"));
-        Ok(Self { name, data })
-    }
-
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn argument_count(&self) -> usize {
-        self.data.argument_count()
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum MacroInvocationData<'schema> {
-    Delimited(&'schema [Block]),
-    Single(&'schema Block),
-}
-
-impl<'schema> MacroInvocationData<'schema> {
-    fn from_block(block: &'schema Block) -> Self {
-        match block {
-            Block::Delimited { root_objects, .. } => Self::Delimited(root_objects),
-            Block::PipeText(_) | Block::Atom(_) => Self::Single(block),
-        }
-    }
-
-    fn argument_count(&self) -> usize {
-        match self {
-            Self::Delimited(objects) => objects.len(),
-            Self::Single(_) => 1,
-        }
+        Ok(crate::SourceReference::from_block(block)?.to_type_reference())
     }
 }
 
@@ -3281,16 +2885,6 @@ impl SchemaNodeValue {
                 root_objects,
                 ..
             } => Ok(Self::Map(SchemaNodeMapEntries::new(root_objects).read()?)),
-            Block::Delimited {
-                delimiter: Delimiter::PipeParenthesis,
-                ..
-            }
-            | Block::Delimited {
-                delimiter: Delimiter::PipeBrace,
-                ..
-            } => Err(SchemaError::MalformedSchemaNode {
-                found: SchemaNodeNotation::new(block).compact(),
-            }),
         }
     }
 }
@@ -3345,16 +2939,14 @@ impl<'schema> SchemaNodeMapEntries<'schema> {
     }
 
     fn read(&self) -> Result<Vec<SchemaNodePair>, SchemaError> {
-        if self.objects.len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: self.objects.len(),
-            });
-        }
         let mut pairs = Vec::new();
-        for chunk in self.objects.chunks_exact(2) {
+        let mut index = 0;
+        while index < self.objects.len() {
+            let entry = DottedExpectation::Uncapitalized.read_entry(&self.objects[index..])?;
+            index += entry.consumed();
             pairs.push(SchemaNodePair::new(
-                chunk[0].schema_name()?,
-                SchemaNodeValue::from_block(&chunk[1])?,
+                entry.key().schema_name()?,
+                SchemaNodeValue::from_block(entry.value())?,
             ));
         }
         Ok(pairs)
@@ -3412,8 +3004,6 @@ impl SchemaNodeDelimitedNotation {
             Delimiter::Parenthesis => "(",
             Delimiter::SquareBracket => "[",
             Delimiter::Brace => "{",
-            Delimiter::PipeParenthesis => "(|",
-            Delimiter::PipeBrace => "{|",
         }
     }
 
@@ -3422,15 +3012,335 @@ impl SchemaNodeDelimitedNotation {
             Delimiter::Parenthesis => ")",
             Delimiter::SquareBracket => "]",
             Delimiter::Brace => "}",
-            Delimiter::PipeParenthesis => "|)",
-            Delimiter::PipeBrace => "|}",
         }
     }
 }
 
-// The parenthesis-reference dispatch (`TypeReference::resolve_parenthesis_reference`)
-// is GENERATED by schema-cc from `schemas/reference-grammar.nota` and written to
-// the committed, freshness-gated `reference_resolver_generated.rs` by `build.rs`.
-// It dispatches each built-in head to the uniform `resolve_<snake>` construction
-// methods above, then the reserved-head guard, then `from_macro_or_application`.
-include!("reference_resolver_generated.rs");
+/// Drift guard for the primitive scalar vocabulary. The reserved-scalar set
+/// lives in exactly one place — [`TypeReference::SCALAR_KINDS`] paired with
+/// each kind's [`scalar_name`](TypeReference::scalar_name). Every consuming
+/// site (`from_name`, `is_reserved_scalar_name`, and the source-side reference
+/// and field derivations) reads that one authority. These tests fail if a
+/// scalar is added to the roster without a matching `scalar_name`, if the
+/// name/kind bijection stops round-tripping, or if the machine wire tag drifts
+/// away from the reserved source name it currently shares.
+#[cfg(test)]
+mod scalar_vocabulary_guard {
+    use super::*;
+
+    #[test]
+    fn every_scalar_kind_resolves_through_one_vocabulary() {
+        for kind in &TypeReference::SCALAR_KINDS {
+            let name = Name::new(
+                kind.scalar_name()
+                    .expect("a scalar kind exposes its reserved name"),
+            );
+            assert!(
+                TypeReference::is_reserved_scalar_name(&name),
+                "scalar name {name:?} must be reserved",
+            );
+            assert_eq!(
+                &TypeReference::from_name(name.clone()),
+                kind,
+                "scalar name {name:?} must resolve back to its own kind",
+            );
+        }
+    }
+
+    #[test]
+    fn declared_name_is_not_a_reserved_scalar() {
+        let declared = Name::new("Widget");
+        assert!(!TypeReference::is_reserved_scalar_name(&declared));
+        assert!(matches!(
+            TypeReference::from_name(declared),
+            TypeReference::Plain(_),
+        ));
+    }
+
+    #[test]
+    fn machine_wire_tag_matches_reserved_source_name() {
+        // The canonical machine codec and the source-grammar vocabulary are
+        // distinct concerns that currently share one spelling per scalar.
+        // This pins that coincidence so an intentional divergence surfaces as
+        // a conscious decision rather than a silent round-trip break.
+        for kind in &TypeReference::SCALAR_KINDS {
+            assert_eq!(
+                Some(kind.to_nota().as_str()),
+                kind.scalar_name(),
+                "machine wire tag must match the reserved source name",
+            );
+        }
+    }
+}
+
+/// Shared witness for the semantic construction/decode boundary. A schema VALUE
+/// reaching [`TrueSchema::from_tree`] — tampered after lowering into a shape the
+/// source reader would never emit — must be rejected identically at every
+/// surface that funnels through `from_tree`: the programmatic tree constructor,
+/// binary (rkyv) decode, and structured NOTA decode. Both the duplicate-binder
+/// guard and the duplicate-declaration guard are witnessed through this one
+/// helper, so the "reject at every surface" scaffold lives here once.
+#[cfg(test)]
+mod semantic_boundary_rejection {
+    use super::*;
+    use crate::{NameTable, TrueSchema};
+
+    /// Assert a tampered tree is rejected with `expected` at every surface that
+    /// funnels through [`TrueSchema::from_tree`].
+    pub(super) fn assert_tree_rejected_across_surfaces(tree: &SchemaTree, expected: &SchemaError) {
+        // Programmatic construction surface.
+        assert_eq!(
+            &TrueSchema::from_tree(tree, &NameTable::empty())
+                .expect_err("from_tree must reject the tampered value"),
+            expected,
+        );
+
+        // Binary (rkyv) decode surface.
+        let bytes = tree
+            .to_binary_bytes()
+            .expect("tampered tree encodes to binary");
+        assert_eq!(
+            &TrueSchema::from_binary_bytes(&bytes)
+                .expect_err("binary decode must reject the tampered value"),
+            expected,
+        );
+
+        // Structured NOTA decode surface. The view's `NotaDecode` wraps the
+        // schema error as `InvalidValue`, so the typed error surfaces through
+        // its rendered reason.
+        let nota = tree.to_nota();
+        let document = nota::Document::parse(&nota).expect("tampered tree NOTA parses");
+        match TrueSchema::from_nota_block(&document.root_objects()[0])
+            .expect_err("NOTA decode must reject the tampered value")
+        {
+            NotaDecodeError::InvalidValue { reason, .. } => {
+                assert_eq!(reason, expected.to_string());
+            }
+            other => panic!("expected an InvalidValue wrapping the schema error, got {other:?}"),
+        }
+    }
+}
+
+/// The source reader rejects a duplicate generic or frame binder as it parses
+/// the `generics` block (`SourceGenerics::read_parameters`), witnessed by the
+/// document-form tests in `tests/generics.rs`. These tests witness the OTHER
+/// boundary: a schema VALUE that reaches the semantic construction/decode
+/// surface (`TrueSchema::from_tree`) carrying a duplicate binder — one that
+/// never passed the source reader, because it was tampered after lowering — is
+/// rejected there too, with the same typed [`SchemaError::DuplicateTypeParameter`].
+/// The rejection is witnessed across every surface that funnels through
+/// `from_tree`: the programmatic tree constructor, binary (rkyv) decode, and
+/// structured NOTA decode. Both a plain generic and a parameterized enum frame
+/// are covered, since both carry their binders in the one
+/// `Declaration::parameters` list.
+#[cfg(test)]
+mod semantic_duplicate_parameter_rejection {
+    use super::semantic_boundary_rejection::assert_tree_rejected_across_surfaces;
+    use super::*;
+    use crate::{ImportSource, ResolvedImport, SchemaEngine, SchemaIdentity};
+
+    /// Lower a valid single-block `generics` document and hand back the
+    /// crate-internal sidecar tree the codec surfaces project through.
+    fn lowered_tree(generics_body: &str) -> SchemaTree {
+        let source = format!("{{}}\n[]\n[]\n{{}}\n{{ {generics_body} }}\n{{}}");
+        SchemaEngine::default()
+            .lower_source(
+                &source,
+                SchemaIdentity::new("semantic-duplicate:lib", "0.1.0"),
+            )
+            .expect("valid parameterized declaration lowers")
+            .tree()
+    }
+
+    /// Duplicate the first binder of the first parameterized declaration —
+    /// producing a value the source reader would never emit — and return the
+    /// typed error the semantic boundary must now construct for it.
+    fn tamper_first_binder(tree: &mut SchemaTree) -> SchemaError {
+        for declaration in &mut tree.namespace {
+            if let Some(first) = declaration.parameters().first().cloned() {
+                *declaration = declaration
+                    .clone()
+                    .with_parameters(vec![first.clone(), first.clone()]);
+                return SchemaError::DuplicateTypeParameter {
+                    declaration: declaration.name().as_str().to_owned(),
+                    parameter: first.as_str().to_owned(),
+                };
+            }
+        }
+        panic!("fixture must carry a parameterized declaration");
+    }
+
+    fn assert_rejected_across_surfaces(
+        generics_body: &str,
+        expected_declaration: &str,
+        expected_parameter: &str,
+    ) {
+        let mut tree = lowered_tree(generics_body);
+        let expected = tamper_first_binder(&mut tree);
+        assert_eq!(
+            expected,
+            SchemaError::DuplicateTypeParameter {
+                declaration: expected_declaration.to_owned(),
+                parameter: expected_parameter.to_owned(),
+            },
+        );
+        assert_tree_rejected_across_surfaces(&tree, &expected);
+    }
+
+    #[test]
+    fn duplicate_generic_parameters_are_rejected_at_the_semantic_boundary() {
+        assert_rejected_across_surfaces("Plane.((Wing) { Wing })", "Plane", "Wing");
+    }
+
+    #[test]
+    fn duplicate_frame_parameters_are_rejected_at_the_semantic_boundary() {
+        assert_rejected_across_surfaces(
+            "Work.((Event Outcome) [Started.Event Completed.Outcome])",
+            "Work",
+            "Event",
+        );
+    }
+
+    /// The other binder-bearing shape: an imported frame head carries its
+    /// binders on a `ResolvedImport`, not the namespace. Inject one whose binder
+    /// list repeats a name — the tamper the resolver would never emit — into an
+    /// otherwise-valid tree, and assert the semantic boundary rejects it with the
+    /// same typed error across every decode surface. Without the
+    /// `resolved_imports` walk in `parameters_verified`, a crafted binary or NOTA
+    /// value carrying this import would mint the same colliding member identifier
+    /// the guard exists to prevent.
+    #[test]
+    fn duplicate_imported_frame_parameters_are_rejected_at_the_semantic_boundary() {
+        let mut tree = lowered_tree("Plane.((Wing) { Wing })");
+        let binder = Name::new("Frame");
+        let source = ImportSource::try_from(&Name::new("dependency-core:mail:Beacon"))
+            .expect("well-formed import source parses");
+        tree.resolved_imports
+            .push(ResolvedImport::from_projected_parts(
+                Name::new("Beacon"),
+                source,
+                Some(2),
+                vec![binder.clone(), binder.clone()],
+                Vec::new(),
+            ));
+        let expected = SchemaError::DuplicateTypeParameter {
+            declaration: "Beacon".to_owned(),
+            parameter: binder.as_str().to_owned(),
+        };
+        assert_tree_rejected_across_surfaces(&tree, &expected);
+    }
+}
+
+/// The one-namespace rule at the semantic boundary. A loaded schema is one
+/// namespace: no two top-level declarations — across the input and output
+/// roots, the namespace, and the resolved imports — may share a name. The
+/// source reader's `push_declaration` guard already refuses a namespace block
+/// that repeats a name as it lowers text, but it sees only the namespace block
+/// and only the text path. These tests witness the OTHER boundary: a schema
+/// VALUE reaching `from_tree` carrying a collision the source reader would never
+/// emit. Decomposition mints every top-level declaration through the same
+/// `(kind, name)` `NameHarvest::declare` path, so an unguarded collision would
+/// mint one identifier and silently merge two declarations into one — the fault
+/// that produced self-referencing emitted Rust when an imported `Input` met a
+/// local `Input` root.
+#[cfg(test)]
+mod semantic_duplicate_declaration_rejection {
+    use super::semantic_boundary_rejection::assert_tree_rejected_across_surfaces;
+    use super::*;
+    use crate::{
+        ImportSource, NameTable, ResolvedImport, SchemaEngine, SchemaIdentity, TrueSchema,
+    };
+
+    /// Lower a valid schema whose declarations all carry distinct names, and
+    /// hand back the crate-internal sidecar tree the codec surfaces project
+    /// through. The roots are `Input`/`Output`; the namespace declares
+    /// `Command`, `Report`, and `Topic`; nothing collides.
+    fn distinct_named_tree() -> SchemaTree {
+        let source = "{}\n[Start.Command]\n[Finish.Report]\n{\n  Command.{ Topic }\n  Report.{ Topic }\n  Topic.String\n}\n{}\n{}";
+        SchemaEngine::default()
+            .lower_source(
+                source,
+                SchemaIdentity::new("distinct-declarations:lib", "0.1.0"),
+            )
+            .expect("a schema of distinct names lowers")
+            .tree()
+    }
+
+    /// A plain (non-frame) resolved import bearing `local_name` — the tamper the
+    /// resolver would never emit into an otherwise-valid tree. It carries no
+    /// binders, so it passes the binder guard and reaches the declaration guard.
+    fn plain_import(local_name: &str) -> ResolvedImport {
+        let source = ImportSource::try_from(&Name::new("plane-crate:signal:Wrapped"))
+            .expect("well-formed import source parses");
+        ResolvedImport::from_projected_parts(
+            Name::new(local_name),
+            source,
+            Some(0),
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    /// The guard rejects only genuine collisions: a whole of all-distinct names
+    /// passes the semantic boundary untouched.
+    #[test]
+    fn distinct_declaration_names_pass_the_semantic_boundary() {
+        let tree = distinct_named_tree();
+        TrueSchema::from_tree(&tree, &NameTable::empty())
+            .expect("a schema whose declarations are all distinct is accepted");
+    }
+
+    /// local/local: two namespace declarations of one name. The source reader's
+    /// `push_declaration` guard refuses this in text, so inject the second after
+    /// lowering and assert every decode surface rejects the merged whole.
+    #[test]
+    fn duplicate_namespace_declarations_are_rejected_at_the_semantic_boundary() {
+        let mut tree = distinct_named_tree();
+        let duplicated = tree.namespace[0].clone();
+        let name = duplicated.name().as_str().to_owned();
+        tree.namespace.push(duplicated);
+        let expected = SchemaError::DuplicateDeclaration {
+            name,
+            first_site: "a namespace declaration",
+            second_site: "a namespace declaration",
+        };
+        assert_tree_rejected_across_surfaces(&tree, &expected);
+    }
+
+    /// local/imported: an imported declaration sharing the local input root's
+    /// name — the exact collision (imported `Input` vs a local `Input` root)
+    /// that silently merged into self-referencing emitted Rust. Inject the
+    /// colliding resolved import and assert every decode surface rejects it.
+    #[test]
+    fn imported_declaration_colliding_with_a_root_is_rejected_at_the_semantic_boundary() {
+        let mut tree = distinct_named_tree();
+        tree.resolved_imports.push(plain_import("Input"));
+        let expected = SchemaError::DuplicateDeclaration {
+            name: "Input".to_owned(),
+            first_site: "the input root",
+            second_site: "a resolved import",
+        };
+        assert_tree_rejected_across_surfaces(&tree, &expected);
+    }
+
+    /// The realistic source path: a schema whose namespace declares a type named
+    /// `Input` never touches a tamper, yet its namespace `Input` collides with
+    /// the always-present input root. `push_declaration` does not look across the
+    /// namespace/root boundary, so the collision reaches `from_tree` through
+    /// ordinary lowering and is rejected there.
+    #[test]
+    fn a_namespace_type_named_for_a_root_is_rejected_at_lowering() {
+        let source = "{}\n[Start.Command]\n[Finish.Report]\n{\n  Command.{ Topic }\n  Report.{ Topic }\n  Topic.String\n  Input.Integer\n}\n{}\n{}";
+        let error = SchemaEngine::default()
+            .lower_source(source, SchemaIdentity::new("root-collision:lib", "0.1.0"))
+            .expect_err("a namespace type named Input collides with the input root");
+        assert_eq!(
+            error,
+            SchemaError::DuplicateDeclaration {
+                name: "Input".to_owned(),
+                first_site: "the input root",
+                second_site: "a namespace declaration",
+            },
+        );
+    }
+}

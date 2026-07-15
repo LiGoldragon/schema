@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use schema::{
-    ImportResolver, ImportSource, MacroContext, Name, SchemaEngine, SchemaError, SchemaIdentity,
+    ImportDeclaration, ImportResolver, ImportSource, MacroContext, Name, SchemaEngine, SchemaError,
+    SchemaIdentity, TypeReference,
 };
 
 fn fixture_schema_dir(crate_dir: &str) -> PathBuf {
@@ -32,6 +33,26 @@ fn import_source_rejects_target_without_crate_module_type() {
         error,
         SchemaError::MalformedImportSource {
             found: "DatabaseMarker".to_owned()
+        }
+    );
+}
+
+#[test]
+fn dotted_import_target_in_a_bracket_is_rejected() {
+    // A trailing-dot import path collects its bracket atoms as targets. A target
+    // must be a simple capitalized type name; a dotted atom like `Deep.Type` is
+    // not a target — its path segments belong before the bracket. The leading
+    // uppercase alone must not pass it.
+    let error = SchemaEngine::default()
+        .lower_source(
+            "{ crate.module.[Deep.Type Plain] }\n[]\n[]\n{ Local.String }\n{}\n{}",
+            SchemaIdentity::new("import-target:lib", "0.1.0"),
+        )
+        .expect_err("a dotted import target is malformed");
+    assert_eq!(
+        error,
+        SchemaError::MalformedImportTarget {
+            target: "Deep.Type".to_owned(),
         }
     );
 }
@@ -82,23 +103,46 @@ fn resolver_resolves_import_of_dependency_root_enum() {
         "0.1.0",
     );
     let engine = SchemaEngine::default();
-    let consumer_source = "{ SignalInput plane-crate:signal:Input } [(Observe SignalInput)] [] {}";
 
-    let schema = engine
+    // The resolver resolves an import of a dependency ROOT enum (signal's
+    // `Input`): a root reports no arity (`parameter_count` is None, since roots
+    // are not parameterizable) and re-exports under its own no-alias name.
+    let declaration = ImportDeclaration {
+        local_name: Name::new("Input"),
+        source: TypeReference::Plain(Name::new("plane-crate:signal:Input")),
+    };
+    let resolved = resolver
+        .resolve(&declaration, &engine)
+        .expect("resolver resolves the dependency root enum");
+    assert_eq!(resolved.parameter_count(), None);
+    assert_eq!(
+        resolved.use_item(),
+        "pub use plane_crate::schema::signal::Input as Input;"
+    );
+
+    // But a consumer cannot BUILD a whole that imports that root under the name
+    // `Input` while it already declares its own `Input` root: a loaded schema is
+    // one namespace, so the imported `Input` and the local `Input` root are two
+    // declarations of one name. Emitting both would place `pub use …::Input as
+    // Input;` beside a local `pub enum Input`, the self-referencing name clash
+    // the semantic boundary now rejects.
+    let consumer_source = "{ plane-crate.signal.Input }\n[Observe.Input]\n[]\n{}\n{}\n{}";
+    let error = engine
         .lower_source_with_resolver(
             consumer_source,
             SchemaIdentity::new("root-import-consumer", "0.1.0"),
             &mut MacroContext::default(),
             &resolver,
         )
-        .expect("consumer schema resolves dependency root imports");
-
-    assert_eq!(schema.resolved_imports().len(), 1);
+        .expect_err("importing a dependency root into a same-named local root collides");
     assert_eq!(
-        schema.resolved_imports()[0].use_item(),
-        "pub use plane_crate::schema::signal::Input as SignalInput;"
+        error,
+        SchemaError::DuplicateDeclaration {
+            name: "Input".to_owned(),
+            first_site: "the input root",
+            second_site: "a resolved import",
+        },
     );
-    assert!(schema.type_named("SignalInput").is_none());
 }
 
 #[test]
@@ -151,7 +195,7 @@ fn resolver_rejects_import_of_a_type_the_dependency_does_not_declare() {
         "0.1.0",
     );
     let engine = SchemaEngine::default();
-    let consumer_source = "{ Missing marker-core:mail:Missing } [] [] { Topic String }";
+    let consumer_source = "{ marker-core.mail.Missing }\n[]\n[]\n{\n  Topic.String\n}\n{}\n{}";
 
     let error = engine
         .lower_source_with_resolver(
@@ -177,7 +221,7 @@ fn unregistered_dependency_crate_is_reported() {
     let resolver = ImportResolver::new();
     let engine = SchemaEngine::default();
     let consumer_source =
-        "{ DatabaseMarker marker-core:mail:DatabaseMarker } [] [] { Topic String }";
+        "{ marker-core.mail.DatabaseMarker }\n[]\n[]\n{\n  Topic.String\n}\n{}\n{}";
 
     let error = engine
         .lower_source_with_resolver(

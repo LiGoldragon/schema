@@ -1,19 +1,19 @@
-//! Generic application references — `(Foo A B …)` at a reference position —
+//! Generic application references — `Foo.(A B …)` at a reference position —
 //! and parameterized DECLARATION heads — `(| Name Param … |)` at a
 //! declaration's type-name position.
 //!
 //! `TypeReference::Application { head, arguments }` is the broad
-//! generic-application form, captured by nota's
-//! `#[shape(pascal_head, body)]` structural-macro seam. The first block of
-//! tests pins the application-form behaviours from the earlier slice:
+//! generic-application form. The authored schema projection is dotted and
+//! positional; macro-expansion internals still carry a parenthesized node seam.
+//! The first block of tests pins the application-form behaviours:
 //!
 //! (a) a multi-arg user generic application lowers to `Application` and
 //!     round-trips byte-stable through both the rkyv codec and the canonical
 //!     NOTA codec;
-//! (b) the built-in heads `(Vector X)`, `(Optional X)`, `(Map K V)` still
+//! (b) the built-in heads `Vector.X`, `Optional.X`, and `Map.(K V)` still
 //!     lower to their dedicated variants through the same dispatch, and a
 //!     built-in head wins over the broad application form (dispatch ORDER);
-//! (c) a dropped alias `(Vec X)` no longer lowers to the collection — it is
+//! (c) a dropped alias `Vec.X` no longer lowers to the collection — it is
 //!     an ordinary application head now;
 //! (d) the closure walk over an imported generic head records that head's
 //!     import.
@@ -24,12 +24,10 @@
 //! parameterized head is arity-checked at lowering, and the declared head
 //! is consulted before the broad application form.
 
-use std::path::PathBuf;
-
 use nota::{Document, NotaDecode, NotaEncode};
 use schema::{
-    ApplicationHead, ImportResolver, MacroContext, Name, Root, SchemaEngine, SchemaError,
-    SchemaIdentity, SchemaSourceArtifact, TypeDeclaration, TypeReference,
+    ApplicationHead, Name, Root, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
+    SingleTypeReferenceProjection, TypeDeclaration, TypeReference,
 };
 
 fn lower(namespace: &str) -> schema::TrueSchema {
@@ -38,17 +36,22 @@ fn lower(namespace: &str) -> schema::TrueSchema {
 
 fn try_lower(namespace: &str) -> Result<schema::TrueSchema, SchemaError> {
     SchemaEngine::default().lower_source(
-        &format!("[] [] {{ {namespace} }}"),
+        &format!("{{}}\n[]\n[]\n{namespace}"),
         SchemaIdentity::new("generics:lib", "0.1.0"),
     )
 }
 
-fn single_reference<'schema>(
-    schema: &'schema schema::TrueSchema,
-    name: &str,
-) -> &'schema TypeReference {
+fn lower_doc(source: &str) -> schema::TrueSchema {
+    try_lower_doc(source).expect("schema lowers")
+}
+
+fn try_lower_doc(source: &str) -> Result<schema::TrueSchema, SchemaError> {
+    SchemaEngine::default().lower_source(source, SchemaIdentity::new("generics:lib", "0.1.0"))
+}
+
+fn single_reference(schema: &schema::TrueSchema, name: &str) -> TypeReference {
     match schema.type_named(name).expect("type present") {
-        TypeDeclaration::Newtype(declaration) => &declaration.reference,
+        TypeDeclaration::Newtype(declaration) => declaration.reference,
         TypeDeclaration::Struct(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a single-reference declaration")
         }
@@ -59,10 +62,10 @@ fn single_reference<'schema>(
 
 #[test]
 fn multi_argument_application_lowers_to_application() {
-    let schema = lower("Alpha String Beta String Holder (Foo Alpha Beta)");
+    let schema = lower("{ Alpha.String Beta.String Holder.Foo.(Alpha Beta) }\n{}\n{}");
     assert_eq!(
         single_reference(&schema, "Holder"),
-        &TypeReference::Application {
+        TypeReference::Application {
             head: ApplicationHead::Local(Name::new("Foo")),
             arguments: vec![TypeReference::new("Alpha"), TypeReference::new("Beta")],
         }
@@ -107,34 +110,37 @@ fn application_round_trips_through_canonical_nota_codec() {
 #[test]
 fn builtin_heads_still_lower_to_their_variants() {
     let schema = lower(
-        "Key String Value String VectorField (Vector Value) OptionalField (Optional Value) MapField (Map Key Value)",
+        "{ Key.String Value.String VectorField.Vector.Value OptionalField.Optional.Value MapField.Map.(Key Value) }\n{}\n{}",
     );
     assert_eq!(
         single_reference(&schema, "VectorField"),
-        &TypeReference::Vector(Box::new(TypeReference::new("Value")))
+        TypeReference::vector(TypeReference::new("Value"))
     );
     assert_eq!(
         single_reference(&schema, "OptionalField"),
-        &TypeReference::Optional(Box::new(TypeReference::new("Value")))
+        TypeReference::optional(TypeReference::new("Value"))
     );
     assert_eq!(
         single_reference(&schema, "MapField"),
-        &TypeReference::Map(
-            Box::new(TypeReference::new("Key")),
-            Box::new(TypeReference::new("Value")),
-        )
+        TypeReference::map(TypeReference::new("Key"), TypeReference::new("Value"))
     );
 }
 
 #[test]
 fn builtin_head_wins_over_broad_application_form() {
-    // `(Vector Value)` matches the broad `(Foo A …)` shape too (Vector is a
+    // `Vector.Value` matches the broad `Foo.Value` shape too (Vector is a
     // PascalCase head), but the built-in fast path is dispatched first, so it
     // must NOT lower to an application named `Vector`.
-    let schema = lower("Value String Field (Vector Value)");
+    let schema = lower("{ Value.String Field.Vector.Value }\n{}\n{}");
     let reference = single_reference(&schema, "Field");
     assert!(
-        matches!(reference, TypeReference::Vector(_)),
+        matches!(
+            reference,
+            TypeReference::SingleTypeApplication {
+                projection: SingleTypeReferenceProjection::Vector,
+                ..
+            }
+        ),
         "a built-in head must win over the application form, got {reference:?}",
     );
     assert!(
@@ -147,56 +153,24 @@ fn builtin_head_wins_over_broad_application_form() {
 
 #[test]
 fn dropped_vec_alias_no_longer_lowers_to_vector() {
-    let schema = lower("Service String Cluster (Vec Service)");
+    let schema = lower("{ Service.String Cluster.Vec.Service }\n{}\n{}");
     let reference = single_reference(&schema, "Cluster");
     assert!(
-        !matches!(reference, TypeReference::Vector(_)),
+        !matches!(
+            reference,
+            TypeReference::SingleTypeApplication {
+                projection: SingleTypeReferenceProjection::Vector,
+                ..
+            }
+        ),
         "the dropped `Vec` alias must not lower to a Vector",
     );
     assert_eq!(
         reference,
-        &TypeReference::Application {
+        TypeReference::Application {
             head: ApplicationHead::Local(Name::new("Vec")),
             arguments: vec![TypeReference::new("Service")],
         }
-    );
-}
-
-// (d) the closure walk over an imported generic head records the import.
-
-#[test]
-fn closure_over_imported_generic_head_records_the_import() {
-    let resolver = ImportResolver::new().with_dependency(
-        "marker-core",
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/marker-core/schema"),
-        "0.1.0",
-    );
-    let consumer_source = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/import-generic-consumer/schema/lib.schema"),
-    )
-    .expect("read generic-head consumer schema");
-    let schema = SchemaEngine::default()
-        .lower_source_with_resolver(
-            &consumer_source,
-            SchemaIdentity::new("import-generic-consumer", "0.1.0"),
-            &mut MacroContext::default(),
-            &resolver,
-        )
-        .expect("consumer schema lowers");
-
-    // The `Output` root reaches `(Marked (DatabaseMarker Topic))` — the
-    // imported `DatabaseMarker` is the application head, so its import must be
-    // pulled into the closure.
-    let closure = schema.family_closure("Output").expect("output closure");
-    let imports = closure
-        .imports()
-        .iter()
-        .map(|import| import.local_name.as_str().to_owned())
-        .collect::<Vec<_>>();
-    assert!(
-        imports.contains(&"DatabaseMarker".to_owned()),
-        "the imported generic head is recorded in the closure, got {imports:?}",
     );
 }
 
@@ -209,16 +183,14 @@ fn closure_over_imported_generic_head_records_the_import() {
 // (decision O8).
 // ----------------------------------------------------------------------
 
-fn declaration_parameters<'schema>(
-    schema: &'schema schema::TrueSchema,
-    name: &str,
-) -> &'schema [Name] {
+fn declaration_parameters(schema: &schema::TrueSchema, name: &str) -> Vec<Name> {
     schema
         .namespace()
-        .iter()
+        .into_iter()
         .find(|declaration| declaration.name().as_str() == name)
         .expect("declaration present")
         .parameters()
+        .to_vec()
 }
 
 // (a) A parameterized declaration whose body uses its parameters as Plain
@@ -227,27 +199,13 @@ fn declaration_parameters<'schema>(
 
 #[test]
 fn parameterized_declaration_resolves_its_parameters_as_binders() {
-    let schema = lower("(| Plane Input Output |) { Input Output }");
+    let schema = lower_doc("{}\n[]\n[]\n{}\n{ Plane.((Input Output) { Input Output }) }\n{}");
 
     // The binders are recorded on the declaration, in order.
     assert_eq!(
         declaration_parameters(&schema, "Plane"),
         &[Name::new("Input"), Name::new("Output")],
     );
-
-    // The closure walk reaches `Input` and `Output` as Plain field
-    // references. Without binder scope this is a FamilyReferenceNotFound;
-    // with it, the walk succeeds and pulls in no extra declarations — a
-    // binder is a type-parameter, not a declared type.
-    let closure = schema
-        .family_closure("Plane")
-        .expect("parameterized declaration closes over its binders, not undeclared names");
-    let names = closure
-        .declarations()
-        .iter()
-        .map(|declaration| declaration.name().as_str().to_owned())
-        .collect::<Vec<_>>();
-    assert_eq!(names, ["Plane"]);
 }
 
 // (b) An Application supplying the WRONG argument count to a resolved
@@ -256,8 +214,10 @@ fn parameterized_declaration_resolves_its_parameters_as_binders() {
 
 #[test]
 fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
-    let error = try_lower("(| Plane Input Output |) { Input Output } Holder (Plane String)")
-        .expect_err("one argument against a two-parameter head must fail at lowering");
+    let error = try_lower_doc(
+        "{}\n[]\n[]\n{ Holder.Plane.String }\n{ Plane.((Input Output) { Input Output }) }\n{}",
+    )
+    .expect_err("one argument against a two-parameter head must fail at lowering");
     assert_eq!(
         error,
         SchemaError::GenericArityMismatch {
@@ -273,10 +233,12 @@ fn application_with_wrong_argument_count_is_an_arity_error_at_lowering() {
 
 #[test]
 fn application_with_correct_argument_count_lowers() {
-    let schema = lower("(| Plane Input Output |) { Input Output } Holder (Plane String Integer)");
+    let schema = lower_doc(
+        "{}\n[]\n[]\n{ Holder.Plane.(String Integer) }\n{ Plane.((Input Output) { Input Output }) }\n{}",
+    );
     assert_eq!(
         single_reference(&schema, "Holder"),
-        &TypeReference::Application {
+        TypeReference::Application {
             head: ApplicationHead::Local(Name::new("Plane")),
             arguments: vec![TypeReference::String, TypeReference::Integer],
         },
@@ -292,8 +254,10 @@ fn application_with_correct_argument_count_lowers() {
 fn declared_parameterized_head_wins_over_unresolved_application() {
     // The declared head's arity binds — a wrong count is rejected.
     assert_eq!(
-        try_lower("(| Plane Input Output |) { Input Output } Holder (Plane String)")
-            .expect_err("declared head is consulted, so its arity binds"),
+        try_lower_doc(
+            "{}\n[]\n[]\n{ Holder.Plane.String }\n{ Plane.((Input Output) { Input Output }) }\n{}"
+        )
+        .expect_err("declared head is consulted, so its arity binds"),
         SchemaError::GenericArityMismatch {
             head: "Plane".to_owned(),
             expected: 2,
@@ -304,12 +268,60 @@ fn declared_parameterized_head_wins_over_unresolved_application() {
     // An UNDECLARED head fixes no arity, so the same single-argument
     // application is an ordinary unresolved generic application — proving
     // the declared head, not the broad form, governed the case above.
-    let schema = lower("Holder (Foo String)");
+    let schema = lower("{ Holder.Foo.String }\n{}\n{}");
     assert_eq!(
         single_reference(&schema, "Holder"),
-        &TypeReference::Application {
+        TypeReference::Application {
             head: ApplicationHead::Local(Name::new("Foo")),
             arguments: vec![TypeReference::String],
+        },
+    );
+}
+
+#[test]
+fn duplicate_generic_parameters_are_rejected_at_the_declaration_head() {
+    let error = try_lower_doc("{}\n[]\n[]\n{}\n{ Plane.((Input Input) { Input }) }\n{}")
+        .expect_err("duplicate declaration parameters must be rejected");
+    assert_eq!(
+        error,
+        SchemaError::DuplicateTypeParameter {
+            declaration: "Plane".to_owned(),
+            parameter: "Input".to_owned(),
+        },
+    );
+}
+
+#[test]
+fn duplicate_frame_parameters_are_rejected_at_the_frame_head() {
+    let error = try_lower_doc(
+        "{}\n[]\n[]\n{}\n{ Work.((Event Event Outcome) [Started.Event Completed.Outcome]) }\n{}",
+    )
+    .expect_err("duplicate frame parameters must be rejected");
+    assert_eq!(
+        error,
+        SchemaError::DuplicateTypeParameter {
+            declaration: "Work".to_owned(),
+            parameter: "Event".to_owned(),
+        },
+    );
+}
+
+#[test]
+fn map_grouped_payload_lowers_and_dot_chain_arity_fails() {
+    let schema = lower("{ Key.String Value.String Holder.Map.(Key Value) }\n{}\n{}");
+    assert_eq!(
+        single_reference(&schema, "Holder"),
+        TypeReference::map(TypeReference::new("Key"), TypeReference::new("Value")),
+    );
+
+    let error = try_lower("{ Key.String Value.String Holder.Map.Key.Value }\n{}\n{}")
+        .expect_err("Map.Key.Value is unary nesting and must not satisfy Map arity");
+    assert_eq!(
+        error,
+        SchemaError::GenericArityMismatch {
+            head: "Map".to_owned(),
+            expected: 2,
+            found: 1,
         },
     );
 }
@@ -321,11 +333,11 @@ fn declared_parameterized_head_wins_over_unresolved_application() {
 
 #[test]
 fn parameterized_head_round_trips_through_the_source_codec() {
-    let source = "{}\n[]\n[]\n{\n  (| Plane Input Output |) { Input Output }\n}";
+    let source = "{}\n[]\n[]\n{}\n{\n  Plane.((Input Output) { Input Output })\n}\n{}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     let canonical = artifact.to_schema_text();
     assert!(
-        canonical.contains("(|Plane Input Output|) { Input Output }"),
+        canonical.contains("Plane.((Input Output) { Input Output })"),
         "the parameterized head must project back to source text, got {canonical}",
     );
     let recovered =
@@ -351,8 +363,7 @@ fn parameterized_head_round_trips_through_the_source_codec() {
 
 #[test]
 fn source_codec_path_also_validates_application_arity() {
-    let source =
-        "{}\n[]\n[]\n{\n  (| Plane Input Output |) { Input Output }\n  Holder (Plane String)\n}";
+    let source = "{}\n[]\n[]\n{\n  Holder.Plane.String\n}\n{\n  Plane.((Input Output) { Input Output })\n}\n{}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
     let error = artifact
         .source()
@@ -387,14 +398,15 @@ fn source_codec_path_also_validates_application_arity() {
 /// head's arity (4) matches the application's argument count.
 fn application_root_source(read_output: &str) -> String {
     format!(
-        "(Work SignalInput SemaWriteOutput {read_output} EffectOutcome) [] {{ \
-         (| Work In WriteOut ReadOut Outcome |) {{ In WriteOut ReadOut Outcome }} \
-         SignalInput String \
-         SemaWriteOutput Boolean \
-         SemaReadOutput Integer \
-         AltReadOutput Integer \
-         EffectOutcome Boolean \
-         }}"
+        "{{}} Work.(SignalInput SemaWriteOutput {read_output} EffectOutcome) [] {{ \
+         SignalInput.String \
+         SemaWriteOutput.Boolean \
+         SemaReadOutput.Integer \
+         AltReadOutput.Integer \
+         EffectOutcome.Boolean \
+         }} {{ \
+         Work.((In WriteOut ReadOut Outcome) {{ In WriteOut ReadOut Outcome }}) \
+         }} {{}}"
     )
 }
 
@@ -421,8 +433,8 @@ fn root_position_application_lowers_to_root_application() {
         "Input root should be the application form, got {:?}",
         schema.input(),
     );
-    let application = schema
-        .input()
+    let input = schema.input();
+    let application = input
         .as_application()
         .expect("Input root is the application form");
     assert_eq!(application.name().as_str(), "Input");
@@ -459,49 +471,22 @@ fn root_position_application_lowers_to_root_application() {
         },
     );
 
-    // `root_named` and the closure entry return the application root without
-    // panicking; the closure builds and carries the applied reference.
+    // `root_named` returns the application root without panicking.
     let root = schema.root_named("Input").expect("Input root present");
     assert!(
         root.as_application().is_some(),
         "root_named yields the application root"
     );
-    let closure = schema
-        .family_closure("Input")
-        .expect("application-root family closure builds");
-    assert_eq!(closure.root().as_str(), "Input");
-    assert!(
-        closure.root_application().is_some(),
-        "the closure carries the applied reference for an application root",
-    );
-    // The walk reached the head declaration and every argument declaration.
-    let names = closure
-        .declarations()
-        .iter()
-        .map(|declaration| declaration.name().as_str().to_owned())
-        .collect::<Vec<_>>();
-    for reached in [
-        "Work",
-        "SignalInput",
-        "SemaWriteOutput",
-        "SemaReadOutput",
-        "EffectOutcome",
-    ] {
-        assert!(
-            names.contains(&reached.to_owned()),
-            "closure reaches {reached}, got {names:?}"
-        );
-    }
 }
 
-// (b) The existing enum-body root form `[Variant …]` STILL lowers to a
+// (b) The existing enum-body root form `[Variant.Payload …]` STILL lowers to a
 //     `Root::Enum(EnumDeclaration)` — no regression.
 
 #[test]
 fn enum_body_root_still_lowers_to_root_enum() {
     let schema = SchemaEngine::default()
         .lower_source(
-            "[(Record Entry)] [(Recorded Receipt)] { Topic String Ok Boolean Entry { Topic } Receipt { Ok } }",
+            "{}\n[Record.Entry]\n[Recorded.Receipt]\n{\n  Topic.String\n  Ok.Boolean\n  Entry.{ Topic }\n  Receipt.{ Ok }\n}\n{}\n{}",
             SchemaIdentity::new("enum-root:lib", "0.1.0"),
         )
         .expect("enum-body root schema lowers");
@@ -517,51 +502,5 @@ fn enum_body_root_still_lowers_to_root_enum() {
     assert!(
         matches!(schema.output(), Root::Enum(_)),
         "the Output root is also the enum-body form",
-    );
-    // No application reference for an enum root.
-    let closure = schema
-        .family_closure("Input")
-        .expect("enum-root closure builds");
-    assert!(
-        closure.root_application().is_none(),
-        "an enum root carries no application reference in its closure",
-    );
-}
-
-// (c) The O4 proof: the application-root family's content-address is STABLE
-//     across re-lowering the same source, AND CHANGES when one argument type
-//     is changed — proving the arguments are incorporated into the closure.
-
-#[test]
-fn application_root_closure_hash_is_stable_and_argument_sensitive() {
-    let first = lower_application_root("SemaReadOutput");
-    let again = lower_application_root("SemaReadOutput");
-
-    let first_hash = first
-        .family_closure("Input")
-        .expect("first closure")
-        .content_hash()
-        .expect("first closure hashes");
-    let again_hash = again
-        .family_closure("Input")
-        .expect("re-lowered closure")
-        .content_hash()
-        .expect("re-lowered closure hashes");
-    assert_eq!(
-        first_hash, again_hash,
-        "the application-root closure hash is stable across re-lowering the same source",
-    );
-
-    // Swap the third argument `SemaReadOutput` -> `AltReadOutput`; the
-    // applied reference changes, so the closure address must move.
-    let changed = lower_application_root("AltReadOutput");
-    let changed_hash = changed
-        .family_closure("Input")
-        .expect("changed closure")
-        .content_hash()
-        .expect("changed closure hashes");
-    assert_ne!(
-        first_hash, changed_hash,
-        "changing one application argument moves the closure address",
     );
 }

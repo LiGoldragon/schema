@@ -2,7 +2,7 @@ use nota::{Block, Delimiter, Document, StructuralMacroNode};
 
 use crate::{
     MacroContext, MacroObject, MacroOutput, MacroPair, MacroPosition, MacroRegistry, SchemaError,
-    macros::SchemaBlockExt,
+    macros::SchemaBlockExt, source::SchemaDocumentLayout,
 };
 
 /// The c2dc front-end pass: the NOTA decoder, once parsed into a document, is
@@ -15,9 +15,9 @@ use crate::{
 /// Two jobs, both feeding the one downstream lowering:
 ///
 /// 1. It rewrites user type-reference macro invocations — `(Bag Topic)` with a
-///    registered `Bag` macro becomes its expanded body `(Vector Topic)`,
-///    recursively — so the source path sees only built-in heads it already
-///    understands. The expansion reuses the registered macro's own
+///    registered `Bag` macro becomes its expanded source reference
+///    `Vector.Topic`, recursively — so the source path sees only built-in heads
+///    it already understands. The expansion reuses the registered macro's own
 ///    capture/substitution machinery (the `DeclarativeSchemaMacro` handler),
 ///    so `$`-sigil captures bind and substitute exactly as the macro declares.
 /// 2. It records every structural root macro firing (`RootImports`,
@@ -43,15 +43,15 @@ impl<'registry> MacroExpansionPass<'registry> {
 
     /// Run the pass over a parsed document. The returned document is the
     /// macro-expanded re-parse; `context` accumulates the recorded firings and
-    /// bindings. The entry contract (3 roots, or 4 with leading imports) is the
-    /// document path's, and is checked by the caller; this pass tolerates any
-    /// well-formed positional shape and records what it recognises.
+    /// bindings. The entry contract is the strict six-slot document layout
+    /// shared with the source path; grouped dotted root applications occupy one
+    /// typed slot even when raw NOTA currently parses them as two blocks.
     pub(crate) fn expand(
         &self,
         document: &Document,
         context: &mut MacroContext,
     ) -> Result<Document, SchemaError> {
-        let layout = DocumentLayout::of(document);
+        let layout = SchemaDocumentLayout::from_document(document)?;
         self.record_root_firings(document, &layout, context)?;
         let expanded_roots = document
             .root_objects()
@@ -68,24 +68,34 @@ impl<'registry> MacroExpansionPass<'registry> {
     fn record_root_firings(
         &self,
         document: &Document,
-        layout: &DocumentLayout,
+        layout: &SchemaDocumentLayout,
         context: &mut MacroContext,
     ) -> Result<(), SchemaError> {
-        if let Some(index) = layout.imports_index
-            && let Some(block) = document.root_object_at(index)
-        {
-            self.record_block_firing(block, MacroPosition::RootImports, context);
-        }
-        if let Some(block) = document.root_object_at(layout.input_index) {
-            self.record_block_firing(block, MacroPosition::RootInput, context);
-        }
-        if let Some(block) = document.root_object_at(layout.output_index) {
-            self.record_block_firing(block, MacroPosition::RootOutput, context);
-        }
-        if let Some(block) = document.root_object_at(layout.namespace_index) {
-            self.record_block_firing(block, MacroPosition::RootNamespace, context);
-            self.record_namespace_declaration_firings(block, context)?;
-        }
+        self.record_block_firing(
+            layout.imports().block(document),
+            MacroPosition::RootImports,
+            context,
+        );
+        self.record_block_firing(
+            layout.input().block(document),
+            MacroPosition::RootInput,
+            context,
+        );
+        self.record_block_firing(
+            layout.output().block(document),
+            MacroPosition::RootOutput,
+            context,
+        );
+        // The former single namespace slot is now three per-kind declaration
+        // blocks (types, generics, impls). The `RootNamespace` macro position
+        // still names the declaration region; it is recorded on the `types`
+        // block — the type namespace the position always described — and the
+        // per-declaration `NamespaceDeclaration` walk covers the type and
+        // generic declaration blocks, whose entries mint declarations.
+        let types = layout.types().block(document);
+        self.record_block_firing(types, MacroPosition::RootNamespace, context);
+        self.record_namespace_declaration_firings(types, context)?;
+        self.record_namespace_declaration_firings(layout.generics().block(document), context)?;
         Ok(())
     }
 
@@ -104,21 +114,21 @@ impl<'registry> MacroExpansionPass<'registry> {
         }
     }
 
-    /// Record one `KeyValueDeclaration` firing per namespace key/value pair the
-    /// registry dispatches at the namespace-declaration position. The pair
-    /// segmentation mirrors the source path's namespace walk (a head plus an
-    /// optional inline body, with a trailing `{| … |}` impl block skipped) so
-    /// the recorded firings match the declarations the source path lowers.
+    /// Record one `NamespaceDeclaration` firing per per-kind declaration entry
+    /// the registry dispatches. The entry segmentation mirrors the source
+    /// path's per-kind block reader (a capitalized dotted key split off the
+    /// leading atom, then the value block sequence walked by width) so the
+    /// recorded firings match the declarations the source path lowers.
     fn record_namespace_declaration_firings(
         &self,
-        namespace: &Block,
+        block: &Block,
         context: &mut MacroContext,
     ) -> Result<(), SchemaError> {
         let Block::Delimited {
             delimiter: Delimiter::Brace,
             root_objects,
             ..
-        } = namespace
+        } = block
         else {
             return Ok(());
         };
@@ -194,38 +204,15 @@ impl<'registry> MacroExpansionPass<'registry> {
     }
 }
 
-/// The positional slot map of a schema document: an optional leading imports
-/// brace, then input / output / namespace, then an optional trailing
-/// relations block. The pass reads slots from this map so its recording is
-/// aligned with `SchemaSource::from_document`'s own positional read.
-#[derive(Clone, Copy, Debug)]
-struct DocumentLayout {
-    imports_index: Option<usize>,
-    input_index: usize,
-    output_index: usize,
-    namespace_index: usize,
-}
-
-impl DocumentLayout {
-    fn of(document: &Document) -> Self {
-        let first_is_imports = document
-            .root_object_at(0)
-            .is_some_and(|block| block.is_brace());
-        let offset = if first_is_imports { 1 } else { 0 };
-        Self {
-            imports_index: first_is_imports.then_some(0),
-            input_index: offset,
-            output_index: offset + 1,
-            namespace_index: offset + 2,
-        }
-    }
-}
-
-/// A cursor over a namespace body that segments it into key/value pairs using
-/// the head / optional-body / optional-pipe-brace grammar the source-path
-/// namespace walk uses. Used only to count the `KeyValueDeclaration` firings
-/// for the macro context; segmentation errors are left for the source path to
-/// report, so the walk yields what it can and stops.
+/// A cursor over a per-kind declaration block body that segments it into one
+/// key/value pair per dotted entry, mirroring the source-path per-kind reader:
+/// a capitalized dotted key is split off the leading atom, and the value is the
+/// following block when the key atom ends at its dot, or the inline remainder
+/// carried in the key atom itself. Used only to dispatch the
+/// `NamespaceDeclaration` firings for the macro context; segmentation errors
+/// are left for the source path to report, so the walk yields what it can and
+/// stops. When the value stays inline in the key atom the pair's `name` and
+/// `definition` are the same atom, so the registry sees one dispatch per entry.
 #[derive(Clone, Copy, Debug)]
 struct NamespacePairWalk<'schema> {
     objects: &'schema [Block],
@@ -238,36 +225,24 @@ impl<'schema> NamespacePairWalk<'schema> {
     }
 
     fn next_pair(&mut self) -> Option<MacroPair<'schema>> {
-        loop {
-            let head = self.objects.get(self.cursor)?;
-            if head.is_pipe_brace() {
-                return None;
-            }
-            self.cursor += 1;
-            let definition = match self.objects.get(self.cursor) {
-                Some(next) if !next.is_pipe_brace() => {
+        let head = self.objects.get(self.cursor)?;
+        self.cursor += 1;
+        let ends_at_dot = matches!(head, Block::Atom(atom) if atom.text().ends_with('.'));
+        let definition = if ends_at_dot {
+            match self.objects.get(self.cursor) {
+                Some(next) => {
                     self.cursor += 1;
-                    Some(next)
+                    next
                 }
-                _ => None,
-            };
-            if let Some(next) = self.objects.get(self.cursor)
-                && next.is_pipe_brace()
-            {
-                self.cursor += 1;
+                None => head,
             }
-            match definition {
-                Some(definition) => {
-                    return Some(MacroPair {
-                        name: head,
-                        definition,
-                    });
-                }
-                // A body-optional `TypeName {| … |}` entry mints no
-                // declaration on the macro path; skip it and keep walking.
-                None => continue,
-            }
-        }
+        } else {
+            head
+        };
+        Some(MacroPair {
+            name: head,
+            definition,
+        })
     }
 }
 
@@ -292,8 +267,6 @@ impl DelimiterText {
             Delimiter::Parenthesis => "(",
             Delimiter::SquareBracket => "[",
             Delimiter::Brace => "{",
-            Delimiter::PipeParenthesis => "(|",
-            Delimiter::PipeBrace => "{|",
         }
     }
 
@@ -302,8 +275,6 @@ impl DelimiterText {
             Delimiter::Parenthesis => ")",
             Delimiter::SquareBracket => "]",
             Delimiter::Brace => "}",
-            Delimiter::PipeParenthesis => "|)",
-            Delimiter::PipeBrace => "|}",
         }
     }
 }

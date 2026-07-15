@@ -1,7 +1,10 @@
-[(Record Entry)]
-[(Recorded Receipt)]
+{}
+[Record.Entry]
+[Recorded.Receipt]
 {
-  Topic String
-  Entry { Topic }
-  Receipt Integer
+  Topic.String
+  Entry.{ Topic }
+  Receipt.Integer
 }
+{}
+{}

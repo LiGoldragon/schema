@@ -18,45 +18,42 @@ use schema::{
 
 /// The enum body of a root known to be the enum-body form — the shape of
 /// every root in these design fixtures.
-fn root_enum(root: &Root) -> &EnumDeclaration {
-    root.as_enum().expect("root is the enum-body form")
+fn root_enum(root: Root) -> EnumDeclaration {
+    root.as_enum().cloned().expect("root is the enum-body form")
 }
 
-/// Illustrates: a schema document is positional. The common no-import
-/// form has exactly 3 root values (input enum body, output enum body,
-/// namespace). A leading import map makes the 4-root form.
+/// Illustrates: a schema document is positional and has exactly six root
+/// slots: imports, input, output, types, generics, and impls. Empty optional
+/// roots are still present as `{}` or `[]`; slot omission is not inference.
 #[test]
-fn design_example_schema_document_has_three_roots_or_four_with_imports() {
-    let too_few = "[] []";
+fn design_example_schema_document_has_six_strict_roots() {
+    let too_few = "[]";
     let error = SchemaEngine::default()
         .lower_source(too_few, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("two root objects should fail");
+        .expect_err("one root object should fail");
     assert_eq!(
         error,
         SchemaError::ExpectedRootObjectCount {
-            expected: "3 root values (input output namespace) or 4 with leading imports",
-            found: 2,
+            expected: "6 root slots (imports input output types generics impls)",
+            found: 1,
         }
     );
 
-    let too_many = "{} [] [] {} {}";
+    let too_many = "{} [] [] {} {} {} []";
     let error = SchemaEngine::default()
         .lower_source(too_many, SchemaIdentity::new("example", "0.1.0"))
-        .expect_err("five root objects should fail");
+        .expect_err("seven root objects should fail");
     assert_eq!(
         error,
         SchemaError::ExpectedRootObjectCount {
-            expected: "3 root values (input output namespace) or 4 with leading imports",
-            found: 5,
+            expected: "6 root slots (imports input output types generics impls)",
+            found: 7,
         }
     );
 
     SchemaEngine::default()
-        .lower_source("[] [] {}", SchemaIdentity::new("example", "0.1.0"))
-        .expect("three-root no-import schema lowers");
-    SchemaEngine::default()
-        .lower_source("{} [] [] {}", SchemaIdentity::new("example", "0.1.0"))
-        .expect("four-root import schema lowers");
+        .lower_source("{} [] [] {} {} {}", SchemaIdentity::new("example", "0.1.0"))
+        .expect("six-root schema lowers");
 }
 
 /// Illustrates: the schema namespace is an honest brace key/value map.
@@ -69,23 +66,23 @@ fn design_example_schema_document_has_three_roots_or_four_with_imports() {
 /// the pair-style positive path.
 #[test]
 fn design_example_namespace_brace_contains_key_value_declarations() {
-    let source = "[] [] { Topic String Kind [Decision Constraint] }";
+    let source = "{} [] [] { Topic.String Kind.[Decision Constraint] } {} {}";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("key/value namespace lowers");
 
-    let names: Vec<&str> = schema
-        .namespace()
+    let namespace = schema.namespace();
+    let names: Vec<&str> = namespace
         .iter()
         .map(|declaration| declaration.name().as_str())
         .collect();
     assert_eq!(names, vec!["Topic", "Kind"]);
 
-    let TypeDeclaration::Newtype(topic) = schema.namespace()[0].value() else {
+    let TypeDeclaration::Newtype(topic) = namespace[0].value() else {
         panic!("Topic should lower as a newtype");
     };
     assert_eq!(topic.reference, TypeReference::String);
-    let TypeDeclaration::Enum(kind) = schema.namespace()[1].value() else {
+    let TypeDeclaration::Enum(kind) = namespace[1].value() else {
         panic!("Kind should lower as an enum");
     };
     let variant_names: Vec<&str> = kind
@@ -119,7 +116,7 @@ fn design_example_type_reference_macro_captures_use_dollar_sigils() {
         "
         (SchemaMacro Bag TypeReference
           (Bag $Type)
-          (Reference (Vector $Type)))
+          (Reference Vector. $Type))
         ",
     )
     .expect("user macro definitions parse");
@@ -131,7 +128,7 @@ fn design_example_type_reference_macro_captures_use_dollar_sigils() {
         registry.register_box(schema_macro);
     }
     let engine = SchemaEngine::with_registry(registry);
-    let source = "[] [] { Topic String Topics (Bag Topic) }";
+    let source = "{} [] [] { Topic.String Topics.(Bag Topic) } {} {}";
     let mut context = MacroContext::default();
     engine
         .lower_source_with_context(
@@ -231,7 +228,7 @@ fn design_example_default_engine_uses_strict_structural_macros() {
         "legacy pipe declaration macro is loadable data, not default syntax"
     );
 
-    let source = "[] [] { Topic String }";
+    let source = "{} [] [] { Topic.String } {} {}";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -269,7 +266,7 @@ fn design_example_default_engine_uses_strict_structural_macros() {
 /// triage.
 #[test]
 fn design_example_schema_lowering_records_source_structure_header() {
-    let source = "[(Record Entry)] [Accepted] { Value String Entry { Value } }";
+    let source = "{} [Record.Entry] [Accepted] { Value.String Entry.{ Value } } {} {}";
     let mut context = MacroContext::default();
     SchemaEngine::default()
         .lower_source_with_context(
@@ -292,13 +289,13 @@ fn design_example_schema_lowering_records_source_structure_header() {
     assert_eq!(
         observed,
         vec![
-            (StructureShape::Document, 3),
-            (StructureShape::SquareBracket, 1),
-            (StructureShape::Parenthesis, 2),
+            (StructureShape::Document, 6),
+            (StructureShape::Brace, 0),
             (StructureShape::SquareBracket, 1),
             (StructureShape::Atom, 0),
-            (StructureShape::Brace, 4),
+            (StructureShape::SquareBracket, 1),
             (StructureShape::Atom, 0),
+            (StructureShape::Brace, 3),
             (StructureShape::Unknown, 15),
         ],
     );
@@ -343,9 +340,9 @@ fn design_example_macro_node_definitions_separate_structural_from_tagged_invocat
 /// namespace declarations the cases are key/value pair nodes: a symbol
 /// key with a brace value is a struct macro, a symbol key with a
 /// bracket value is an enum macro, and a symbol key with a reference
-/// value is a newtype macro. The parameterized declaration form
-/// `(| Name Param … |)` adds a mirror case for each body shape, so a
-/// declaration head can introduce type-parameter binders.
+/// value is a newtype macro. The retired parameterized declaration head
+/// `(| Name Param … |)` has no case — generic binders live in the
+/// dedicated generics block, not in a declaration key.
 #[test]
 fn design_example_macro_node_definition_lists_structural_cases() {
     let registry = MacroRegistry::with_schema_defaults();
@@ -359,9 +356,6 @@ fn design_example_macro_node_definition_lists_structural_cases() {
             "struct declaration",
             "enum declaration",
             "newtype declaration",
-            "parameterized struct declaration",
-            "parameterized enum declaration",
-            "parameterized newtype declaration",
         ]
     );
 
@@ -416,17 +410,18 @@ fn design_example_schema_node_macro_call_is_tagged_data() {
 }
 
 /// Illustrates: root enum payloads are authored directly inside the
-/// known root enum body. Payload-carrying variants use `(Variant Payload)`;
+/// known root enum body. Payload-carrying reference variants use `Variant.Payload`;
 /// unit variants use bare symbols.
 #[test]
 fn design_example_root_enum_uses_direct_variant_shapes() {
-    let source = "[(Record Entry) Drop] [] {}";
+    let source = "{} [Record.Entry Drop] [] {} {} {}";
 
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("example", "0.1.0"))
         .expect("direct variants lower");
 
-    let variants: Vec<(&str, Option<&str>)> = root_enum(schema.input())
+    let input = root_enum(schema.input());
+    let variants: Vec<(&str, Option<&str>)> = input
         .variants
         .iter()
         .map(|variant| {
@@ -443,35 +438,24 @@ fn design_example_root_enum_uses_direct_variant_shapes() {
     assert_eq!(variants, vec![("Record", Some("Entry")), ("Drop", None)]);
 }
 
-/// Illustrates: same-name payload variants use compact self-tagged data
-/// variants. The old star suffix is gone from authored schema.
+/// Illustrates: same-name payload variants are rejected because the
+/// variant and direct payload type collapse in text projection. Use a
+/// distinct payload type name such as `RecordLeaf` instead.
 #[test]
-fn design_example_same_name_payload_variant_uses_self_tagged_payload() {
+fn design_example_same_name_payload_variant_is_rejected() {
     let source = std::fs::read_to_string("tests/fixtures/design/same-name-payload-variant.schema")
         .expect("read same-name payload fixture");
-    let schema = SchemaEngine::default()
+    let error = SchemaEngine::default()
         .lower_source(&source, SchemaIdentity::new("example", "0.1.0"))
-        .expect("self-tagged same-name variants lower");
+        .expect_err("self-tagged same-name variants are rejected");
 
     assert_eq!(
-        root_enum(schema.input()).variants[0]
-            .payload
-            .as_ref()
-            .expect("record payload")
-            .plain_name()
-            .expect("plain payload")
-            .as_str(),
-        "Record",
-    );
-    assert_eq!(
-        root_enum(schema.output()).variants[0]
-            .payload
-            .as_ref()
-            .expect("recorded payload")
-            .plain_name()
-            .expect("plain payload")
-            .as_str(),
-        "Recorded",
+        error,
+        schema::SchemaError::SameNamedVariantPayload {
+            enum_name: "Input".to_owned(),
+            variant_name: "Record".to_owned(),
+            payload_type: "Record".to_owned(),
+        }
     );
 }
 
@@ -485,7 +469,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
         "
         (SchemaMacro Bag TypeReference
           (Bag $Type)
-          (Reference (Vector $Type)))
+          (Reference Vector. $Type))
         ",
     )
     .expect("user macro definitions parse");
@@ -496,7 +480,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     let engine = SchemaEngine::with_registry(registry);
     let schema = engine
         .lower_source(
-            "[] [] { Topic String Topics (Bag Topic) }",
+            "{} [] [] { Topic.String Topics.(Bag Topic) } {} {}",
             SchemaIdentity::new("example", "0.1.0"),
         )
         .expect("schema lowers through user macros");
@@ -510,7 +494,7 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
     };
     assert_eq!(
         topics.reference,
-        TypeReference::Vector(Box::new(TypeReference::new("Topic"))),
+        TypeReference::vector(TypeReference::new("Topic")),
     );
 }
 
@@ -524,19 +508,22 @@ fn design_example_user_declared_macros_extend_structural_and_named_slots() {
 #[test]
 fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
     let source = "
-        [(Record Entry) (Observe Query)]
-        [(RecordAccepted RecordIdentifier) (RecordsObserved RecordSet)]
+        {}
+        [Record.Entry Observe.Query]
+        [RecordAccepted.RecordIdentifier RecordsObserved.RecordSet]
         {
-          NexusInput [(Signal Input) (Sema SemaOutput)]
-          NexusOutput [(Sema SemaInput) (Signal Output)]
-          SemaInput [(Record Entry) (Observe Query)]
-          SemaOutput [(Recorded RecordIdentifier) (Observed RecordSet)]
-          Topic String
-          RecordIdentifier Integer
-          Entry { Topic }
-          Query { Topic }
-          RecordSet (Vector Entry)
+          NexusInput.[Signal.Input Sema.SemaOutput]
+          NexusOutput.[Sema.SemaInput Signal.Output]
+          SemaInput.[Record.Entry Observe.Query]
+          SemaOutput.[Recorded.RecordIdentifier Observed.RecordSet]
+          Topic.String
+          RecordIdentifier.Integer
+          Entry.{ Topic }
+          Query.{ Topic }
+          RecordSet.Vector.Entry
         }
+        {}
+        {}
     ";
     let schema = SchemaEngine::default()
         .lower_source(source, SchemaIdentity::new("spirit-next:lib", "0.1.0"))
@@ -545,8 +532,8 @@ fn design_example_signal_nexus_and_sema_are_schema_declared_planes() {
     assert_eq!(schema.input().name().as_str(), "Input");
     assert_eq!(schema.output().name().as_str(), "Output");
 
-    let names: Vec<&str> = schema
-        .namespace()
+    let namespace = schema.namespace();
+    let names: Vec<&str> = namespace
         .iter()
         .map(|declaration| declaration.name().as_str())
         .collect();

@@ -50,10 +50,10 @@ fn environment_loads_manifest_selected_modules_and_source_summaries() {
     let fixture = FixturePackage::new();
     fixture.write_schema(
         "lib",
-        "{ Shared fixture-crate:shared:Shared }\n[UseShared]\n[]\n{\n  UseShared Shared\n}\n[(Equivalence [UseShared Shared])]\n",
+        "{ fixture-crate.shared.Shared }\n[UseShared.Shared]\n[]\n{\n  UseShared.Shared\n}\n{}\n{}\n",
     );
-    fixture.write_schema("shared", "{}\n[]\n[]\n{\n  Shared String\n}\n");
-    fixture.write_schema("ignored", "{}\n[]\n[]\n{\n  Ignored String\n}\n");
+    fixture.write_schema("shared", "{}\n[]\n[]\n{\n  Shared.String\n}\n{}\n{}\n");
+    fixture.write_schema("ignored", "{}\n[]\n[]\n{\n  Ignored.String\n}\n{}\n{}\n");
 
     let environment = SchemaEnvironment::new(fixture.package());
     let manifest = SchemaEnvironmentManifest::new(vec![Name::new("lib")]);
@@ -82,8 +82,9 @@ fn environment_loads_manifest_selected_modules_and_source_summaries() {
             SchemaRootBlockKind::Imports,
             SchemaRootBlockKind::Input,
             SchemaRootBlockKind::Output,
-            SchemaRootBlockKind::Namespace,
-            SchemaRootBlockKind::Relations,
+            SchemaRootBlockKind::Types,
+            SchemaRootBlockKind::Generics,
+            SchemaRootBlockKind::Impls,
         ]
     );
     assert_eq!(module.summary().file_range().start().line(), 1);
@@ -92,7 +93,7 @@ fn environment_loads_manifest_selected_modules_and_source_summaries() {
             .summary()
             .root_blocks()
             .iter()
-            .find(|block| block.kind() == SchemaRootBlockKind::Namespace)
+            .find(|block| block.kind() == SchemaRootBlockKind::Types)
             .expect("namespace summary exists")
             .range()
             .start()
@@ -111,8 +112,9 @@ fn environment_loads_manifest_selected_modules_and_source_summaries() {
             SchemaNodeType::Imports,
             SchemaNodeType::InputRoot,
             SchemaNodeType::OutputRoot,
-            SchemaNodeType::Namespace,
-            SchemaNodeType::Relations,
+            SchemaNodeType::Types,
+            SchemaNodeType::Generics,
+            SchemaNodeType::Impls,
         ]
     );
 }
@@ -122,9 +124,9 @@ fn environment_round_trips_canonical_source_and_resolves_package_imports() {
     let fixture = FixturePackage::new();
     fixture.write_schema(
         "lib",
-        "{ Shared fixture-crate:shared:Shared }\n[UseShared]\n[]\n{\n  UseShared Shared\n}\n",
+        "{ fixture-crate.shared.Shared }\n[UseShared.Shared]\n[]\n{\n  UseShared.Shared\n}\n{}\n{}\n",
     );
-    fixture.write_schema("shared", "{}\n[]\n[]\n{\n  Shared String\n}\n");
+    fixture.write_schema("shared", "{}\n[]\n[]\n{\n  Shared.String\n}\n{}\n{}\n");
 
     let environment = SchemaEnvironment::new(fixture.package());
     let manifest = SchemaEnvironmentManifest::new(vec![Name::new("lib")]);
@@ -145,4 +147,63 @@ fn environment_round_trips_canonical_source_and_resolves_package_imports() {
         "fixture_crate::schema::shared::Shared"
     );
     assert!(module.true_schema().type_named("UseShared").is_some());
+}
+
+#[test]
+fn grouped_root_application_counts_as_one_summary_slot_and_round_trips_help() {
+    let fixture = FixturePackage::new();
+    fixture.write_schema(
+        "lib",
+        "{}\nWork.(SignalInput SignalOutput)\n[]\n{\n  SignalInput.String\n  SignalOutput.String\n}\n{\n  Work.((Input Output) [Start.Input Done.Output])\n}\n{}\n",
+    );
+
+    let environment = SchemaEnvironment::new(fixture.package());
+    let manifest = SchemaEnvironmentManifest::new(vec![Name::new("lib")]);
+    let result = environment
+        .load(&manifest)
+        .expect("environment loads grouped application root");
+    let module = &result.modules()[0];
+
+    assert_eq!(
+        module
+            .summary()
+            .root_blocks()
+            .iter()
+            .map(|block| block.kind())
+            .collect::<Vec<_>>(),
+        vec![
+            SchemaRootBlockKind::Imports,
+            SchemaRootBlockKind::Input,
+            SchemaRootBlockKind::Output,
+            SchemaRootBlockKind::Types,
+            SchemaRootBlockKind::Generics,
+            SchemaRootBlockKind::Impls,
+        ],
+        "the grouped application root is one typed Input slot"
+    );
+    let input_summary = module
+        .summary()
+        .root_blocks()
+        .iter()
+        .find(|block| block.kind() == SchemaRootBlockKind::Input)
+        .expect("input summary exists");
+    assert_eq!(input_summary.range().start().line(), 2);
+    assert_eq!(input_summary.range().end().line(), 2);
+    assert!(
+        module
+            .artifact()
+            .source()
+            .input()
+            .body()
+            .as_application()
+            .is_some(),
+        "help/source artifact exposes the grouped root as an application"
+    );
+    assert!(
+        module
+            .artifact()
+            .to_schema_text()
+            .contains("Work.(SignalInput SignalOutput)"),
+        "canonical help/source projection keeps the grouped root application"
+    );
 }

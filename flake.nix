@@ -1,5 +1,5 @@
 {
-  description = "schema — position-aware schema engine and assembled schema";
+  description = "schema — build-time .schema parser and lowering bridge";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -21,9 +21,6 @@
             pkgs.lib.hasSuffix ".schema" path
             || pkgs.lib.hasSuffix ".asschema" path
             || pkgs.lib.hasSuffix ".macro-library" path
-            # The canonical reference grammar (schemas/reference-grammar.nota)
-            # is build-time data: build.rs reads it to generate the resolver.
-            || pkgs.lib.hasSuffix ".nota" path
           );
         src = rust.cleanSource {
           root = ./.;
@@ -42,7 +39,7 @@
           build = craneLib.cargoBuild (commonArguments // { inherit cargoArtifacts; });
           test = craneLib.cargoTest (commonArguments // { inherit cargoArtifacts; });
           design-examples = pkgs.runCommand "schema-design-examples" { } ''
-            grep -R "design_example_schema_document_has_three_roots_or_four_with_imports" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_schema_document_has_six_strict_roots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_namespace_brace_contains_key_value_declarations" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_type_reference_macro_captures_use_dollar_sigils" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_colon_qualified_name_decomposes_into_segments" ${src}/tests/design_examples.rs >/dev/null
@@ -53,7 +50,7 @@
             grep -R "design_example_schema_node_macro_call_is_tagged_data" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_user_declared_macros_extend_structural_and_named_slots" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_root_enum_uses_direct_variant_shapes" ${src}/tests/design_examples.rs >/dev/null
-            grep -R "design_example_same_name_payload_variant_uses_self_tagged_payload" ${src}/tests/design_examples.rs >/dev/null
+            grep -R "design_example_same_name_payload_variant_is_rejected" ${src}/tests/design_examples.rs >/dev/null
             grep -R "design_example_signal_nexus_and_sema_are_schema_declared_planes" ${src}/tests/design_examples.rs >/dev/null
             touch $out
           '';
@@ -71,7 +68,11 @@
               exit 1
             fi
             if grep -R -n -E '\[\[[A-Z]|\((records|kinds|services|Listed) \[[A-Z]|\((byTopic|Projected|nodes) \{[A-Z]' ${src}/schemas ${src}/tests/fixtures; then
-              echo "schema examples must use typed NOTA composite references: (Vec T), (Map (K V)), (Optional T)" >&2
+              echo "schema examples must use typed NOTA composite references: Vector.T, Map.(K V), Optional.T" >&2
+              exit 1
+            fi
+            if grep -R -n -E '\((Vector|Optional|ScopeOf|Map|Bytes) [A-Za-z0-9_$]' ${src}/schemas ${src}/tests/fixtures; then
+              echo "schema examples must not reintroduce parenthesized generic applications" >&2
               exit 1
             fi
             if grep -R -n -E '\((Vec|Option|KeyValue|Map) \[' ${src}/schemas ${src}/tests; then
@@ -169,7 +170,7 @@
             grep -R "macro_library_split_does_not_return_through_public_surface" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             # Claim 4 — honest enum bodies CLOSED.
             grep -R "production_schema_sources_use_honest_enum_bodies" ${src}/tests/operator_271_closed_claims.rs >/dev/null
-            grep -R "spirit_min_input_enum_body_has_compact_root_variants" ${src}/tests/operator_271_closed_claims.rs >/dev/null
+            grep -R "spirit_min_input_enum_body_has_explicit_payload_variants" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             # Claim 5 — SchemaSource plus semantic TrueSchema own the retired Asschema path.
             grep -R "schema_is_typed_data_with_named_field_accessors" ${src}/tests/operator_271_closed_claims.rs >/dev/null
             grep -R "schema_source_and_semantic_schema_round_trip_without_asschema_artifacts" ${src}/tests/operator_271_closed_claims.rs >/dev/null
@@ -177,7 +178,28 @@
           '';
           true-schema-public-surface = pkgs.runCommand "schema-true-schema-public-surface" { } ''
             test -f ${src}/tests/true_schema.rs
-            grep -R "pub struct TrueSchema" ${src}/src/schema.rs >/dev/null
+            test -f ${src}/tests/core_projection.rs
+            # TrueSchema is the projected view over the split model: it lives in
+            # src/view.rs holding exactly identity + CoreSchema + NameTable, with
+            # borrowing view types as the on-demand read surface. The
+            # name-bearing tree survives only as the crate-internal codec/hash
+            # sidecar (SchemaTree) and is never re-exported.
+            grep -R "pub struct TrueSchema" ${src}/src/view.rs >/dev/null
+            grep -R "pub struct RootView" ${src}/src/view.rs >/dev/null
+            grep -R "pub struct DeclarationView" ${src}/src/view.rs >/dev/null
+            grep -R "pub struct FieldView" ${src}/src/view.rs >/dev/null
+            grep -R "pub struct CoreSchema" ${src}/src/core.rs >/dev/null
+            if grep -R -n "pub struct TrueSchema" ${src}/src/schema.rs; then
+              echo "the stored name-bearing TrueSchema tree returned to src/schema.rs" >&2
+              exit 1
+            fi
+            if grep -R -n -E 'pub use .*SchemaTree' ${src}/src/lib.rs; then
+              echo "the codec sidecar tree must not be re-exported" >&2
+              exit 1
+            fi
+            grep -R "rename_through_the_table_moves_projection_but_not_core_bytes" ${src}/tests/core_projection.rs >/dev/null
+            grep -R "derived_field_names_project_on_demand_and_match_materialized_names" ${src}/tests/core_projection.rs >/dev/null
+            grep -R "view_codecs_round_trip_value_exactly_over_the_corpus" ${src}/tests/core_projection.rs >/dev/null
             grep -R "authored_schema_decodes_directly_to_true_schema" ${src}/tests/true_schema.rs >/dev/null
             grep -R "true_schema_round_trips_through_binary_and_structured_nota" ${src}/tests/true_schema.rs >/dev/null
             grep -R "product_components_accept_implicit_unique_types" ${src}/tests/true_schema.rs >/dev/null
@@ -232,7 +254,7 @@
             grep -R "raw_core_schema_reads_datatype_key_value_map" ${src}/tests/raw_core_schema.rs >/dev/null
             grep -R "raw_core_schema_preserves_native_key_value_and_enum_forms" ${src}/tests/raw_core_schema.rs >/dev/null
             grep -R "RawDatatypeMap" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
-            grep -F "{ key Name value RawDatatype }" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
+            grep -F "{ key.Name value.RawDatatype }" ${src}/tests/fixtures/raw-core/core.schema >/dev/null
             touch $out
           '';
           no-production-free-functions = pkgs.runCommand "schema-no-production-free-functions" { } ''

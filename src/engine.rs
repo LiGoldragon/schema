@@ -1,7 +1,7 @@
-use nota::{Block, Delimiter, Document, NotaBody, NotaEncode};
+use nota::{Block, Delimiter, Document, DottedExpectation, NotaBody, NotaEncode};
 
 use crate::{
-    ImportResolver, SchemaSource,
+    ImportResolver, SchemaSource, TrueSchema,
     declarative::{MacroExpansionStructBody, MacroExpansionVariants},
     expansion::MacroExpansionPass,
     macros::{
@@ -10,7 +10,7 @@ use crate::{
     },
     schema::{
         Declaration, DeclarationHead, EnumDeclaration, EnumVariant, ImportDeclaration, Name,
-        NewtypeDeclaration, RootApplication, TrueSchema, TypeDeclaration, TypeReference,
+        NewtypeDeclaration, RootApplication, TypeDeclaration, TypeReference,
     },
 };
 
@@ -66,8 +66,6 @@ pub enum SchemaError {
     },
     #[error("expected {expected} delimiter")]
     ExpectedDelimiter { expected: &'static str },
-    #[error("expected an even number of map entries, found {found}")]
-    ExpectedEvenMapEntries { found: usize },
     #[error(
         "retired struct field syntax {found}; struct bodies are positional field types, use TypeName or field_name.TypeName"
     )]
@@ -85,11 +83,19 @@ pub enum SchemaError {
     #[error("duplicate explicit product component identity {field} for repeated type {type_name}")]
     DuplicateExplicitProductComponentIdentity { field: String, type_name: String },
     #[error(
-        "optional enum-variant payload {enum_name}::{variant_name}; a variant payload must always appear in the text form, so (Optional T) is forbidden here — model the optional case as an explicit member carrying a required payload (for example a leaf enum with an explicit All member)"
+        "optional enum-variant payload {enum_name}::{variant_name}; a variant payload must always appear in the text form, so Optional.T is forbidden here — model the optional case as an explicit member carrying a required payload (for example a leaf enum with an explicit All member)"
     )]
     OptionalVariantPayload {
         enum_name: String,
         variant_name: String,
+    },
+    #[error(
+        "same-named enum-variant payload {enum_name}::{variant_name}({payload_type}); direct variant payload type names must differ from their variant names"
+    )]
+    SameNamedVariantPayload {
+        enum_name: String,
+        variant_name: String,
+        payload_type: String,
     },
     #[error("io error at {path}: {reason}")]
     Io { path: String, reason: String },
@@ -136,6 +142,12 @@ pub enum SchemaError {
     ReservedScalarTypeName { name: String },
     #[error("malformed import source: {found}")]
     MalformedImportSource { found: String },
+    #[error(
+        "malformed import target {target}; an import target must be a simple capitalized type \
+         name, not a dotted path — write the path segments before the bracket, as in \
+         crate.module.[Type]"
+    )]
+    MalformedImportTarget { target: String },
     #[error("unresolved import crate {crate_name}")]
     UnresolvedImportCrate { crate_name: String },
     #[error("imported type {type_name} not found in {crate_name}:{module}")]
@@ -154,6 +166,11 @@ pub enum SchemaError {
     ExpectedSyntaxDeclaration { found: String },
     #[error("expected a syntax reference, found {found}")]
     ExpectedSyntaxReference { found: String },
+    #[error(
+        "expected a capitalized type reference at a reference leaf, found the \
+         lowercase-led name {found}"
+    )]
+    ExpectedTypeReferenceLeaf { found: String },
     #[error("expected {form} to hold {expected}, found {found} objects")]
     ExpectedSyntaxReferenceArity {
         form: &'static str,
@@ -162,8 +179,25 @@ pub enum SchemaError {
     },
     #[error("expected a syntax enum variant, found {found}")]
     ExpectedSyntaxEnumVariant { found: String },
+    #[error(
+        "ungrouped multi-argument variant payload for variant {variant}: the application head \
+         {head} carries multiple arguments, which the dot rule requires be grouped — write the \
+         grouped payload {variant}.({head}.(…)), for example Projected.(Map.(Key Value)), never \
+         the left-associative {variant}.{head}.(…)"
+    )]
+    UngroupedVariantPayloadApplication { variant: String, head: String },
     #[error("duplicate source declaration {name}")]
     DuplicateSourceDeclaration { name: String },
+    #[error(
+        "duplicate declaration {name} in the loaded whole: a schema is one namespace, but {name} \
+         is declared as both {first_site} and {second_site} — rename one, the local declaration or \
+         the imported one at its source"
+    )]
+    DuplicateDeclaration {
+        name: String,
+        first_site: &'static str,
+        second_site: &'static str,
+    },
     #[error("schema edit target {type_name} not found")]
     SchemaEditTargetNotFound { type_name: String },
     #[error("schema edit expected {type_name} to be a struct")]
@@ -187,16 +221,6 @@ pub enum SchemaError {
     },
     #[error("schema edit identity mismatch: expected {expected}, found {found}")]
     SchemaEditIdentityMismatch { expected: String, found: String },
-    #[error("family root {name} not found")]
-    FamilyRootNotFound { name: String },
-    #[error("family reference {name} not found in family {family}")]
-    FamilyReferenceNotFound { family: String, name: String },
-    #[error("family record {record} not found in family {family}")]
-    FamilyRecordNotFound { family: String, record: String },
-    #[error("duplicate family name {name}")]
-    DuplicateFamilyName { name: String },
-    #[error("duplicate family table {table}")]
-    DuplicateFamilyTable { table: String },
     #[error("duplicate type parameter {parameter} on {declaration}")]
     DuplicateTypeParameter {
         declaration: String,
@@ -210,10 +234,9 @@ pub enum SchemaError {
         expected: usize,
         found: usize,
     },
-    /// A parenthesis at a root Input/Output position did not decode to the
-    /// application form `(Head Arg …)` — a built-in head (`(Vector T)`), a
-    /// collection form, or any other non-application parenthesis is not a
-    /// legal root body.
+    /// A root Input/Output position did not decode to an enum body or dotted
+    /// application form (`Head.(Arg …)`). A bare declared-name root, built-in
+    /// collection, or any other non-application body is not legal.
     #[error("expected a root application at {position}, found {found}")]
     ExpectedRootApplication {
         position: &'static str,
@@ -227,25 +250,56 @@ pub enum SchemaError {
         kind: &'static str,
         signature: String,
     },
-    /// A body-optional `TypeName {| … |}` impl block names a target type that
-    /// is not declared anywhere in the schema. A standalone impl block must
-    /// attach its catalog to a type declared by a separate entry; an
-    /// unresolved target is not an accepted free-standing impl over an
-    /// arbitrary name.
+    /// An impls-block entry `TypeName.[ … ]` names a target type that is not
+    /// declared anywhere in the schema. An impl block must attach its catalog
+    /// to a type declared in the types (or generics) block; an unresolved
+    /// target is not an accepted free-standing impl over an arbitrary name.
     #[error("impl block targets type `{name}`, which is not declared in this schema")]
     UnresolvedImplTarget { name: String },
     /// A target type carries the same impl entry twice — the same trait
     /// marker repeated, or the same method signature repeated — across one or
-    /// more `{| … |}` blocks. Distinct entries for one target compose; an
+    /// more impls-block entries. Distinct entries for one target compose; an
     /// identical entry is a true duplicate and a typed error.
     #[error("impl catalog for type `{target}` carries duplicate entry `{entry}`")]
     DuplicateImplEntry { target: String, entry: String },
-    /// A trait atom inside a `{| … |}` impl block is not a PascalCase
+    /// A trait atom inside an impl catalog is not a PascalCase
     /// type-name. Trait references obey the same naming gate as every other
     /// type reference: a lowercase or otherwise non-type-name atom in a trait
     /// position is a typed error, not a silently-accepted trait.
     #[error("impl block trait `{found}` is not a PascalCase type name")]
     NonTypeNameTrait { found: String },
+    /// A rename through the `NameTable` named an identifier the table does not
+    /// hold. Renaming preserves an existing identifier, so the identifier must
+    /// already be bound before it can be renamed.
+    #[error("name table has no identifier {identifier} to rename")]
+    NameTableIdentifierAbsent { identifier: String },
+    /// A rename through the `NameTable` tried to assign a name already held by a
+    /// different identifier of the same kind. The table's identifier-to-name
+    /// mapping is injective per kind, so a collision is a typed error rather
+    /// than a silent double-binding of one name.
+    #[error(
+        "name {name} is already held by a different {kind:?} identifier {holder}, cannot rename {requested} to it"
+    )]
+    NameTableNameConflict {
+        kind: crate::DeclarationKind,
+        name: String,
+        holder: String,
+        requested: String,
+    },
+    /// A `CoreSchema` projection met an identifier the `NameTable` does not
+    /// hold. The substrate carries only identifiers, so every one of them must
+    /// resolve through the table to produce the human-facing view; a miss means
+    /// the substrate and the table have diverged.
+    #[error("name table has no entry for identifier {identifier}; cannot project its name")]
+    CoreProjectionNameAbsent { identifier: String },
+    /// A source atom read as a local declaration or reference name was not a
+    /// well-formed local name: the `Name` namespace machinery (`local_part`,
+    /// `qualified_under`) assumes a source-derived local name carries no `:`
+    /// namespace separator and no empty segment, and this atom violated that.
+    #[error(
+        "source name `{name}` is not a well-formed local name (no `:` or empty segment allowed)"
+    )]
+    MalformedLocalName { name: String },
 }
 
 impl From<nota::MacroError> for SchemaError {
@@ -386,6 +440,36 @@ impl SchemaEngine {
         self.lower_source_with_resolver(source, identity, &mut context, resolver)
     }
 
+    /// Lower authored `.schema` source into the split target model: the
+    /// stringless [`crate::CoreSchema`] substrate plus its [`crate::NameTable`].
+    /// The name-bearing tree exists only transiently inside this lowering; the
+    /// durable model is the returned pair, and the human-facing view is
+    /// projected from it on demand through `crate::CoreSchema::project`.
+    /// Identifiers re-associate against `prior` — pass
+    /// [`crate::NameTable::empty`] when no prior table applies.
+    pub fn lower_core_source(
+        &self,
+        source: &str,
+        identity: SchemaIdentity,
+        prior: &crate::NameTable,
+    ) -> Result<(crate::CoreSchema, crate::NameTable), SchemaError> {
+        let schema = self.lower_true_schema_source(source, identity)?;
+        schema.tree().decompose(prior)
+    }
+
+    /// The resolver-carrying twin of [`SchemaEngine::lower_core_source`], for
+    /// sources with cross-crate imports.
+    pub fn lower_core_source_with_resolver(
+        &self,
+        source: &str,
+        identity: SchemaIdentity,
+        resolver: &ImportResolver,
+        prior: &crate::NameTable,
+    ) -> Result<(crate::CoreSchema, crate::NameTable), SchemaError> {
+        let schema = self.lower_true_schema_source_with_resolver(source, identity, resolver)?;
+        schema.tree().decompose(prior)
+    }
+
     pub fn lower_schema_source(
         &self,
         source: &SchemaSource,
@@ -449,11 +533,10 @@ impl SchemaEngine {
     /// source path handled both); delegating here collapses the two so a
     /// document and its `SchemaSource` cannot lower to different schemas.
     ///
-    /// The document entry point keeps its own *entry contract*, narrower
-    /// than the source archive's: it accepts 3 roots (input output
-    /// namespace) or 4 with leading imports, and rejects the trailing
-    /// relations form. Within that contract the `SchemaSource` it builds
-    /// carries no relations, so the single lowering is well-defined.
+    /// The document entry point has the same strict entry contract as the
+    /// source archive: exactly six root slots, in order: imports, input,
+    /// output, types, generics, impls. Empty optional sections are typed empty
+    /// roots (`{}` / `[]`), not omitted roots.
     pub fn lower_document_with_resolver(
         &self,
         document: &Document,
@@ -463,9 +546,9 @@ impl SchemaEngine {
     ) -> Result<TrueSchema, SchemaError> {
         context.remember_structure_header(document.structure_header());
 
-        if !matches!(document.holds_root_objects(), 3 | 4) {
+        if document.holds_root_objects() < 6 {
             return Err(SchemaError::ExpectedRootObjectCount {
-                expected: "3 root values (input output namespace) or 4 with leading imports",
+                expected: "6 root slots (imports input output types generics impls)",
                 found: document.holds_root_objects(),
             });
         }
@@ -480,17 +563,6 @@ impl SchemaEngine {
         // not a rival lowerer.
         let expanded = MacroExpansionPass::new(&self.registry).expand(document, context)?;
         let source = SchemaSource::from_document(&expanded)?;
-        // The document entry path admits imports + input/output/namespace
-        // only; a trailing relations block is a source-archive-only form.
-        // `from_document` would read a non-brace 4th-or-later root as
-        // relations, so reject any relations the reparse produced rather
-        // than silently widening the document contract.
-        if !source.relations().is_empty() {
-            return Err(SchemaError::ExpectedRootObjectCount {
-                expected: "3 root values (input output namespace) or 4 with leading imports",
-                found: document.holds_root_objects(),
-            });
-        }
         self.lower_schema_source_with_resolver(&source, identity, resolver)
     }
 
@@ -653,25 +725,10 @@ impl<'schema> KeyValueDeclaration<'schema> {
         &self,
         name: Name,
         definition: &'schema Block,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
+        _registry: &MacroRegistry,
+        _context: &mut MacroContext,
     ) -> Result<TypeDeclaration, SchemaError> {
-        // A `{| … |}` impl block is segmented off as a trailing block by the
-        // namespace entry walk, so it never arrives as a newtype definition.
-        // A `(| … |)` pipe-parenthesis is a head-position binder list and is
-        // still illegal at a value position.
-        if matches!(
-            definition,
-            Block::Delimited {
-                delimiter: nota::Delimiter::PipeBrace | nota::Delimiter::PipeParenthesis,
-                ..
-            }
-        ) {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: "namespace value reference, not pipe declaration block",
-            });
-        }
-        let reference = TypeReference::from_block_with_registry(definition, registry, context)?;
+        let reference = TypeReference::from_block(definition)?;
         Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
             name, reference,
         )))
@@ -744,16 +801,17 @@ impl SchemaMacroHandler for RootImportsMacro {
     ) -> Result<MacroOutput, SchemaError> {
         self.signature.remember(position, context);
         let body = object.delimited_body(Delimiter::Brace, self.signature.expected_delimiter())?;
-        if body.root_objects().len() % 2 != 0 {
-            return Err(SchemaError::ExpectedEvenMapEntries {
-                found: body.root_objects().len(),
-            });
-        }
 
+        // Each import entry is one dotted map entry read through the shared NOTA
+        // reader, walking by consumed blocks rather than fixed pairs.
         let mut imports = Vec::new();
-        for chunk in body.root_objects().chunks_exact(2) {
-            let local_name = chunk[0].schema_name()?;
-            let source = chunk[1].schema_name()?;
+        let objects = body.root_objects();
+        let mut index = 0;
+        while index < objects.len() {
+            let entry = DottedExpectation::Uncapitalized.read_entry(&objects[index..])?;
+            index += entry.consumed();
+            let local_name = entry.key().schema_name()?;
+            let source = entry.value().schema_name()?;
             imports.push(ImportDeclaration {
                 local_name,
                 source: TypeReference::from_name(source),
@@ -842,24 +900,20 @@ impl<'schema> NamespaceBlock<'schema> {
         Ok(declarations)
     }
 
-    /// Segment the namespace body into key/value pairs the macro lowerer
-    /// understands. The body is no longer a flat `chunks_exact(2)` map: an
-    /// entry is a head, an optional inline body, and an optional trailing
-    /// `{| … |}` impl block (a separate root object). Body-bearing entries
-    /// become a [`MacroPair`]; body-optional entries (`TypeName {| … |}`)
-    /// mint no type declaration on the macro path and are dropped here — the
-    /// typed source archive carries their impls. This walk mirrors
-    /// `SourceNamespaceWalk` in `source.rs`; the two must stay in lockstep.
+    /// Segment the declaration-block body into key/value pairs the macro
+    /// lowerer understands. Every entry is one capitalized dotted key: the
+    /// key atom either carries its value inline past the dot (one block) or
+    /// ends at the dot and takes the following block as its value (two
+    /// blocks). This walk mirrors the per-kind entry reader in `source.rs`
+    /// (`SourceKindEntry`); the two must stay in lockstep.
     fn key_value_pairs(&self) -> Result<Vec<MacroPair<'schema>>, SchemaError> {
         let mut pairs = Vec::new();
         let mut walk = NamespaceEntryWalk::new(self.body.root_objects());
         while let Some(entry) = walk.next_entry()? {
-            if let Some(definition) = entry.definition {
-                pairs.push(MacroPair {
-                    name: entry.name,
-                    definition,
-                });
-            }
+            pairs.push(MacroPair {
+                name: entry.name,
+                definition: entry.definition,
+            });
         }
         Ok(pairs)
     }
@@ -871,12 +925,6 @@ impl<'schema> NamespaceBlock<'schema> {
         context: &mut MacroContext,
         declarations: &mut Vec<Declaration>,
     ) -> Result<(), SchemaError> {
-        if object
-            .pair()
-            .is_some_and(|pair| MetadataDefinitionProbe::new(pair.definition).matches())
-        {
-            return Ok(());
-        }
         let inline_start = context.inline_declaration_count();
         match registry.lower(object, MacroPosition::NamespaceDeclaration, context)? {
             MacroOutput::Declaration(declaration) => {
@@ -898,22 +946,21 @@ impl<'schema> NamespaceBlock<'schema> {
     }
 }
 
-/// One segmented namespace entry on the macro path: a head block and an
-/// optional inline body (the `definition`). The trailing `{| … |}` impl
-/// block is recognised and skipped by the walk — the macro lowerer consumes
-/// only the body; the typed source archive (`SourceNamespaceEntry`) is what
-/// carries the impl catalog.
+/// One segmented declaration entry on the macro path: the head block carrying
+/// the dotted key, and the block carrying the value. When the key atom ends at
+/// its dot the value is the following block; when the value stays inline past
+/// the dot the head atom serves as both — the same convention as the
+/// macro-firing walk in `expansion.rs`.
 #[derive(Clone, Copy, Debug)]
 struct NamespaceEntry<'schema> {
     name: &'schema Block,
-    definition: Option<&'schema Block>,
+    definition: &'schema Block,
 }
 
-/// A cursor over a namespace body that segments it into [`NamespaceEntry`]s
-/// using the same head / optional-body / optional-pipe-brace grammar as
-/// `source.rs`'s `SourceNamespaceWalk`. Keeping the two walks identical is
-/// what stops the macro lowering and the typed-source lowering from
-/// diverging.
+/// A cursor over a declaration-block body that segments it into
+/// [`NamespaceEntry`]s using the same dotted-key grammar as the per-kind
+/// entry reader in `source.rs`. Keeping the walks identical is what stops the
+/// macro lowering and the typed-source lowering from diverging.
 #[derive(Clone, Copy, Debug)]
 struct NamespaceEntryWalk<'schema> {
     objects: &'schema [Block],
@@ -929,69 +976,23 @@ impl<'schema> NamespaceEntryWalk<'schema> {
         let Some(head) = self.objects.get(self.cursor) else {
             return Ok(None);
         };
-        if head.is_pipe_brace() {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: "a type name before a {| … |} impl block, not a leading impl block",
-            });
-        }
         self.cursor += 1;
-
-        let definition = match self.objects.get(self.cursor) {
-            Some(next) if !next.is_pipe_brace() => {
-                self.cursor += 1;
-                Some(next)
-            }
-            _ => None,
+        let ends_at_dot = matches!(head, Block::Atom(atom) if atom.text().ends_with('.'));
+        let definition = if ends_at_dot {
+            let Some(next) = self.objects.get(self.cursor) else {
+                return Err(SchemaError::ExpectedDelimiter {
+                    expected: "a declaration value after a trailing-dot key",
+                });
+            };
+            self.cursor += 1;
+            next
+        } else {
+            head
         };
-
-        let has_impls = match self.objects.get(self.cursor) {
-            Some(next) if next.is_pipe_brace() => {
-                self.cursor += 1;
-                true
-            }
-            _ => false,
-        };
-
-        if definition.is_none() && !has_impls {
-            return Err(SchemaError::ExpectedDelimiter {
-                expected: "a namespace entry body or a {| … |} impl block",
-            });
-        }
-
         Ok(Some(NamespaceEntry {
             name: head,
             definition,
         }))
-    }
-}
-
-/// Whether a namespace entry's value is a schema-metadata definition —
-/// a stream or family declaration — rather than a type declaration.
-/// Metadata entries are excluded from namespace type lowering and are
-/// collected through the typed `SchemaSource` reading instead.
-#[derive(Clone, Copy, Debug)]
-struct MetadataDefinitionProbe<'schema> {
-    definition: &'schema Block,
-}
-
-impl<'schema> MetadataDefinitionProbe<'schema> {
-    fn new(definition: &'schema Block) -> Self {
-        Self { definition }
-    }
-
-    fn matches(&self) -> bool {
-        let Block::Delimited {
-            delimiter: Delimiter::Parenthesis,
-            root_objects,
-            ..
-        } = self.definition
-        else {
-            return false;
-        };
-        root_objects
-            .first()
-            .and_then(Block::demote_to_string)
-            .is_some_and(|head| matches!(head, "Stream" | "Family"))
     }
 }
 
@@ -1048,14 +1049,12 @@ impl SchemaMacroHandler for RootEnumMacro {
     }
 }
 
-/// The application-form root `(Head Arg …)` at an Input/Output position. It
-/// lowers through the *same* `TypeReference::from_block_with_registry`
-/// parenthesis decode a field-position application takes, so the head and
-/// arguments resolve identically; the only root-specific addition is the
-/// position name (`Input` / `Output`) the root is identified by, since an
-/// application carries no declaration name of its own. A parenthesis at a
-/// root position that does not decode to an application (a built-in head
-/// like `(Vector T)`, or a collection form) is rejected as a non-root form.
+/// A macro-path application root at an Input/Output position. It lowers
+/// through the same dotted `TypeReference::from_block` reader a field-position
+/// reference takes; the only root-specific addition is the position name
+/// (`Input` / `Output`) the root is identified by, since an application carries
+/// no declaration name of its own. A root position that does not decode to an
+/// application is rejected as a non-root form.
 #[derive(Clone, Copy, Debug)]
 struct RootApplicationBlock<'schema> {
     block: &'schema Block,
@@ -1072,10 +1071,10 @@ impl<'schema> RootApplicationBlock<'schema> {
 
     fn lower(
         &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
+        _registry: &MacroRegistry,
+        _context: &mut MacroContext,
     ) -> Result<RootApplication, SchemaError> {
-        let reference = TypeReference::from_block_with_registry(self.block, registry, context)?;
+        let reference = TypeReference::from_block(self.block)?;
         let TypeReference::Application { head, arguments } = reference else {
             return Err(SchemaError::ExpectedRootApplication {
                 position: self.position_name,

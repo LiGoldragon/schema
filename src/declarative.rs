@@ -4,15 +4,14 @@ use std::{
 };
 
 use nota::{
-    AtomClassification, Block, Delimiter, Document, MacroCandidate, NotaEncode, NotaSource,
-    PositionPredicate, StructuralMacroError, StructuralMacroNode, StructuralVariant,
+    Block, Delimiter, Document, MacroCandidate, NotaEncode, NotaSource, PositionPredicate,
+    StructuralMacroError, StructuralMacroNode, StructuralVariant,
 };
 
 use crate::{
-    ApplicationHead, EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject,
-    MacroOutput, MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, ReferenceHead,
-    SchemaError, SchemaMacroHandler, StreamRelation, StructDeclaration, TypeDeclaration,
-    TypeReference, macros::SchemaBlockExt,
+    EnumDeclaration, EnumVariant, FieldDeclaration, MacroContext, MacroObject, MacroOutput,
+    MacroPair, MacroPosition, MacroRegistry, Name, NewtypeDeclaration, SchemaError,
+    SchemaMacroHandler, StructDeclaration, TypeDeclaration, TypeReference, macros::SchemaBlockExt,
 };
 
 #[derive(
@@ -595,8 +594,8 @@ pub enum MacroTemplate {
     Fields(#[rkyv(omit_bounds)] Vec<MacroTemplateObject>),
     #[shape(head = "Variants", body)]
     Variants(#[rkyv(omit_bounds)] Vec<MacroTemplateObject>),
-    #[shape(head = "Reference", arity = 2)]
-    Reference(#[rkyv(omit_bounds)] MacroTemplateObject),
+    #[shape(head = "Reference", body)]
+    Reference(#[rkyv(omit_bounds)] Vec<MacroTemplateObject>),
 }
 
 impl MacroTemplate {
@@ -641,15 +640,20 @@ impl MacroTemplate {
                 .lower(registry, context)
                 .map(MacroOutput::Variants)
             }
-            Self::Reference(object) => {
-                let expanded = object.expand_single(bindings, "Reference template")?;
+            Self::Reference(objects) => {
+                let mut expanded = Vec::new();
+                for object in objects {
+                    expanded.extend(object.expand_objects(bindings)?);
+                }
                 context.remember_expanded_template(
                     macro_name,
-                    ExpandedNotation::headed("Reference", std::slice::from_ref(&expanded)).text(),
+                    ExpandedNotation::headed("Reference", &expanded).text(),
                 );
-                MacroExpansionReference::new(ObjectView::Expanded(&expanded))
-                    .lower(registry, context)
-                    .map(MacroOutput::Reference)
+                MacroExpansionReference::from_objects(
+                    expanded.iter().map(ObjectView::Expanded).collect(),
+                )
+                .lower(registry, context)
+                .map(MacroOutput::Reference)
             }
         }
     }
@@ -750,8 +754,7 @@ impl TypeTemplate {
                         reference.compact_notation()
                     ),
                 );
-                let reference =
-                    ObjectView::Expanded(&reference).type_reference(registry, context)?;
+                let reference = ObjectView::Expanded(&reference).type_reference()?;
                 Ok(TypeDeclaration::Newtype(NewtypeDeclaration::new(
                     name, reference,
                 )))
@@ -1003,8 +1006,6 @@ pub enum MacroDelimiter {
     Parenthesis,
     SquareBracket,
     Brace,
-    PipeParenthesis,
-    PipeBrace,
 }
 
 impl MacroDelimiter {
@@ -1013,8 +1014,6 @@ impl MacroDelimiter {
             Delimiter::Parenthesis => Self::Parenthesis,
             Delimiter::SquareBracket => Self::SquareBracket,
             Delimiter::Brace => Self::Brace,
-            Delimiter::PipeParenthesis => Self::PipeParenthesis,
-            Delimiter::PipeBrace => Self::PipeBrace,
         }
     }
 
@@ -1023,8 +1022,6 @@ impl MacroDelimiter {
             Self::Parenthesis => Delimiter::Parenthesis,
             Self::SquareBracket => Delimiter::SquareBracket,
             Self::Brace => Delimiter::Brace,
-            Self::PipeParenthesis => Delimiter::PipeParenthesis,
-            Self::PipeBrace => Delimiter::PipeBrace,
         }
     }
 }
@@ -1321,11 +1318,6 @@ impl<'object> ObjectView<'object> {
         self.delimited_children(Delimiter::Parenthesis).is_some()
     }
 
-    fn parenthesized_children(&self, expected: &'static str) -> Result<Vec<Self>, SchemaError> {
-        self.delimited_children(Delimiter::Parenthesis)
-            .ok_or(SchemaError::ExpectedDelimiter { expected })
-    }
-
     fn holds_root_objects(&self) -> usize {
         match self {
             Self::Block(block) => block.holds_root_objects(),
@@ -1378,14 +1370,17 @@ impl<'object> ObjectView<'object> {
         }
     }
 
-    fn type_reference(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
+    fn compact_notation(&self) -> String {
         match self {
-            Self::Block(block) => TypeReference::from_block_with_registry(block, registry, context),
-            Self::Expanded(object) => object.type_reference(registry, context),
+            Self::Block(block) => NotationBlock::new(block).compact_notation(),
+            Self::Expanded(object) => object.compact_notation(),
+        }
+    }
+
+    fn type_reference(&self) -> Result<TypeReference, SchemaError> {
+        match self {
+            Self::Block(block) => TypeReference::from_block(block),
+            Self::Expanded(object) => object.type_reference(),
         }
     }
 }
@@ -1470,7 +1465,7 @@ impl ExpandedObject {
         match self {
             Self::Captured(block) => block.qualifies_as_pascal_case_symbol(),
             Self::Atom(text) => {
-                AtomClassification::classify(text) == AtomClassification::SymbolCandidate
+                Name::new(text.as_str()).qualifies_as_symbol_name()
                     && text
                         .chars()
                         .next()
@@ -1481,20 +1476,14 @@ impl ExpandedObject {
         }
     }
 
-    fn type_reference(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
+    fn type_reference(&self) -> Result<TypeReference, SchemaError> {
         match self {
-            Self::Captured(block) => {
-                TypeReference::from_block_with_registry(block, registry, context)
-            }
-            Self::Atom(_) => Ok(TypeReference::from_name(self.schema_name()?)),
+            Self::Captured(block) => TypeReference::from_block(block),
+            Self::Atom(_) => ExpandedReference::new(std::slice::from_ref(self)).type_reference(),
             Self::Delimited {
                 delimiter: Delimiter::Parenthesis,
                 children,
-            } => ExpandedReference::new(children).type_reference(registry, context),
+            } => ExpandedReference::new(children).type_reference(),
             Self::Delimited {
                 delimiter: Delimiter::SquareBracket,
                 children,
@@ -1509,14 +1498,6 @@ impl ExpandedObject {
                 head: "Brace".to_owned(),
                 argument_count: children.len(),
             }),
-            Self::Delimited {
-                delimiter: Delimiter::PipeBrace,
-                children,
-            } => ExpandedReference::new(children).inline_struct(registry, context),
-            Self::Delimited {
-                delimiter: Delimiter::PipeParenthesis,
-                children,
-            } => ExpandedReference::new(children).inline_enum(registry, context),
         }
     }
 }
@@ -1531,150 +1512,16 @@ impl<'object> ExpandedReference<'object> {
         Self { children }
     }
 
-    /// Lower a parenthesised reference over the post-expansion
-    /// [`ExpandedObject`] tree. This mirrors the `Block`-path dispatch order
-    /// in `TypeReference::resolve_parenthesis_reference` (which schema-cc now
-    /// generates from the canonical reference grammar) over a different input
-    /// type — `ExpandedObject` is schema's own template-expansion
-    /// representation, not a nota `Block`, so it cannot share the
-    /// `StructuralMacroNode` decode directly; the canonical-head fast path
-    /// and the application fallback are kept in lockstep by hand. The dropped
-    /// aliases (`Vec`, `Option`, `Scope`, `KeyValue`) no longer parse.
-    fn type_reference(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
-        if let Some(head) = self
-            .children
-            .first()
-            .and_then(ExpandedObject::demote_to_string)
-        {
-            match (head, self.children.len()) {
-                ("Vector", 2) => {
-                    return Ok(TypeReference::Vector(Box::new(
-                        self.children[1].type_reference(registry, context)?,
-                    )));
-                }
-                ("Optional", 2) => {
-                    return Ok(TypeReference::Optional(Box::new(
-                        self.children[1].type_reference(registry, context)?,
-                    )));
-                }
-                ("ScopeOf", 2) => {
-                    return Ok(TypeReference::ScopeOf(Box::new(
-                        self.children[1].type_reference(registry, context)?,
-                    )));
-                }
-                ("Map", 3) => {
-                    return Ok(TypeReference::Map(
-                        Box::new(self.children[1].type_reference(registry, context)?),
-                        Box::new(self.children[2].type_reference(registry, context)?),
-                    ));
-                }
-                ("Bytes", 2) => {
-                    if let Some(width) = self.children[1]
-                        .demote_to_string()
-                        .and_then(|text| text.parse::<u64>().ok())
-                    {
-                        return Ok(TypeReference::FixedBytes(width));
-                    }
-                }
-                (head, found) if ReferenceHead::classify(head).is_some() => {
-                    return Err(SchemaError::UnknownTypeReferenceForm {
-                        head: head.to_owned(),
-                        argument_count: found.saturating_sub(1),
-                    });
-                }
-                _ => {}
-            }
-        }
-        self.application(registry, context)
-    }
-
-    /// The application fallback for the expanded-object path: a PascalCase
-    /// head followed by zero or more type-reference arguments lowers to
-    /// `TypeReference::Application`. Any head that is not a PascalCase symbol
-    /// is not an application and is reported as an unknown reference form.
-    fn application(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
-        let Some(head) = self.children.first() else {
-            return Err(SchemaError::EmptyTypeReference);
-        };
-        if !head.qualifies_as_pascal_case_symbol() {
-            return Err(SchemaError::UnknownTypeReferenceForm {
-                head: head.demote_to_string().unwrap_or("<missing>").to_owned(),
-                argument_count: self.children.len().saturating_sub(1),
-            });
-        }
-        let head = head.schema_name()?;
-        let arguments = self.children[1..]
-            .iter()
-            .map(|argument| argument.type_reference(registry, context))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(TypeReference::Application {
-            head: ApplicationHead::Local(head),
-            arguments,
-        })
-    }
-
-    fn inline_struct(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
-        let name = self.inline_declaration_name("inline struct declaration")?;
-        let fields = MacroExpansionFields::from_objects(
-            self.children[1..]
-                .iter()
-                .map(ObjectView::Expanded)
-                .collect(),
+    /// Lower a grouped post-expansion source-reference sequence through the
+    /// same dotted reader used by authored schema source. The grouping exists
+    /// only so a macro template can keep a trailing-dot head and its capture
+    /// payload together; `(Vector $Type)` remains invalid because the sequence
+    /// is parsed as ordinary dotted source, not as a parenthesized resolver.
+    fn type_reference(&self) -> Result<TypeReference, SchemaError> {
+        MacroExpansionReference::from_objects(
+            self.children.iter().map(ObjectView::Expanded).collect(),
         )
-        .lower(registry, context)?;
-        if fields.len() == 1 {
-            let reference = fields.into_iter().next().expect("length checked").reference;
-            context.remember_inline_declaration(crate::Declaration::private(
-                TypeDeclaration::Newtype(NewtypeDeclaration::new(name.clone(), reference)),
-            ));
-        } else {
-            context.remember_inline_declaration(crate::Declaration::private(
-                TypeDeclaration::Struct(StructDeclaration::new(name.clone(), fields)),
-            ));
-        }
-        Ok(TypeReference::Plain(name))
-    }
-
-    fn inline_enum(
-        &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
-        let name = self.inline_declaration_name("inline enum declaration")?;
-        let variants = MacroExpansionVariants::from_objects(
-            self.children[1..]
-                .iter()
-                .map(ObjectView::Expanded)
-                .collect(),
-        )
-        .lower(registry, context)?;
-        context.remember_inline_declaration(crate::Declaration::private(TypeDeclaration::Enum(
-            EnumDeclaration::new(name.clone(), variants),
-        )));
-        Ok(TypeReference::Plain(name))
-    }
-
-    fn inline_declaration_name(&self, form: &'static str) -> Result<Name, SchemaError> {
-        let Some(name) = self.children.first() else {
-            return Err(SchemaError::ExpectedSyntaxReferenceArity {
-                form,
-                expected: "declaration name plus body",
-                found: 0,
-            });
-        };
-        ObjectView::Expanded(name).schema_name()
+        .lower_source()
     }
 }
 
@@ -1724,12 +1571,6 @@ impl<'template> MacroExpansionStructBody<'template> {
 }
 
 impl<'template> MacroExpansionFields<'template> {
-    pub(crate) fn new(objects: &'template [Block]) -> Self {
-        Self {
-            objects: objects.iter().map(ObjectView::Block).collect(),
-        }
-    }
-
     fn from_objects(objects: Vec<ObjectView<'template>>) -> Self {
         Self { objects }
     }
@@ -1759,6 +1600,10 @@ impl<'template> MacroExpansionFields<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<Option<FieldDeclaration>, SchemaError> {
+        // The macro field/variant lowering tree threads a uniform
+        // `(registry, context)` lowering context; this arm no longer consumes
+        // it since the retired pipe inline-declaration path was its only user.
+        let _ = (registry, context);
         let object = self.objects[*index];
         let Some(text) = object.demote_to_string() else {
             return Ok(None);
@@ -1781,7 +1626,7 @@ impl<'template> MacroExpansionFields<'template> {
         *index += 2;
         MacroExpansionField::explicit_reference_field(
             field_name,
-            reference_object.type_reference(registry, context)?,
+            reference_object.type_reference()?,
         )
         .map(Some)
     }
@@ -1792,10 +1637,10 @@ impl<'template> MacroExpansionFields<'template> {
 /// Strict struct bodies are positional lists. A bare PascalCase type
 /// derives the field name from the referenced type. `field.Type` is the
 /// explicit differentiator when a field role should not be derived from
-/// the referenced type. Native NOTA type-reference objects can also sit
-/// directly in a field position: `(Vector Topic)`, `(Map Topic
-/// RecordIdentifier)`, and `(Optional Topic)` lower to vector, map, and
-/// optional references with names derived from the reference shape.
+/// the referenced type. Composite references use the same dotted source reader
+/// as authored schema: `Vector.Topic`, `Map.(Topic RecordIdentifier)`, and
+/// `Optional.Topic` lower to vector, map, and optional references with names
+/// derived from the reference shape.
 #[derive(Clone, Copy, Debug)]
 struct MacroExpansionField<'template> {
     object: ObjectView<'template>,
@@ -1824,9 +1669,9 @@ impl<'template> MacroExpansionField<'template> {
             return Ok(field);
         }
         if self.object.demote_to_string().is_none() {
-            let reference = self.object.type_reference(registry, context)?;
+            let reference = self.object.type_reference()?;
             return Ok(FieldDeclaration {
-                name: Self::derived_name_for_reference(&reference),
+                name: reference.derived_field_name(),
                 reference,
             });
         }
@@ -1845,7 +1690,7 @@ impl<'template> MacroExpansionField<'template> {
             });
         }
         let name = self.object.schema_name()?;
-        if Self::is_reserved_scalar_name(&name) {
+        if TypeReference::is_reserved_scalar_name(&name) {
             return Err(SchemaError::RetiredStructFieldSyntax {
                 found: name.to_nota(),
             });
@@ -1875,7 +1720,8 @@ impl<'template> MacroExpansionField<'template> {
                 found: format!("{field_name}.{type_name}"),
             });
         }
-        if name.field_name() == reference.field_name() && !Self::is_reserved_scalar_name(&reference)
+        if name.field_name() == reference.field_name()
+            && !TypeReference::is_reserved_scalar_name(&reference)
         {
             return Err(SchemaError::RedundantExplicitFieldRole {
                 found: format!("{field_name}.{type_name}"),
@@ -1898,7 +1744,7 @@ impl<'template> MacroExpansionField<'template> {
                 found: format!("{field_name}.<reference>"),
             });
         }
-        let derived = Self::derived_name_for_reference(&reference);
+        let derived = reference.derived_field_name();
         if name.field_name() == derived.as_str() {
             return Err(SchemaError::RedundantExplicitFieldRole {
                 found: format!("{field_name}.<reference>"),
@@ -1930,11 +1776,8 @@ impl<'template> MacroExpansionField<'template> {
         {
             return Ok(None);
         }
-        let name = name_object.schema_name()?;
-        if ReferenceHead::classify(name.as_str()).is_some() {
-            return Ok(None);
-        }
         let _ = (registry, context, reference_object);
+        let _name = name_object.schema_name()?;
         Err(SchemaError::RetiredStructFieldSyntax {
             found: self
                 .object
@@ -1956,49 +1799,6 @@ impl<'template> MacroExpansionField<'template> {
                         .next()
                         .is_some_and(|character| character.is_ascii_lowercase())
                 })
-    }
-
-    fn is_reserved_scalar_name(name: &Name) -> bool {
-        matches!(
-            name.as_str(),
-            "String" | "Integer" | "Boolean" | "Path" | "Bytes"
-        )
-    }
-
-    fn derived_name_for_reference(reference: &TypeReference) -> Name {
-        match reference {
-            TypeReference::String => Name::new("string"),
-            TypeReference::Integer => Name::new("integer"),
-            TypeReference::Boolean => Name::new("boolean"),
-            TypeReference::Path => Name::new("path"),
-            TypeReference::Bytes => Name::new("bytes"),
-            TypeReference::FixedBytes(_) => Name::new("bytes"),
-            TypeReference::Plain(name) => Name::new(name.field_name()),
-            TypeReference::Vector(inner) => Name::new(format!(
-                "{}_vector",
-                Self::derived_name_for_reference(inner)
-            )),
-            TypeReference::Map(key, value) => Name::new(format!(
-                "{}_by_{}",
-                Self::derived_name_for_reference(value),
-                Self::derived_name_for_reference(key)
-            )),
-            TypeReference::Optional(inner) => Name::new(format!(
-                "optional_{}",
-                Self::derived_name_for_reference(inner)
-            )),
-            TypeReference::ScopeOf(inner) => {
-                Name::new(format!("{}_scope", Self::derived_name_for_reference(inner)))
-            }
-            TypeReference::Application { head, arguments } => {
-                let mut derived = Name::new(head.name().field_name()).as_str().to_owned();
-                for argument in arguments {
-                    derived.push('_');
-                    derived.push_str(Self::derived_name_for_reference(argument).as_str());
-                }
-                Name::new(derived)
-            }
-        }
     }
 }
 
@@ -2059,6 +1859,9 @@ impl<'template> MacroExpansionVariant<'template> {
         registry: &MacroRegistry,
         context: &mut MacroContext,
     ) -> Result<EnumVariant, SchemaError> {
+        // Uniform `(registry, context)` lowering context, unused here after the
+        // retired pipe inline-declaration path was removed.
+        let _ = (registry, context);
         match self.object.holds_root_objects() {
             1 => {
                 let name = self
@@ -2080,107 +1883,53 @@ impl<'template> MacroExpansionVariant<'template> {
                     self.object
                         .root_object_at(1)
                         .expect("count checked")
-                        .type_reference(registry, context)?,
+                        .type_reference()?,
                 ),
             )),
-            4 => {
-                let variant = EnumVariant::new(
-                    self.object
-                        .root_object_at(0)
-                        .expect("count checked")
-                        .schema_name()?,
-                    Some(
-                        self.object
-                            .root_object_at(1)
-                            .expect("count checked")
-                            .type_reference(registry, context)?,
-                    ),
-                );
-                let relation = StreamRelationObject::new(self.object).relation()?;
-                Ok(variant.with_stream_relation(relation))
-            }
             _ => Err(SchemaError::ExpectedEnumVariant),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct StreamRelationObject<'template> {
-    object: ObjectView<'template>,
-}
-
-impl<'template> StreamRelationObject<'template> {
-    fn new(object: ObjectView<'template>) -> Self {
-        Self { object }
-    }
-
-    fn relation(&self) -> Result<StreamRelation, SchemaError> {
-        let keyword = self
-            .object
-            .root_object_at(2)
-            .expect("count checked")
-            .demote_to_string()
-            .ok_or(SchemaError::ExpectedEnumVariant)?;
-        let stream_name = self
-            .object
-            .root_object_at(3)
-            .expect("count checked")
-            .schema_name()?;
-        match keyword {
-            "opens" => Ok(StreamRelation::Opens(stream_name)),
-            "belongs" => Ok(StreamRelation::Belongs(stream_name)),
-            _ => Err(SchemaError::ExpectedEnumVariant),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct MacroExpansionReference<'template> {
-    object: ObjectView<'template>,
+    objects: Vec<ObjectView<'template>>,
 }
 
 impl<'template> MacroExpansionReference<'template> {
-    fn new(object: ObjectView<'template>) -> Self {
-        Self { object }
+    fn from_objects(objects: Vec<ObjectView<'template>>) -> Self {
+        Self { objects }
     }
 
     fn lower(
         &self,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
+        _registry: &MacroRegistry,
+        _context: &mut MacroContext,
     ) -> Result<TypeReference, SchemaError> {
-        Self::lower_object(self.object, registry, context)
+        self.lower_source()
     }
 
-    fn lower_object(
-        object: ObjectView<'template>,
-        registry: &MacroRegistry,
-        context: &mut MacroContext,
-    ) -> Result<TypeReference, SchemaError> {
-        if !object.is_parenthesis() {
-            return object.type_reference(registry, context);
+    fn lower_source(&self) -> Result<TypeReference, SchemaError> {
+        let document = Document::parse(self.source_text())?;
+        let mut cursor = 0;
+        let reference =
+            crate::SourceReference::from_blocks_at(document.root_objects(), &mut cursor)?;
+        if cursor == document.root_objects().len() {
+            Ok(reference.to_type_reference())
+        } else {
+            Err(SchemaError::ExpectedRootObjectCount {
+                expected: "one dotted type-reference template",
+                found: document.root_objects().len(),
+            })
         }
-        let children = object.parenthesized_children("macro expansion reference")?;
-        let head = children
-            .first()
-            .ok_or(SchemaError::EmptyTypeReference)?
-            .schema_name()?;
-        match head.as_str() {
-            "Vector" if children.len() == 2 => Ok(TypeReference::Vector(Box::new(
-                Self::lower_object(children[1], registry, context)?,
-            ))),
-            "Optional" if children.len() == 2 => Ok(TypeReference::Optional(Box::new(
-                Self::lower_object(children[1], registry, context)?,
-            ))),
-            "ScopeOf" if children.len() == 2 => Ok(TypeReference::ScopeOf(Box::new(
-                Self::lower_object(children[1], registry, context)?,
-            ))),
-            "Map" if children.len() == 3 => Ok(TypeReference::Map(
-                Box::new(Self::lower_object(children[1], registry, context)?),
-                Box::new(Self::lower_object(children[2], registry, context)?),
-            )),
-            _ => object.type_reference(registry, context),
-        }
+    }
+
+    fn source_text(&self) -> String {
+        self.objects
+            .iter()
+            .map(ObjectView::compact_notation)
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -2234,8 +1983,6 @@ impl DelimitedNotation {
             Delimiter::Parenthesis => "(",
             Delimiter::SquareBracket => "[",
             Delimiter::Brace => "{",
-            Delimiter::PipeParenthesis => "(|",
-            Delimiter::PipeBrace => "{|",
         }
     }
 
@@ -2244,8 +1991,6 @@ impl DelimitedNotation {
             Delimiter::Parenthesis => ")",
             Delimiter::SquareBracket => "]",
             Delimiter::Brace => "}",
-            Delimiter::PipeParenthesis => "|)",
-            Delimiter::PipeBrace => "|}",
         }
     }
 }

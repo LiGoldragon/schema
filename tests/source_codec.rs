@@ -1,9 +1,9 @@
 use std::fs;
 
 use schema::{
-    Name, RelationDeclaration, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact,
-    SourceDeclaration, SourceDeclarationValue, SourceDeclarations, SourceField, SourceReference,
-    SourceStructBody, SourceVariantSignature, TypeDeclaration, TypeReference,
+    Name, SchemaEngine, SchemaError, SchemaIdentity, SchemaSourceArtifact, SourceDeclaration,
+    SourceDeclarationValue, SourceDeclarations, SourceField, SourceReference, SourceStructBody,
+    SourceVariantSignature, TypeDeclaration, TypeReference,
 };
 
 fn source_codec_fixture(name: &str) -> String {
@@ -27,7 +27,7 @@ fn schema_source_artifact_round_trips_module_source_text() {
         "canonical schema source text should recover the same source object"
     );
     assert_eq!(
-        "{}\n[Record Observe]\n[RecordAccepted RecordsObserved]\n{\n  Record Entry\n  Observe Query\n  RecordAccepted RecordIdentifier\n  RecordsObserved RecordSet\n  Topic String\n  Topics (Vector Topic)\n  Description String\n  RecordIdentifier Integer\n  Entry { Topics Kind Description Magnitude }\n  Query { Topic Kind }\n  RecordSet (Vector Entry)\n  Kind [Decision Principle Correction Clarification Constraint]\n  Magnitude [Minimum VeryLow Low Medium High VeryHigh Maximum]\n}",
+        source.trim_end(),
         canonical,
         "source codec should write one canonical schema source surface"
     );
@@ -57,13 +57,11 @@ fn schema_source_lowers_through_engine_schema_source_endpoint() {
 
 #[test]
 fn reheaded_source_declarations_round_trip_help_forms() {
-    let declarations = SourceDeclarations::from_schema_text(
-        "(Record { Entry Justification })\n(IntentEventStream (Stream { token.SubscriptionToken opened.SubscriptionStarted event.IntentEvent close.SubscriptionToken }))",
-    )
-    .expect("help declaration document decodes");
+    let declarations = SourceDeclarations::from_schema_text("(Record { Entry Justification })")
+        .expect("help declaration document decodes");
     assert_eq!(
         declarations.to_schema_text(),
-        "(Record { Entry Justification })\n(IntentEventStream (Stream { token.SubscriptionToken opened.SubscriptionStarted event.IntentEvent close.SubscriptionToken }))"
+        "(Record { Entry Justification })"
     );
 
     let record = SourceDeclaration::new(
@@ -84,9 +82,11 @@ fn reheaded_source_declarations_round_trip_help_forms() {
     );
     let domains = SourceDeclaration::new(
         Name::new("Domains"),
-        Some(SourceDeclarationValue::Reference(SourceReference::Vector(
-            Box::new(SourceReference::Plain(Name::new("Domain"))),
-        ))),
+        Some(SourceDeclarationValue::Reference(
+            SourceReference::from_type_reference(&TypeReference::vector(TypeReference::new(
+                "Domain",
+            ))),
+        )),
     );
     let version = SourceDeclaration::new(Name::new("Version"), None);
     let encoded = SourceDeclarations::new(vec![record, kind, domains, version]).to_schema_text();
@@ -96,7 +96,7 @@ fn reheaded_source_declarations_round_trip_help_forms() {
     assert_eq!(decoded.to_schema_text(), encoded);
     assert_eq!(
         encoded,
-        "(Record { Entry Justification })\n(Kind [Decision Principle])\n(Domains (Vector Domain))\n(Version)"
+        "(Record { Entry Justification })\n(Kind [Decision Principle])\n(Domains Vector.Domain)\n(Version)"
     );
 }
 
@@ -129,7 +129,7 @@ fn schema_source_reference_fields_lower_to_canonical_field_names() {
 
 #[test]
 fn schema_source_explicit_structural_fields_round_trip() {
-    let source = "{}\n[]\n[]\n{\n  Topic String\n  Query { Topics.(Vector Topic) Limit.(Optional Integer) }\n}";
+    let source = "{}\n[]\n[]\n{\n  Topic.String\n  Query.{ Topics.Vector.Topic Limit.Optional.Integer }\n}\n{}\n{}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
     let canonical = artifact.to_schema_text();
     let recovered = SchemaSourceArtifact::from_schema_text(&canonical)
@@ -147,7 +147,7 @@ fn schema_source_explicit_structural_fields_round_trip() {
 
     assert_eq!(
         canonical,
-        "{}\n[]\n[]\n{\n  Topic String\n  Query { Topics.(Vector Topic) Limit.(Optional Integer) }\n}"
+        "{}\n[]\n[]\n{\n  Topic.String\n  Query.{ Topics.Vector.Topic Limit.Optional.Integer }\n}\n{}\n{}"
     );
     assert_eq!(query.fields[0].name.as_str(), "topics");
     assert_eq!(query.fields[1].name.as_str(), "limit");
@@ -155,7 +155,7 @@ fn schema_source_explicit_structural_fields_round_trip() {
 
 #[test]
 fn schema_source_exposes_one_level_help_projection_inputs() {
-    let source = "{}\n[(Record { Entry Justification })]\n[RecordAccepted]\n{\n  Entry { Domains Kind Description }\n  Domains (Vector Domain)\n  Description String\n  Kind [Decision Principle]\n  RecordIdentifier String\n}";
+    let source = "{}\n[(Record { Entry Justification })]\n[RecordAccepted]\n{\n  Entry.{ Domains Kind Description }\n  Domains.Vector.Domain\n  Description.String\n  Kind.[Decision Principle]\n  RecordIdentifier.String\n}\n{}\n{}";
     let artifact = SchemaSourceArtifact::from_schema_text(source).expect("schema source decodes");
     let input = artifact
         .source()
@@ -178,17 +178,17 @@ fn schema_source_exposes_one_level_help_projection_inputs() {
 
     assert_eq!(field_text, vec!["*", "*"]);
 
-    let namespace = artifact.source().namespace();
-    let domains = namespace
+    let types = artifact.source().types();
+    let domains = types
         .entries()
         .iter()
         .find(|entry| entry.name().as_str() == "Domains")
         .expect("Domains declaration");
-    let Some(schema::SourceDeclarationValue::Reference(reference)) = domains.value() else {
+    let schema::SourceDeclarationValue::Reference(reference) = domains.value() else {
         panic!("Domains should expose its reference body");
     };
 
-    assert_eq!(reference.to_schema_text(), "(Vector Domain)");
+    assert_eq!(reference.to_schema_text(), "Vector.Domain");
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn nested_namespace_router_envelope_round_trips_and_lowers() {
     );
     assert!(
         canonical.contains(
-            "Envelope { Destination Contract Operation Exchange PayloadSize PayloadOctets }"
+            "Envelope.{ Destination Contract Operation Exchange PayloadSize PayloadOctets }"
         ),
         "canonical source keeps the envelope fields positional and bare"
     );
@@ -244,22 +244,20 @@ fn nested_namespace_router_envelope_round_trips_and_lowers() {
         .expect("canonical nested namespace source lowers");
 
     assert_eq!(
-        schema.content_hash(),
-        schema_from_canonical.content_hash(),
-        "source projection details must not move semantic content identity"
+        schema.core_hash(),
+        schema_from_canonical.core_hash(),
+        "source projection details must not move the core structural identity"
     );
     assert!(
-        schema.type_named("router:routed_object:Envelope").is_some(),
-        "nested Envelope should flatten to a fully qualified schema type"
+        schema.type_named("Envelope").is_some(),
+        "the flattened Envelope is an ordinary top-level schema type"
     );
     assert!(
-        schema.type_named("Envelope").is_none(),
-        "nested local names must not leak into the top-level type namespace"
+        schema.type_named("router:routed_object:Envelope").is_none(),
+        "the retired nested sub-namespace name must not survive flattening"
     );
 
-    let Some(TypeDeclaration::Struct(envelope)) =
-        schema.type_named("router:routed_object:Envelope")
-    else {
+    let Some(TypeDeclaration::Struct(envelope)) = schema.type_named("Envelope") else {
         panic!("router envelope should lower to a struct");
     };
     assert_eq!(
@@ -285,25 +283,23 @@ fn nested_namespace_router_envelope_round_trips_and_lowers() {
             .map(|field| &field.reference)
             .collect::<Vec<_>>(),
         vec![
-            &TypeReference::Plain(schema::Name::new("router:routed_object:Destination")),
-            &TypeReference::Plain(schema::Name::new("router:routed_object:Contract")),
-            &TypeReference::Plain(schema::Name::new("router:routed_object:Operation")),
-            &TypeReference::Plain(schema::Name::new("router:routed_object:Exchange")),
-            &TypeReference::Plain(schema::Name::new("router:routed_object:PayloadSize")),
-            &TypeReference::Plain(schema::Name::new("router:routed_object:PayloadOctets")),
+            &TypeReference::Plain(schema::Name::new("Destination")),
+            &TypeReference::Plain(schema::Name::new("Contract")),
+            &TypeReference::Plain(schema::Name::new("Operation")),
+            &TypeReference::Plain(schema::Name::new("Exchange")),
+            &TypeReference::Plain(schema::Name::new("PayloadSize")),
+            &TypeReference::Plain(schema::Name::new("PayloadOctets")),
         ],
-        "local field types resolve to fully qualified semantic references"
+        "flattened field types resolve to plain top-level semantic references"
     );
 
-    let Some(TypeDeclaration::Newtype(destination)) =
-        schema.type_named("router:routed_object:Destination")
-    else {
-        panic!("Destination should lower to a namespaced newtype");
+    let Some(TypeDeclaration::Newtype(destination)) = schema.type_named("Destination") else {
+        panic!("Destination should lower to a top-level newtype");
     };
     assert_eq!(
         destination.reference,
         TypeReference::Plain(schema::Name::new("ActorIdentifier")),
-        "namespaced declarations can still reference top-level shared types"
+        "flattened declarations still reference top-level shared types"
     );
 }
 
@@ -353,12 +349,12 @@ fn namespace_inline_enum_variant_declarations_are_public_payload_types() {
             .map(|declaration| (declaration.name().as_str(), declaration.visibility()))
             .collect::<Vec<_>>(),
         vec![
-            ("Craft", schema::Visibility::Public),
-            ("Information", schema::Visibility::Public),
             ("Domain", schema::Visibility::Public),
+            ("CraftLeaf", schema::Visibility::Public),
+            ("InformationLeaf", schema::Visibility::Public),
             ("Entry", schema::Visibility::Public),
         ],
-        "inline enum variants exposed through a public namespace enum must be public payload types"
+        "distinct enum-variant payload types exposed through a public namespace enum must be public payload types"
     );
     let Some(TypeDeclaration::Enum(domain)) = schema.type_named("Domain") else {
         panic!("Domain should lower to an enum");
@@ -379,14 +375,14 @@ fn namespace_inline_enum_variant_declarations_are_public_payload_types() {
             })
             .collect::<Vec<_>>(),
         vec![
-            ("Craft", Some("Craft")),
-            ("Information", Some("Information"))
+            ("Craft", Some("CraftLeaf")),
+            ("Information", Some("InformationLeaf"))
         ]
     );
 }
 
 #[test]
-fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
+fn root_header_explicit_names_resolve_to_exported_namespace_payloads() {
     let source = source_codec_fixture("root-header-bare-names");
     let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
     let schema = artifact
@@ -397,10 +393,8 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
         )
         .expect("schema source lowers");
 
-    let input = schema
-        .input()
-        .as_enum()
-        .expect("input is the enum-body form");
+    let input_root = schema.input();
+    let input = input_root.as_enum().expect("input is the enum-body form");
     assert_eq!(input.variants[0].name.as_str(), "Lookup");
     assert_eq!(
         input.variants[0]
@@ -408,7 +402,7 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
             .as_ref()
             .and_then(schema::TypeReference::plain_name)
             .map(schema::Name::as_str),
-        Some("Lookup")
+        Some("RecordIdentifier")
     );
     assert_eq!(input.variants[1].name.as_str(), "Count");
     assert_eq!(
@@ -417,14 +411,14 @@ fn root_header_bare_names_resolve_to_exported_namespace_payloads() {
             .as_ref()
             .and_then(schema::TypeReference::plain_name)
             .map(schema::Name::as_str),
-        Some("Count")
+        Some("Query")
     );
     assert!(
         schema.type_named("Lookup").is_some(),
         "root header should resolve through the exported namespace object"
     );
     let Some(TypeDeclaration::Newtype(lookup)) = schema.type_named("Lookup") else {
-        panic!("bare namespace binding should lower to a newtype");
+        panic!("namespace binding should lower to a newtype");
     };
     assert_eq!(
         lookup.reference.plain_name().map(schema::Name::as_str),
@@ -445,12 +439,12 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
         .expect("schema source lowers");
 
     assert!(
-        schema.type_named("Lookup").is_some(),
-        "inline root declaration should enter the exported namespace"
+        schema.type_named("LookupPayload").is_some(),
+        "root payload declaration should enter the exported namespace"
     );
     assert!(
-        schema.type_named("Count").is_some(),
-        "second inline root declaration should enter the exported namespace"
+        schema.type_named("CountPayload").is_some(),
+        "second root payload declaration should enter the exported namespace"
     );
     assert_eq!(
         schema
@@ -462,7 +456,7 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
             .as_ref()
             .and_then(schema::TypeReference::plain_name)
             .map(schema::Name::as_str),
-        Some("Lookup")
+        Some("LookupPayload")
     );
     assert_eq!(
         schema
@@ -474,8 +468,8 @@ fn root_header_inline_declarations_are_exported_namespace_payloads() {
             ("RecordIdentifier", schema::Visibility::Public),
             ("Query", schema::Visibility::Public),
             ("Topic", schema::Visibility::Public),
-            ("Lookup", schema::Visibility::Public),
-            ("Count", schema::Visibility::Public),
+            ("LookupPayload", schema::Visibility::Public),
+            ("CountPayload", schema::Visibility::Public),
         ]
     );
 }
@@ -501,15 +495,15 @@ fn root_payload_field_declarations_are_exported_namespace_types() {
         vec![
             ("Topic", schema::Visibility::Public),
             ("Description", schema::Visibility::Public),
-            ("Record", schema::Visibility::Public),
+            ("RecordPayload", schema::Visibility::Public),
         ]
     );
     let Some(TypeDeclaration::Newtype(topic)) = schema.type_named("Topic") else {
         panic!("Topic should lower to a public newtype");
     };
     assert_eq!(topic.reference, schema::TypeReference::String);
-    let Some(TypeDeclaration::Struct(record)) = schema.type_named("Record") else {
-        panic!("Record should lower to a public struct");
+    let Some(TypeDeclaration::Struct(record)) = schema.type_named("RecordPayload") else {
+        panic!("RecordPayload should lower to a public struct");
     };
     assert_eq!(
         record
@@ -550,14 +544,14 @@ fn later_inline_payloads_resolve_root_payload_field_declarations() {
         vec![
             ("Topic", schema::Visibility::Public),
             ("Description", schema::Visibility::Public),
-            ("Record", schema::Visibility::Public),
-            ("ByTopic", schema::Visibility::Private),
-            ("ByDescription", schema::Visibility::Private),
-            ("Select", schema::Visibility::Public),
+            ("RecordPayload", schema::Visibility::Public),
+            ("ByTopicPayload", schema::Visibility::Public),
+            ("ByDescriptionPayload", schema::Visibility::Public),
+            ("SelectPayload", schema::Visibility::Public),
         ]
     );
-    let Some(TypeDeclaration::Newtype(by_topic)) = schema.type_named("ByTopic") else {
-        panic!("ByTopic should lower to a private newtype helper");
+    let Some(TypeDeclaration::Newtype(by_topic)) = schema.type_named("ByTopicPayload") else {
+        panic!("ByTopicPayload should lower to a public newtype helper");
     };
     assert_eq!(
         by_topic.reference.plain_name().map(schema::Name::as_str),
@@ -593,11 +587,7 @@ fn duplicate_inline_and_namespace_declarations_are_errors() {
         .expect_err("retired inline pair syntax should fail before lowering");
 
     assert!(
-        matches!(
-            error,
-            SchemaError::MalformedSchemaNode { ref found }
-                if found.contains("retired struct field syntax topic")
-        ),
+        matches!(error, SchemaError::RetiredStructFieldSyntax { ref found } if found == "topic"),
         "got {error:?}"
     );
 }
@@ -625,7 +615,7 @@ fn duplicate_inline_declarations_are_errors() {
 
 #[test]
 fn redundant_dot_field_roles_are_errors() {
-    let source = "{}\n[]\n[]\n{\n  Topic String\n  Entry { topic.Topic }\n}";
+    let source = "{}\n[]\n[]\n{\n  Topic.String\n  Entry.{ topic.Topic }\n}\n{}\n{}";
     let error = SchemaSourceArtifact::from_schema_text(source)
         .expect_err("redundant explicit field role should fail before lowering");
     let rendered = error.to_string();
@@ -649,123 +639,6 @@ fn schema_source_artifact_round_trips_through_binary_archive() {
 
     assert_eq!(artifact, recovered);
     assert_eq!(recovered.to_schema_text(), source);
-}
-
-#[test]
-fn schema_source_lowers_relation_declarations() {
-    let source = source_codec_fixture("relations");
-    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
-
-    assert_eq!(
-        artifact.to_schema_text(),
-        source,
-        "relation declarations should round-trip through canonical schema source"
-    );
-
-    let bytes = artifact
-        .to_binary_bytes()
-        .expect("schema source artifact archives");
-    let recovered =
-        SchemaSourceArtifact::from_binary_bytes(&bytes).expect("schema source artifact restores");
-    assert_eq!(artifact, recovered);
-
-    let schema = artifact
-        .source()
-        .lower(
-            &SchemaEngine::default(),
-            SchemaIdentity::new("example:domain", "0.1.0"),
-        )
-        .expect("schema source lowers");
-
-    assert_eq!(schema.relations().len(), 2);
-    let RelationDeclaration::Equivalence(values) = &schema.relations()[0];
-    let paths = values
-        .iter()
-        .map(|value| {
-            value
-                .path()
-                .iter()
-                .map(schema::Name::as_str)
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        paths,
-        vec![
-            vec!["Technology", "Hardware", "Networking"],
-            vec!["Technology", "Software", "Distributed", "Networking"]
-        ],
-        "equivalence values lower as schema-name paths"
-    );
-}
-
-#[test]
-fn schema_source_lowers_stream_declarations_and_variant_relations() {
-    let source = source_codec_fixture("stream-relations");
-    let artifact = SchemaSourceArtifact::from_schema_text(&source).expect("schema source decodes");
-
-    assert_eq!(
-        artifact.to_schema_text(),
-        source,
-        "stream declarations and stream variant relations encode as schema source"
-    );
-
-    let schema = artifact
-        .source()
-        .lower(
-            &SchemaEngine::default(),
-            SchemaIdentity::new("example:lib", "0.1.0"),
-        )
-        .expect("schema source lowers");
-
-    assert_eq!(schema.streams().len(), 1);
-    let stream = &schema.streams()[0];
-    assert_eq!(stream.name.as_str(), "RecordStream");
-    assert_eq!(
-        stream.token.plain_name().map(schema::Name::as_str),
-        Some("SubscriptionToken")
-    );
-    assert_eq!(
-        stream.opened.plain_name().map(schema::Name::as_str),
-        Some("SubscriptionReceipt")
-    );
-    assert_eq!(
-        stream.event.plain_name().map(schema::Name::as_str),
-        Some("RuntimeEvent")
-    );
-    assert_eq!(
-        stream.close.plain_name().map(schema::Name::as_str),
-        Some("SubscriptionToken")
-    );
-    assert!(
-        schema.type_named("RecordStream").is_none(),
-        "stream declarations are schema metadata, not namespace data types"
-    );
-
-    let watch_relation = schema
-        .input()
-        .as_enum()
-        .expect("input is the enum-body form")
-        .variants[0]
-        .stream_relation
-        .as_ref()
-        .expect("Watch opens a stream");
-    assert!(matches!(
-        watch_relation,
-        schema::StreamRelation::Opens(name) if name.as_str() == "RecordStream"
-    ));
-
-    let Some(TypeDeclaration::Enum(runtime_event)) = schema.type_named("RuntimeEvent") else {
-        panic!("RuntimeEvent should lower to an enum");
-    };
-    let event_relation = runtime_event.variants[0]
-        .stream_relation
-        .as_ref()
-        .expect("RecordChanged belongs to a stream");
-    assert!(matches!(
-        event_relation,
-        schema::StreamRelation::Belongs(name) if name.as_str() == "RecordStream"
-    ));
 }
 
 #[test]
@@ -796,8 +669,10 @@ fn source_enum_variants_are_typed_structural_macro_nodes() {
     assert_eq!(input_variants[2].name().as_str(), "Inline");
     assert_eq!(
         input_variants[2].payload(),
-        None,
-        "inline declaration payload is not a reference at the source layer"
+        Some(&schema::SourceReference::Plain(schema::Name::new(
+            "InlinePayload"
+        ))),
+        "distinct payload declarations are ordinary references at the source layer"
     );
 
     let schema = artifact
@@ -807,8 +682,8 @@ fn source_enum_variants_are_typed_structural_macro_nodes() {
             SchemaIdentity::new("example:lib", "0.1.0"),
         )
         .expect("schema source lowers");
-    let variants = schema
-        .input()
+    let input_root = schema.input();
+    let variants = input_root
         .as_enum()
         .expect("input is the enum-body form")
         .variants
@@ -829,43 +704,25 @@ fn source_enum_variants_are_typed_structural_macro_nodes() {
         vec![
             ("Reserved", None),
             ("Record", Some("Entry")),
-            ("Inline", Some("Inline")),
+            ("Inline", Some("InlinePayload")),
         ],
         "lowering happens after structural variant selection"
     );
     assert!(
-        schema.type_named("Inline").is_some(),
-        "inline structural payload is exported as the variant's same-named type"
+        schema.type_named("InlinePayload").is_some(),
+        "structural payload is exported as a distinct payload type"
     );
 }
 
 #[test]
-fn source_enum_variant_reports_structural_macro_expected_shapes() {
+fn source_enum_variant_rejects_unsupported_parenthesized_arity() {
     let source = source_codec_fixture("unsupported-three-object-variant");
     let error = SchemaSourceArtifact::from_schema_text(&source)
         .expect_err("three-object variant signature is not a supported structural case");
 
-    let SchemaError::UnsupportedMacroNodeStructure {
-        position,
-        expected,
-        found,
-    } = error
-    else {
-        panic!("expected structural macro-node error, got {error:?}");
+    let SchemaError::ExpectedSyntaxEnumVariant { found } = error else {
+        panic!("expected enum-variant syntax error, got {error:?}");
     };
 
-    assert_eq!(position, "SourceVariantSignature");
-    assert_eq!(found, "parenthesis");
-    assert!(
-        expected.iter().any(|case| case.contains("Unit")),
-        "diagnostic names the unit structural case"
-    );
-    assert!(
-        expected.iter().any(|case| case.contains("Data")),
-        "diagnostic names the data structural case"
-    );
-    assert!(
-        expected.iter().any(|case| case.contains("Streaming")),
-        "diagnostic names the streaming structural case"
-    );
+    assert_eq!(found, "parenthesized variant with 3 objects");
 }

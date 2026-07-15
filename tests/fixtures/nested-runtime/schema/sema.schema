@@ -1,9 +1,11 @@
 {
-  Observation nested-signal:lib:Observation
+  nested-signal.lib.Observation
 }
-[(Observe Observation)]
-[(Observed Observation)]
+[Observe.Observation]
+[Observed.Observation]
 {
-  ReadInput [Observe]
-  ReadOutput [Observed]
+  ReadInput.[Observe]
+  ReadOutput.[Observed]
 }
+{}
+{}

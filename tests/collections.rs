@@ -1,14 +1,15 @@
-//! Collection + Option type references.
+//! Collection + Optional type references.
 //!
-//! A struct field or enum-variant payload can now wrap its referenced
-//! type in a collection or option. The surface forms are TrueSchema
-//! type-reference objects:
-//! `(Vector T)`, `(Map K V)`, and `(Optional T)`. They lower to
-//! `TypeReference::Vector / Map / Optional`. Bare-symbol fields keep
-//! the declared-name shape, while reserved scalar names lower to
-//! scalar references instead of pretending to be user namespace types.
+//! A struct field or enum-variant payload can wrap its referenced type in a
+//! generic definition. The authored surface is dotted and positional:
+//! `Vector.T`, `Map.(K V)`, and `Optional.T`. Bare-symbol fields keep the
+//! declared-name shape, while reserved scalar names lower to scalar references
+//! instead of pretending to be user namespace types.
 
-use schema::{Name, SchemaEngine, SchemaIdentity, TypeDeclaration, TypeReference};
+use schema::{
+    Name, SchemaEngine, SchemaIdentity, SingleTypeReferenceProjection, TypeDeclaration,
+    TypeReference,
+};
 
 fn lower(source: &str) -> schema::TrueSchema {
     SchemaEngine::default()
@@ -17,27 +18,21 @@ fn lower(source: &str) -> schema::TrueSchema {
 }
 
 fn roots(namespace: &str) -> String {
-    format!("[] [] {{ {namespace} }}")
+    format!("{{}} [] [] {{ {namespace} }} {{}} {{}}")
 }
 
-fn struct_fields<'schema>(
-    schema: &'schema schema::TrueSchema,
-    name: &str,
-) -> &'schema [schema::FieldDeclaration] {
+fn struct_fields(schema: &schema::TrueSchema, name: &str) -> Vec<schema::FieldDeclaration> {
     match schema.type_named(name).expect("type present") {
-        TypeDeclaration::Struct(declaration) => &declaration.fields,
+        TypeDeclaration::Struct(declaration) => declaration.fields.entries().to_vec(),
         TypeDeclaration::Newtype(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a struct")
         }
     }
 }
 
-fn single_reference<'schema>(
-    schema: &'schema schema::TrueSchema,
-    name: &str,
-) -> &'schema TypeReference {
+fn single_reference(schema: &schema::TrueSchema, name: &str) -> TypeReference {
     match schema.type_named(name).expect("type present") {
-        TypeDeclaration::Newtype(declaration) => &declaration.reference,
+        TypeDeclaration::Newtype(declaration) => declaration.reference,
         TypeDeclaration::Struct(_) | TypeDeclaration::Enum(_) => {
             panic!("{name} should be a single-reference declaration")
         }
@@ -46,16 +41,16 @@ fn single_reference<'schema>(
 
 #[test]
 fn vec_field_lowers_to_vector_reference() {
-    let schema = lower(&roots("Service String Cluster (Vector Service)"));
+    let schema = lower(&roots("Service.String Cluster.Vector.Service"));
     assert_eq!(
         single_reference(&schema, "Cluster"),
-        &TypeReference::Vector(Box::new(TypeReference::new("Service")))
+        TypeReference::vector(TypeReference::new("Service"))
     );
 }
 
 #[test]
 fn scalar_type_components_lower_to_reserved_references() {
-    let schema = lower(&roots("Entry { String Integer Boolean Path }"));
+    let schema = lower(&roots("Entry.{ String Integer Boolean Path }"));
     let fields = struct_fields(&schema, "Entry");
     assert_eq!(fields[0].name.as_str(), "string");
     assert_eq!(fields[0].reference, TypeReference::String);
@@ -70,38 +65,35 @@ fn scalar_type_components_lower_to_reserved_references() {
 #[test]
 fn scalar_references_nest_inside_collections() {
     let schema = lower(&roots(
-        "Query { (Optional Integer) (Vector String) (Map String Boolean) (Optional Path) }",
+        "Query.{ Optional.Integer Vector.String Map.(String Boolean) Optional.Path }",
     ));
     let fields = struct_fields(&schema, "Query");
     assert_eq!(
         fields[0].reference,
-        TypeReference::Optional(Box::new(TypeReference::Integer))
+        TypeReference::optional(TypeReference::Integer)
     );
     assert_eq!(
         fields[1].reference,
-        TypeReference::Vector(Box::new(TypeReference::String))
+        TypeReference::vector(TypeReference::String)
     );
     assert_eq!(
         fields[2].reference,
-        TypeReference::Map(
-            Box::new(TypeReference::String),
-            Box::new(TypeReference::Boolean)
-        )
+        TypeReference::map(TypeReference::String, TypeReference::Boolean)
     );
     assert_eq!(
         fields[3].reference,
-        TypeReference::Optional(Box::new(TypeReference::Path))
+        TypeReference::optional(TypeReference::Path)
     );
 }
 
 #[test]
 fn explicit_structural_field_roles_lower_recursively() {
     // The single lowering engine (the typed-source path) reads an explicit
-    // PascalCase-named field `Topics.(Vector Topic)` as an inline namespace
+    // PascalCase-named field `Topics.Vector.Topic` as an inline namespace
     // declaration: a newtype `Topics` aliasing `Vector<Topic>` is minted into
     // the namespace, and the struct field references that minted type by name.
     let schema = lower(&roots(
-        "Topic String Query { Topics.(Vector Topic) Limit.(Optional Integer) }",
+        "Topic.String Query.{ Topics.Vector.Topic Limit.Optional.Integer }",
     ));
     let fields = struct_fields(&schema, "Query");
 
@@ -119,25 +111,25 @@ fn explicit_structural_field_roles_lower_recursively() {
     // The inline-minted types carry the collection/option reference.
     assert_eq!(
         single_reference(&schema, "Topics"),
-        &TypeReference::Vector(Box::new(TypeReference::new("Topic")))
+        TypeReference::vector(TypeReference::new("Topic"))
     );
     assert_eq!(
         single_reference(&schema, "Limit"),
-        &TypeReference::Optional(Box::new(TypeReference::Integer))
+        TypeReference::optional(TypeReference::Integer)
     );
 }
 
 #[test]
 fn implicit_composite_field_lowers_directly() {
     let schema = lower(&roots(
-        "Topic String Description String Query { (Vector Topic) Description }",
+        "Topic.String Description.String Query.{ Vector.Topic Description }",
     ));
     let fields = struct_fields(&schema, "Query");
 
     assert_eq!(fields[0].name.as_str(), "topic_vector");
     assert_eq!(
         fields[0].reference,
-        TypeReference::Vector(Box::new(TypeReference::new("Topic")))
+        TypeReference::vector(TypeReference::new("Topic"))
     );
     assert!(
         schema.type_named("Topics").is_none(),
@@ -148,16 +140,16 @@ fn implicit_composite_field_lowers_directly() {
 #[test]
 fn pascal_case_dot_composite_field_can_match_derived_composite_name() {
     let schema = lower(&roots(
-        "Antecedent String Quote { OptionalAntecedent.(Optional Antecedent) }",
+        "Antecedent.String Quote.{ OptionalAntecedent.Optional.Antecedent }",
     ));
 
     assert_eq!(
         single_reference(&schema, "OptionalAntecedent"),
-        &TypeReference::Optional(Box::new(TypeReference::new("Antecedent")))
+        TypeReference::optional(TypeReference::new("Antecedent"))
     );
     assert_eq!(
         single_reference(&schema, "Quote"),
-        &TypeReference::Plain(Name::new("OptionalAntecedent"))
+        TypeReference::Plain(Name::new("OptionalAntecedent"))
     );
 }
 
@@ -165,14 +157,14 @@ fn pascal_case_dot_composite_field_can_match_derived_composite_name() {
 fn parenthesized_explicit_composite_field_syntax_is_retired() {
     let error = SchemaEngine::default()
         .lower_source(
-            &roots("Topic String Query { (Topics (Vector Topic)) }"),
+            &roots("Topic.String Query.{ (Topics Vector.Topic) }"),
             schema::SchemaIdentity::new("example:lib", "0.1.0"),
         )
         .expect_err("old parenthesized explicit field syntax is retired");
 
     assert!(matches!(
         error,
-        schema::SchemaError::RetiredStructFieldSyntax { .. }
+        schema::SchemaError::UnknownTypeReferenceForm { .. }
     ));
 }
 
@@ -180,7 +172,7 @@ fn parenthesized_explicit_composite_field_syntax_is_retired() {
 fn scalar_names_are_reserved_at_namespace_declaration_position() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { String Integer }",
+            "{}\n[]\n[]\n{\n  String.Integer\n}\n{}\n{}",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("reserved scalar names cannot be user-declared schema types");
@@ -195,23 +187,23 @@ fn scalar_names_are_reserved_at_namespace_declaration_position() {
 #[test]
 fn key_value_field_lowers_to_map_reference() {
     let schema = lower(&roots(
-        "NodeName String NodeProposal String Cluster (Map NodeName NodeProposal)",
+        "NodeName.String NodeProposal.String Cluster.Map.(NodeName NodeProposal)",
     ));
     assert_eq!(
         single_reference(&schema, "Cluster"),
-        &TypeReference::Map(
-            Box::new(TypeReference::new("NodeName")),
-            Box::new(TypeReference::new("NodeProposal")),
+        TypeReference::map(
+            TypeReference::new("NodeName"),
+            TypeReference::new("NodeProposal")
         )
     );
 }
 
 #[test]
 fn option_field_lowers_to_optional_reference() {
-    let schema = lower(&roots("Cache String Cluster (Optional Cache)"));
+    let schema = lower(&roots("Cache.String Cluster.Optional.Cache"));
     assert_eq!(
         single_reference(&schema, "Cluster"),
-        &TypeReference::Optional(Box::new(TypeReference::new("Cache")))
+        TypeReference::optional(TypeReference::new("Cache"))
     );
 }
 
@@ -219,7 +211,7 @@ fn option_field_lowers_to_optional_reference() {
 fn square_bracket_field_is_not_vec_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Service String Cluster { [Service] } }",
+            "{}\n[]\n[]\n{\n  Service.String\n  Cluster.{ [Service] }\n}\n{}\n{}",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw square bracket is not a Vec reference");
@@ -237,7 +229,7 @@ fn square_bracket_field_is_not_vec_type_syntax() {
 fn brace_field_is_not_map_type_syntax() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { NodeName String NodeProposal String Cluster { {NodeName NodeProposal} } }",
+            "{}\n[]\n[]\n{\n  NodeName.String\n  NodeProposal.String\n  Cluster.{ {NodeName NodeProposal} }\n}\n{}\n{}",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("raw brace map is not a Map reference");
@@ -254,31 +246,41 @@ fn brace_field_is_not_map_type_syntax() {
 #[test]
 fn collection_field_and_plain_field_coexist_in_one_struct() {
     let schema = lower(&roots(
-        "Trust String Service String Cluster { Trust (Vector Service) (Optional Trust) }",
+        "Trust.String Service.String Cluster.{ Trust Vector.Service Optional.Trust }",
     ));
     let fields = struct_fields(&schema, "Cluster");
     // Bare symbol stays a plain field with its name derived from type.
     assert_eq!(fields[0].name.as_str(), "trust");
     assert_eq!(fields[0].reference, TypeReference::new("Trust"));
     assert_eq!(fields[1].name.as_str(), "service_vector");
-    assert!(matches!(fields[1].reference, TypeReference::Vector(_)));
+    assert!(matches!(
+        fields[1].reference,
+        TypeReference::SingleTypeApplication {
+            projection: SingleTypeReferenceProjection::Vector,
+            ..
+        }
+    ));
     assert_eq!(fields[2].name.as_str(), "optional_trust");
-    assert!(matches!(fields[2].reference, TypeReference::Optional(_)));
+    assert!(matches!(
+        fields[2].reference,
+        TypeReference::SingleTypeApplication {
+            projection: SingleTypeReferenceProjection::Optional,
+            ..
+        }
+    ));
 }
 
 #[test]
 fn nested_collections_lower_recursively() {
     // A map whose value is itself a vector of an optional leaf.
     let schema = lower(&roots(
-        "Leaf String Key String Nest (Map Key (Vector (Optional Leaf)))",
+        "Leaf.String Key.String Nest.Map.(Key Vector.Optional.Leaf)",
     ));
     assert_eq!(
         single_reference(&schema, "Nest"),
-        &TypeReference::Map(
-            Box::new(TypeReference::new("Key")),
-            Box::new(TypeReference::Vector(Box::new(TypeReference::Optional(
-                Box::new(TypeReference::new("Leaf"))
-            )))),
+        TypeReference::map(
+            TypeReference::new("Key"),
+            TypeReference::vector(TypeReference::optional(TypeReference::new("Leaf"))),
         )
     );
 }
@@ -287,21 +289,23 @@ fn nested_collections_lower_recursively() {
 fn collection_payload_lowers_in_an_output_variant() {
     // Output variant carrying a map payload — the projection result
     // shape Horizon needs (Projected -> a map of node configs).
-    let schema =
-        lower("[] [(Projected (Map NodeName NodeConfig))] { NodeName String NodeConfig String }");
-    let payload = schema
-        .output()
+    let schema = lower(
+        "{}\n[]\n[Projected.ProjectedPayload]\n{\n  NodeName.String\n  NodeConfig.String\n  ProjectedPayload.Map.(NodeName NodeConfig)\n}\n{}\n{}",
+    );
+    let output_root = schema.output();
+    let payload = output_root
         .as_enum()
         .expect("output is the enum-body form")
         .variants[0]
         .payload
         .as_ref()
         .expect("projected payload");
+    assert_eq!(payload, &TypeReference::new("ProjectedPayload"));
     assert_eq!(
-        payload,
-        &TypeReference::Map(
-            Box::new(TypeReference::new("NodeName")),
-            Box::new(TypeReference::new("NodeConfig")),
+        single_reference(&schema, "ProjectedPayload"),
+        TypeReference::map(
+            TypeReference::new("NodeName"),
+            TypeReference::new("NodeConfig")
         )
     );
 }
@@ -309,16 +313,15 @@ fn collection_payload_lowers_in_an_output_variant() {
 #[test]
 fn non_builtin_pascal_head_lowers_to_application() {
     // A PascalCase head that is not a built-in collection is no longer an
-    // error — it is the generic application form `(Foo A …)`. The head is a
-    // local generic until import resolution proves otherwise, and the
-    // argument nests through the full reference grammar (here a built-in
-    // `(Vector Leaf)`).
-    let schema = lower(&roots("Leaf String Bad (HashSet (Vector Leaf))"));
+    // error — it is the dotted generic application form `Foo.A`. The head is
+    // a local generic until import resolution proves otherwise, and the
+    // argument nests through the full reference grammar (here `Vector.Leaf`).
+    let schema = lower(&roots("Leaf.String Bad.HashSet.Vector.Leaf"));
     assert_eq!(
         single_reference(&schema, "Bad"),
-        &TypeReference::Application {
+        TypeReference::Application {
             head: schema::ApplicationHead::Local(schema::Name::new("HashSet")),
-            arguments: vec![TypeReference::Vector(Box::new(TypeReference::new("Leaf")))],
+            arguments: vec![TypeReference::vector(TypeReference::new("Leaf"))],
         }
     );
 }
@@ -328,10 +331,10 @@ fn dropped_vec_alias_no_longer_lowers_to_vector() {
     // `Vec` is a dropped alias: it must NOT lower to `Vector`. It is now an
     // ordinary PascalCase head, so it lowers to the generic application form
     // rather than the collection.
-    let schema = lower(&roots("Service String Cluster (Vec Service)"));
+    let schema = lower(&roots("Service.String Cluster.Vec.Service"));
     assert_eq!(
         single_reference(&schema, "Cluster"),
-        &TypeReference::Application {
+        TypeReference::Application {
             head: schema::ApplicationHead::Local(schema::Name::new("Vec")),
             arguments: vec![TypeReference::new("Service")],
         }
@@ -342,7 +345,7 @@ fn dropped_vec_alias_no_longer_lowers_to_vector() {
 fn map_with_wrong_argument_count_is_rejected() {
     let error = SchemaEngine::default()
         .lower_source(
-            "[] [] { Leaf String Bad (Map (Leaf)) }",
+            "{}\n[]\n[]\n{\n  Leaf.String\n  Bad.Map.Leaf\n}\n{}\n{}",
             SchemaIdentity::new("collections:lib", "0.1.0"),
         )
         .expect_err("Map needs two arguments");
@@ -350,10 +353,99 @@ fn map_with_wrong_argument_count_is_rejected() {
     // reference head against its declared arity.
     assert_eq!(
         error,
-        schema::SchemaError::ExpectedSyntaxReferenceArity {
-            form: "built-in reference head",
-            expected: "the head's declared arity",
-            found: 2,
+        schema::SchemaError::GenericArityMismatch {
+            head: "Map".to_owned(),
+            expected: 2,
+            found: 1,
         }
     );
+}
+
+#[test]
+fn inline_grouped_multi_arg_variant_payload_lowers_to_map() {
+    // The grouped payload the dot rule prescribes — `Projected.(Map.(K V))` —
+    // now parses inline, with no intermediate named `ProjectedPayload` type. It
+    // lowers straight to the map reference. The named-type workaround stays
+    // legal (see `collection_payload_lowers_in_an_output_variant`); this proves
+    // the inline grouped form is a second legal path, not a replacement.
+    let schema = lower(
+        "{}\n[]\n[Projected.(Map.(NodeName NodeConfig))]\n{\n  NodeName.String\n  NodeConfig.String\n}\n{}\n{}",
+    );
+    let output_root = schema.output();
+    let payload = output_root
+        .as_enum()
+        .expect("output is the enum-body form")
+        .variants[0]
+        .payload
+        .as_ref()
+        .expect("projected payload");
+    assert_eq!(
+        payload,
+        &TypeReference::map(
+            TypeReference::new("NodeName"),
+            TypeReference::new("NodeConfig")
+        )
+    );
+}
+
+#[test]
+fn grouped_single_arg_variant_payload_lowers_to_vector() {
+    // The grouped single-argument payload `Listed.(Vector.NodeName)` parses
+    // through the same consumed-count reader and lowers to the vector reference.
+    let schema = lower("{}\n[]\n[Listed.(Vector.NodeName)]\n{\n  NodeName.String\n}\n{}\n{}");
+    let output_root = schema.output();
+    let payload = output_root
+        .as_enum()
+        .expect("output is the enum-body form")
+        .variants[0]
+        .payload
+        .as_ref()
+        .expect("listed payload");
+    assert_eq!(
+        payload,
+        &TypeReference::vector(TypeReference::new("NodeName"))
+    );
+}
+
+#[test]
+fn ungrouped_multi_arg_variant_payload_is_rejected() {
+    // The ungrouped spelling `Projected.Map.(NodeName NodeConfig)` is the
+    // left-associative form the dot rule forbids for a multi-argument payload.
+    // It is a typed rejection that names the required grouped form, not a raw
+    // decode error and not a silent mis-binding.
+    let error = SchemaEngine::default()
+        .lower_source(
+            "{}\n[]\n[Projected.Map.(NodeName NodeConfig)]\n{\n  NodeName.String\n  NodeConfig.String\n}\n{}\n{}",
+            SchemaIdentity::new("collections:lib", "0.1.0"),
+        )
+        .expect_err("a multi-argument variant payload must be grouped");
+    assert_eq!(
+        error,
+        schema::SchemaError::UngroupedVariantPayloadApplication {
+            variant: "Projected".to_owned(),
+            head: "Map".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn grouped_variant_payload_round_trips_canonical_source() {
+    // The emitter re-emits the grouped multi-argument payload with minimal
+    // grouping, matching the struct-field application emitter: the multi-token
+    // payload keeps its group, the single-token payload emits bare. Both forms
+    // re-parse to the same artifact.
+    let source = "{}\n[]\n[Projected.(Map.(NodeName NodeConfig)) Listed.(Vector.NodeName)]\n{\n  NodeName.String\n  NodeConfig.String\n}\n{}\n{}\n";
+    let artifact = schema::SchemaSourceArtifact::from_schema_text(source).expect("source decodes");
+    let canonical = artifact.to_schema_text();
+    assert!(
+        canonical.contains("Projected.(Map.(NodeName NodeConfig))"),
+        "multi-argument payload keeps its group: {canonical}"
+    );
+    assert!(
+        canonical.contains("Listed.Vector.NodeName"),
+        "single-token payload emits ungrouped: {canonical}"
+    );
+    let recovered = schema::SchemaSourceArtifact::from_schema_text(&canonical)
+        .expect("canonical schema text decodes again");
+    assert_eq!(recovered.to_schema_text(), canonical);
 }

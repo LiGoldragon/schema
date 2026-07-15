@@ -197,18 +197,18 @@ fn production_schema_sources_use_honest_enum_bodies() {
     }
 }
 
-/// Claim 4 — Spirit-min carries compact root enum bodies of the
-/// `[Record Observe]` shape. The namespace defines those payload objects one
-/// level below the root header.
+/// Claim 4 — Spirit-min carries compact root enum bodies in the strict input
+/// slot. The namespace defines distinct payload objects one level below the
+/// root header.
 #[test]
-fn spirit_min_input_enum_body_has_compact_root_variants() {
+fn spirit_min_input_enum_body_has_explicit_payload_variants() {
     let source = include_str!("../schemas/spirit-min.schema");
     let document = Document::parse(source).expect("spirit-min.schema parses as NOTA");
     let root_objects = document.root_objects();
 
     let input = root_objects
-        .first()
-        .expect("spirit-min schema starts with an input enum-body vector");
+        .get(1)
+        .expect("spirit-min schema has an input enum-body vector in slot 2");
     let Block::Delimited {
         delimiter,
         root_objects: variants,
@@ -223,19 +223,19 @@ fn spirit_min_input_enum_body_has_compact_root_variants() {
         "input is a SquareBracket enum-body vector"
     );
 
-    // Root payloads are exported namespace objects, so every input root entry
-    // is the compact bare operation name.
+    // Root payloads use explicit, distinct payload type names so same-named
+    // variant payloads cannot collapse in projection.
     assert!(
         !variants.is_empty(),
         "input vector contains at least one variant"
     );
     let names = variants
         .iter()
-        .map(|variant| match variant {
-            Block::Atom(atom) => atom.text(),
-            _ => panic!(
-                "every spirit-min input variant must be a bare operation name; got {variant:?}"
-            ),
+        .map(|variant| {
+            variant
+                .demote_to_string()
+                .and_then(|text| text.split_once('.').map(|(name, _)| name))
+                .expect("spirit-min input variant is dotted with an explicit payload type")
         })
         .collect::<Vec<_>>();
     assert_eq!(names, vec!["Record", "Observe"]);
@@ -256,19 +256,20 @@ fn schema_is_typed_data_with_named_field_accessors() {
     assert_eq!(schema.identity().version(), "0.1.0");
 
     // Typed accessors — TrueSchema is a noun with methods, not a string blob.
-    let _: &[schema::ImportDeclaration] = schema.imports();
-    let _: &schema::Root = schema.input();
-    let _: &schema::Root = schema.output();
-    let _: &schema::EnumDeclaration = schema
+    let _: Vec<schema::ImportDeclaration> = schema.imports();
+    let _: schema::Root = schema.input();
+    let _: schema::Root = schema.output();
+    let _: schema::EnumDeclaration = schema
         .input()
         .as_enum()
+        .cloned()
         .expect("core input is an enum root");
-    let _: &[schema::Declaration] = schema.namespace();
+    let _: Vec<schema::Declaration> = schema.namespace();
 
     // The namespace carries typed `Declaration` values; pick one and
     // confirm it lowers into one of the typed variants of `TypeDeclaration`.
-    let any_declaration = schema
-        .namespace()
+    let namespace = schema.namespace();
+    let any_declaration = namespace
         .first()
         .expect("core schema has at least one namespace declaration");
     match any_declaration.value() {

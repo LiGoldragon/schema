@@ -97,31 +97,26 @@ fn expand_root(
         application.arguments().len(),
         "frame head {frame_name} arity must match the application argument count",
     );
-    application.expand_with(parameters, variants)
+    application.expand_with(&parameters, &variants)
 }
 
-fn application_root<'schema>(
-    schema: &'schema TrueSchema,
-    position: &str,
-) -> &'schema RootApplication {
+fn application_root(schema: &TrueSchema, position: &str) -> RootApplication {
     schema
         .root_named(position)
         .unwrap_or_else(|| panic!("{position} root present"))
         .as_application()
         .unwrap_or_else(|| panic!("{position} root is the application form"))
+        .clone()
 }
 
-fn concrete_root_variants<'schema>(
-    schema: &'schema TrueSchema,
-    position: &str,
-) -> &'schema [EnumVariant] {
+fn concrete_root_variants(schema: &TrueSchema, position: &str) -> Vec<EnumVariant> {
     let Root::Enum(declaration) = schema
         .root_named(position)
         .unwrap_or_else(|| panic!("concrete {position} root present"))
     else {
         panic!("concrete {position} root is the enum-body form");
     };
-    &declaration.variants
+    declaration.variants
 }
 
 // ----------------------------------------------------------------------
@@ -179,30 +174,6 @@ fn reaction_frame_lowers_with_its_two_parameterized_declarations() {
             .variants
             .is_empty()
     );
-}
-
-#[test]
-fn frame_declarations_close_over_their_binders() {
-    let reaction = lower_reaction();
-
-    // Each frame family closes: its variant payloads are binder references,
-    // which resolve as type-parameters (not FamilyReferenceNotFound), so the
-    // closure contains only the head declaration itself.
-    for head in ["Work", "Action"] {
-        let closure = reaction
-            .family_closure(head)
-            .unwrap_or_else(|error| panic!("{head} closes over its binders: {error:?}"));
-        let names = closure
-            .declarations()
-            .iter()
-            .map(|declaration| declaration.name().as_str().to_owned())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            [head],
-            "{head} pulls in no extra declarations — binders are parameters"
-        );
-    }
 }
 
 // ----------------------------------------------------------------------
@@ -266,8 +237,8 @@ fn migrated_nexus_lowers_to_application_roots_over_the_imported_frame() {
     // The imported frame heads carry their arity across the crate boundary:
     // Work is a 4-parameter import, Action a 5-parameter import.
     for (local, arity) in [("Work", 4usize), ("Action", 5usize)] {
-        let import = migrated
-            .resolved_imports()
+        let resolved = migrated.resolved_imports();
+        let import = resolved
             .iter()
             .find(|import| import.local_name().as_str() == local)
             .unwrap_or_else(|| panic!("{local} import resolved"));
@@ -275,33 +246,6 @@ fn migrated_nexus_lowers_to_application_roots_over_the_imported_frame() {
             import.parameter_count(),
             Some(arity),
             "{local} carries its frame arity across the boundary",
-        );
-    }
-}
-
-#[test]
-fn migrated_application_roots_close_over_the_imported_frame_heads() {
-    let migrated = lower_migrated();
-
-    // The application-root closure walk reaches the imported frame head and
-    // records the import; the argument declarations are pulled in as local
-    // declarations.
-    for (position, head) in [("Input", "Work"), ("Output", "Action")] {
-        let closure = migrated
-            .family_closure(position)
-            .unwrap_or_else(|error| panic!("{position} application root closes: {error:?}"));
-        assert!(
-            closure.root_application().is_some(),
-            "{position} carries its applied frame reference in the closure",
-        );
-        let imports = closure
-            .imports()
-            .iter()
-            .map(|import| import.local_name.as_str().to_owned())
-            .collect::<Vec<_>>();
-        assert!(
-            imports.contains(&head.to_owned()),
-            "{position} closure records the imported frame head {head}, got {imports:?}",
         );
     }
 }
@@ -319,7 +263,7 @@ fn migrated_input_frame_expands_to_the_concrete_input_root() {
 
     // Expand `(Work SignalInput SemaWriteOutput SemaReadOutput EffectOutcome)`.
     let input = application_root(&migrated, "Input");
-    let expanded = expand_root(&reaction, "Work", input);
+    let expanded = expand_root(&reaction, "Work", &input);
 
     // The concrete Input root was hand-written as the same four legs.
     let concrete_variants = concrete_root_variants(&concrete, "Input");
@@ -377,7 +321,7 @@ fn migrated_output_frame_expands_to_the_concrete_output_root() {
     // payload-binding legs exactly, then confirm the Continuation leg name and
     // that its migrated payload is the Work application.
     let output = application_root(&migrated, "Output");
-    let expanded = expand_root(&reaction, "Action", output);
+    let expanded = expand_root(&reaction, "Action", &output);
     let concrete_variants = concrete_root_variants(&concrete, "Output");
 
     // Same variant names, same order, for all five legs.
@@ -458,8 +402,8 @@ fn spirit_binds_every_frame_leg_full_frame() {
 
     // Every expanded leg carries a payload — no leg bound to an absent /
     // uninhabitable type (the omittable-leg mechanism stays unexercised).
-    let input_legs = expand_root(&reaction, "Work", input);
-    let output_legs = expand_root(&reaction, "Action", output);
+    let input_legs = expand_root(&reaction, "Work", &input);
+    let output_legs = expand_root(&reaction, "Action", &output);
     for leg in input_legs.iter().chain(output_legs.iter()) {
         assert!(
             leg.payload.is_some(),

@@ -1,17 +1,15 @@
 [workspace]
-members  = ["schema-cc"]
 resolver = "2"
 
 [package]
 name         = "schema"
-version      = "0.2.0"
+version      = "0.3.0"
 edition      = "2024"
 rust-version = "1.85"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/schema"
-description  = "Position-aware schema macro engine and semantic schema model."
+description  = "Build-time .schema parser and lowering bridge for TrueSchema staging."
 publish      = false
-build        = "build.rs"
 
 [lib]
 name = "schema"
@@ -22,14 +20,6 @@ blake3 = "1"
 nota = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", branch = "main" }
 rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 thiserror = "2"
-
-# Build-time only: schema-cc generates schema's parenthesis-reference
-# dispatch from the canonical ReferenceGrammar; it never links into the
-# library. A workspace `path` dep, not a `git` dep — schema-cc is co-located
-# as a workspace member, not a sibling repo.
-[build-dependencies]
-schema-cc = { path = "schema-cc" }
-nota = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", branch = "main" }
 
 [lints.rust]
 unsafe_code = "forbid"
