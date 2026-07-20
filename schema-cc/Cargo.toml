@@ -5,7 +5,7 @@ edition     = "2024"
 description = "The schema compiler-compiler: the schema/compiler definition kept as typed data that generates the schema compiler."
 
 [dependencies]
-nota    = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", branch = "main" }
+nota    = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", rev = "ce7c564de0a0518eaa1938d55dccc460a67cadb4" }
 proc-macro2  = "1"
 quote        = "1"
 syn          = { version = "2", features = ["full"] }

@@ -51,6 +51,12 @@ Rust noun.
 
 Rust code emission is not here. It lives in `schema-rust`.
 
+## v0.2 compatibility family
+
+Version 0.2.1 preserves this historical schema reader for existing
+signal-orchestrate v0.9 contract tests. It pins Nota v0.5.1 to an immutable
+revision and changes no schema behavior or checked-in schema artifacts.
+
 Crates expose schemas through a standard `schema/` directory. The current
 entrypoint is `schema/lib.schema`; sibling files such as `schema/signal.schema`
 are module schemas. Schema-qualified names use a single colon separator
