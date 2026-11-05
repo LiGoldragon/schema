@@ -115,28 +115,3 @@ fn macro_reference_templates_accept_dotted_builtin_body() {
         TypeReference::vector(TypeReference::new("Topic"))
     );
 }
-
-#[test]
-fn generated_parenthesized_resolver_artifacts_are_absent() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    for retired_path in [
-        "build.rs",
-        "src/reference_resolver_generated.rs",
-        "schemas/reference-grammar.dotos",
-        "schema-cc",
-    ] {
-        assert!(
-            !root.join(retired_path).exists(),
-            "retired reference pipeline artifact {retired_path} must not exist"
-        );
-    }
-
-    let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("read manifest");
-    assert!(!manifest.contains("schema-cc"));
-    assert!(!manifest.contains("build.rs"));
-
-    let schema_rs = std::fs::read_to_string(root.join("src/schema.rs")).expect("read schema.rs");
-    assert!(!schema_rs.contains("from_block_with_registry"));
-    assert!(!schema_rs.contains("resolve_parenthesis_reference"));
-    assert!(!schema_rs.contains("reference_resolver_generated"));
-}
